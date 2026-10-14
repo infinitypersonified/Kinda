@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
@@ -110,6 +110,8 @@ function App({ authClient }) {
   const [profileEditing, setProfileEditing] = useState(false);
   const [chatMobileOpen, setChatMobileOpen] = useState(false);
   const [newMessage, setNewMessage] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const sendingMessageRef = useRef(false);
   const [filter, setFilter] = useState("Today");
   const [toast, setToast] = useState("");
   const [celebrationOpen, setCelebrationOpen] = useState(false);
@@ -505,15 +507,26 @@ function App({ authClient }) {
 
   async function sendMessage(event) {
     event.preventDefault();
-    if (!activeGroup || !newMessage.trim()) return;
+    const content = newMessage.trim();
+    if (!activeGroup || !content || sendingMessageRef.current) return;
+    const groupId = activeGroup.id;
+    sendingMessageRef.current = true;
+    setSendingMessage(true);
     try {
-      const message = await api(`/groups/${activeGroup.id}/messages`, {
-        method: "POST", body: JSON.stringify({ content: newMessage.trim() })
+      const message = await api(`/groups/${groupId}/messages`, {
+        method: "POST", body: JSON.stringify({ content })
       });
-      setMessages(current => [...current, message]);
+      if (activeGroup?.id === groupId) {
+        setMessages(current => current.some(existing => existing.id === message.id)
+          ? current
+          : [...current, message]);
+      }
       setNewMessage("");
     } catch (error) {
       notify(error.message);
+    } finally {
+      sendingMessageRef.current = false;
+      setSendingMessage(false);
     }
   }
 
@@ -588,7 +601,7 @@ function App({ authClient }) {
         {page === "chat" && <ChatPage
           groups={groups} activeGroup={activeGroup} setActiveGroup={group => { setActiveGroup(group); setChatMobileOpen(true); }}
           messages={messages} sharedTasks={sharedTasks} user={user} value={newMessage} setValue={setNewMessage}
-          onSend={sendMessage} friends={friends} mobileOpen={chatMobileOpen}
+          onSend={sendMessage} sending={sendingMessage} friends={friends} mobileOpen={chatMobileOpen}
           onMobileBack={() => setChatMobileOpen(false)} onInvite={() => setCircleDialog(true)}
         />}
         {page === "profile" && <ProfilePage
@@ -745,7 +758,7 @@ function ActivityList({ items, userId, onReact, compact = false }) {
   return <div className={`activity-list ${compact ? "activity-list-compact" : ""}`}>{items.map((item, index) => <article className="activity-item" key={item.id}><Avatar name={item.actorName} index={index}/><div className="activity-copy"><p><b>{item.actorId === userId ? "You" : item.actorName}</b> {item.type === "completed" ? "completed" : "added a task"} <strong>{item.taskTitle}</strong></p><small>{dateTime(item.createdAt)}</small></div><button className={`reaction-button ${item.reacted ? "reacted" : ""}`} onClick={() => onReact(item)} aria-label={item.reacted ? "Remove reaction" : "React to activity"}><Heart size={16} fill={item.reacted ? "currentColor" : "none"}/>{item.reactionCount > 0 && <span>{item.reactionCount}</span>}</button></article>)}</div>;
 }
 
-function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, mobileOpen, onMobileBack, onInvite }) {
+function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, sending, mobileOpen, onMobileBack, onInvite }) {
   return <div className="page-content chat-page">
     <PageHeader eyebrow="A LITTLE ENCOURAGEMENT" title="Circle chat" description="Every member of a circle shares one group conversation."/>
     <div className={`chat-layout ${mobileOpen ? "chat-open" : ""}`}>
@@ -756,7 +769,7 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
         {activeGroup ? <><header className="chat-header"><button className="mobile-back" onClick={onMobileBack} aria-label="Back to circles"><ArrowLeft size={18}/></button><Avatar name={activeGroup.name}/><div><h2>{activeGroup.name}</h2><small>{activeGroup.memberCount} members · one group chat</small></div></header>
           <div className="chat-shared-tasks">{sharedTasks.slice(0, 3).map(task => <span key={`${task.ownerId}-${task.id}`}><CheckSquare2 size={12}/>{task.ownerName}: {task.title}</span>)}</div>
           <div className="chat-messages" aria-live="polite">{messages.length ? messages.map(message => <article className={`chat-message ${message.senderId === user.id ? "chat-mine" : ""}`} key={message.id}><Avatar name={message.senderName}/><div className="message-body"><b>{message.senderId === user.id ? "You" : message.senderName}</b><p>{message.content}</p><small>{dateTime(message.createdAt)}</small></div></article>) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
-          <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => setValue(event.target.value)} placeholder="Write a message…" aria-label="Write a message" maxLength={1000}/><button className="button button-primary" type="submit" disabled={!value.trim()}><Send size={15}/><span>Send</span></button></form>
+          <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => setValue(event.target.value)} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
         </> : <div className="chat-empty chat-no-selection"><MessageCircle size={24}/><h3>Your people are one hello away.</h3><p>Create a circle to give everyone in it one shared conversation.</p><button className="button button-primary" onClick={onInvite}><Plus size={15}/> Create circle</button></div>}
       </section>
     </div>
