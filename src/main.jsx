@@ -24,7 +24,8 @@ if (!cloudClients) {
   root.render(
     <main style={{ fontFamily: "sans-serif", margin: "12vh auto", maxWidth: 640, padding: 24 }}>
       <h1>Kinda needs its cloud settings</h1>
-      <p>Set <code>VITE_CONVEX_URL</code> and <code>VITE_CONVEX_SITE_URL</code> in your local or Cloudflare Pages environment, then rebuild.</p>
+      <p>These values are embedded when the site is built. In Cloudflare Pages, add <code>VITE_CONVEX_URL</code> and <code>VITE_CONVEX_SITE_URL</code> as environment variables for the deployment environment, then retry the deployment. Use Production for the main site or Preview for branch previews.</p>
+      <p>For local development, set both values in <code>.env.local</code> and restart the dev server or rebuild.</p>
     </main>
   );
 } else {

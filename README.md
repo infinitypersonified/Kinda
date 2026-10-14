@@ -46,7 +46,7 @@ The frontend displays an explicit setup message if its two Convex URLs are missi
 
 1. Push this project to a GitHub repository. Do not commit `.env.local`, `.env` files containing real values, `node_modules`, `dist`, or local SQLite files.
 2. In Cloudflare, open **Workers & Pages → Create application → Pages → Connect to Git** and select the repository.
-3. Configure the Pages build with **Build command** `npm run build` and **Build output directory** `dist`. Add the production `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` as Pages environment variables (and PostHog values only if analytics are enabled). These `VITE_*` values are public and included in the website build.
+3. Configure the Pages build with **Build command** `npm run build` and **Build output directory** `dist`. Add `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` as Pages build environment variables for the right environment: **Production** for the main site and **Preview** for branch previews. Pages embeds these public `VITE_*` values at build time, so retry the deployment after changing them. Add PostHog values only if analytics are enabled.
 4. Deploy the Convex functions and component from the project root with `npx convex deploy`. Set production Convex environment values in the Convex dashboard:
    - `SITE_URL`: the exact public Pages/custom-domain origin
    - `BETTER_AUTH_SECRET`: a unique secret for production, different from development
