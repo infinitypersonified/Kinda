@@ -55,6 +55,10 @@ The frontend displays an explicit setup message if its two Convex URLs are missi
 
 Cloudflare Pages rebuilds the site after pushes to the connected branch. The invite route uses Cloudflare Pages' SPA fallback. Invite links created before deployment point to the current origin, so create/share new links from the deployed site.
 
+### Vercel deployment
+
+Vercel serves the app as a Vite single-page app. The included `vercel.json` rewrites `/join/:token` to the app shell so invite links load in the client router rather than returning Vercel's 404 page. Import the GitHub repository, use `npm run build` and `dist`, and configure the production `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` variables before deploying.
+
 ### Direct upload alternative
 
 If you do not want to connect GitHub, open **Workers & Pages → Create application → Pages → Drag and drop your files**. Set production `VITE_*` values in `.env.local`, run `npm run build`, then upload `dist`. Rebuild and upload `dist` again for every frontend change. You can also deploy with Wrangler after running `npx wrangler login` and creating the Pages project with `npx wrangler pages project create todully`.
