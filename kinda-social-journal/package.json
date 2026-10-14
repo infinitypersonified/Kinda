@@ -1,0 +1,14 @@
+{
+  "name": "kinda-social-journal-entrypoint",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix .. run dev",
+    "build": "npm --prefix .. run build",
+    "deploy": "npm --prefix .. run deploy",
+    "typecheck": "npm --prefix .. run typecheck",
+    "dev:convex": "npm --prefix .. run dev:convex",
+    "deploy:convex": "npm --prefix .. run deploy:convex"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "kinda-social-journal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:convex": "convex dev",
+    "build": "vite build",
+    "deploy:convex": "convex deploy",
+    "deploy": "wrangler pages deploy dist --project-name kinda-social-journal",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "^0.10.0",
+    "better-auth": "^1.4.9",
+    "convex": "^1.25.0",
+    "lucide-react": "^0.468.0",
+    "posthog-js": "^1.250.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "wrangler": "^4.14.1"
+  }
+}

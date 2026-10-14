@@ -1,0 +1,80 @@
+# Kinda — grow together
+
+Kinda is a social task app for personal focus and small circles. Members can create tasks, track focus timers, share tasks and progress with circles, chat together, and invite people with a signup link.
+
+## Stack
+
+- React 19 and Vite, hosted as a Cloudflare Pages site
+- Convex for app data and server functions
+- Better Auth with email and password sign-in, backed by the Convex Better Auth component
+- PostHog for privacy-conscious page analytics
+- Initial-based profile avatars (no paid file storage required)
+
+## Local development
+
+Requirements: Node.js 22.13 or newer and npm.
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Configure a new Convex development deployment (the CLI prompts you to sign in and choose a project):
+
+   ```bash
+   npm run dev:convex
+   ```
+
+   Convex generates the files under `convex/_generated/`. Keep these generated files with the project. Set these **deployment environment variables** in the Convex dashboard:
+   - `SITE_URL=http://localhost:5173`
+   - `BETTER_AUTH_SECRET`: a strong, unique secret
+
+3. Copy `.env.example` to `.env.local`. Fill in `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` with the development deployment URLs shown by Convex. Add your PostHog project key and host if analytics are enabled. Only `VITE_*` values belong here; they are bundled into the browser build.
+
+4. Start Vite:
+
+   ```bash
+   npm run dev
+   ```
+
+The frontend displays an explicit setup message if its two Convex URLs are missing. It does not silently fall back to local SQLite.
+
+## Cloudflare Pages deployment
+
+### GitHub-connected deployment (recommended)
+
+1. Push this project to a GitHub repository. Do not commit `.env.local`, `.env` files containing real values, `node_modules`, `dist`, or local SQLite files.
+2. In Cloudflare, open **Workers & Pages → Create application → Pages → Connect to Git** and select the repository.
+3. Configure the Pages build with **Build command** `npm run build` and **Build output directory** `dist`. Add the production `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` as Pages environment variables (and PostHog values only if analytics are enabled). These `VITE_*` values are public and included in the website build.
+4. Deploy the Convex functions and component from the project root with `npx convex deploy`. Set production Convex environment values in the Convex dashboard:
+   - `SITE_URL`: the exact public Pages/custom-domain origin
+   - `BETTER_AUTH_SECRET`: a unique secret for production, different from development
+5. Keep `SITE_URL` set to the exact, stable production Pages/custom-domain origin. `CONVEX_SITE_URL` is supplied by Convex; do not set it manually.
+
+Cloudflare Pages rebuilds the site after pushes to the connected branch. The invite route uses Cloudflare Pages' SPA fallback. Invite links created before deployment point to the current origin, so create/share new links from the deployed site.
+
+### Direct upload alternative
+
+If you do not want to connect GitHub, open **Workers & Pages → Create application → Pages → Drag and drop your files**. Set production `VITE_*` values in `.env.local`, run `npm run build`, then upload `dist`. Rebuild and upload `dist` again for every frontend change. You can also deploy with Wrangler after running `npx wrangler login` and creating the Pages project with `npx wrangler pages project create kinda-social-journal`.
+
+Profile photo uploads are currently disabled to avoid requiring a separate storage provider or billing setup. Members have generated initials avatars instead.
+
+## Analytics and privacy
+
+PostHog is optional. Without `VITE_POSTHOG_KEY`, no analytics client is initialized. When enabled, the app captures page views only; autocapture and session recording are disabled. Do not place private or secret values in public Vite environment variables.
+
+## Fresh cloud start and existing SQLite data
+
+The hosted app starts with a fresh Convex database; it does not import the local SQLite accounts, password hashes, or app data. The existing `data/kinda.sqlite` file and its WAL sidecars are left untouched. Keep a separate backup if you need the old local data; do not delete or upload it as part of deployment.
+
+## Useful commands
+
+```bash
+npm run dev          # Start the Vite frontend
+npm run dev:convex   # Configure/watch the Convex development deployment
+npm run deploy:convex # Deploy Convex functions and auth component (requires Convex login)
+npm run typecheck    # Type-check the frontend project
+npm run build        # Build the Pages site
+npm run deploy       # Upload dist/ to Cloudflare Pages via Wrangler
+```
