@@ -47,16 +47,17 @@ The frontend displays an explicit setup message if its two Convex URLs are missi
 1. Push this project to a GitHub repository. Do not commit `.env.local`, `.env` files containing real values, `node_modules`, `dist`, or local SQLite files.
 2. In Cloudflare, open **Workers & Pages → Create application → Pages → Connect to Git** and select the repository.
 3. Configure the Pages build with **Build command** `npm run build` and **Build output directory** `dist`. Add `VITE_CONVEX_URL` and `VITE_CONVEX_SITE_URL` as Pages build environment variables for the right environment: **Production** for the main site and **Preview** for branch previews. Pages embeds these public `VITE_*` values at build time, so retry the deployment after changing them. Add PostHog values only if analytics are enabled.
-4. Deploy the Convex functions and component from the project root with `npx convex deploy`. Set production Convex environment values in the Convex dashboard:
+4. Let Pages publish the `dist` directory after the build. If a custom **Deploy command** is configured, use `npx wrangler pages deploy dist --project-name todully` (not `npx wrangler deploy`, which attempts to deploy a Worker).
+5. Deploy the Convex functions and component from the project root with `npx convex deploy`. Set production Convex environment values in the Convex dashboard:
    - `SITE_URL`: the exact public Pages/custom-domain origin
    - `BETTER_AUTH_SECRET`: a unique secret for production, different from development
-5. Keep `SITE_URL` set to the exact, stable production Pages/custom-domain origin. `CONVEX_SITE_URL` is supplied by Convex; do not set it manually.
+6. Keep `SITE_URL` set to the exact, stable production Pages/custom-domain origin. `CONVEX_SITE_URL` is supplied by Convex; do not set it manually.
 
 Cloudflare Pages rebuilds the site after pushes to the connected branch. The invite route uses Cloudflare Pages' SPA fallback. Invite links created before deployment point to the current origin, so create/share new links from the deployed site.
 
 ### Direct upload alternative
 
-If you do not want to connect GitHub, open **Workers & Pages → Create application → Pages → Drag and drop your files**. Set production `VITE_*` values in `.env.local`, run `npm run build`, then upload `dist`. Rebuild and upload `dist` again for every frontend change. You can also deploy with Wrangler after running `npx wrangler login` and creating the Pages project with `npx wrangler pages project create kinda-social-journal`.
+If you do not want to connect GitHub, open **Workers & Pages → Create application → Pages → Drag and drop your files**. Set production `VITE_*` values in `.env.local`, run `npm run build`, then upload `dist`. Rebuild and upload `dist` again for every frontend change. You can also deploy with Wrangler after running `npx wrangler login` and creating the Pages project with `npx wrangler pages project create todully`.
 
 Profile photo uploads are currently disabled to avoid requiring a separate storage provider or billing setup. Members have generated initials avatars instead.
 
