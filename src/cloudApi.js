@@ -10,7 +10,12 @@ const routes = [
   { method: "GET", pattern: /^\/friends\/search$/, type: "query", name: "workspace:searchFriends", args: (_, url) => ({ query: url.searchParams.get("q") || "" }) },
   { method: "GET", pattern: /^\/activity$/, type: "query", name: "workspace:listActivity", args: () => ({}) },
   { method: "POST", pattern: /^\/groups$/, type: "mutation", name: "workspace:createCircle", args: body => body },
-  { method: "GET", pattern: /^\/groups$/, type: "query", name: "workspace:listCircles", args: () => ({}) }
+  { method: "GET", pattern: /^\/groups$/, type: "query", name: "workspace:listCircles", args: () => ({}) },
+  { method: "GET", pattern: /^\/nudges$/, type: "query", name: "workspace:listNudges", args: () => ({}) },
+  { method: "POST", pattern: /^\/nudges\/seen$/, type: "mutation", name: "workspace:markNudgesSeen", args: () => ({}) },
+  { method: "GET", pattern: /^\/streak$/, type: "query", name: "workspace:myStreak", args: (_, url) => ({ tzOffset: Number(url.searchParams.get("tz") || 0) }) },
+  { method: "GET", pattern: /^\/export$/, type: "query", name: "workspace:exportData", args: () => ({}) },
+  { method: "POST", pattern: /^\/account\/delete$/, type: "mutation", name: "workspace:deleteAccount", args: body => body }
 ];
 
 function readBody(options) {
@@ -28,8 +33,7 @@ function notFound() {
   throw error;
 }
 
-export function createCloudApi(client) {
-  return async function cloudApi(path, options = {}) {
+function resolveRoute(path, options = {}) {
     const url = new URL(path, window.location.origin);
     const method = options.method || "GET";
     const body = readBody(options);
@@ -72,20 +76,77 @@ export function createCloudApi(client) {
         args = { friendId: match[1] };
       } else if ((match = url.pathname.match(/^\/activity\/([^/]+)\/react$/)) && method === "POST") {
         route = { type: "mutation", name: "workspace:toggleReaction" };
-        args = { activityId: match[1] };
+        args = { activityId: match[1], ...body };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/invite\/revoke$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:revokeInvite" };
+        args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/recap$/)) && method === "GET") {
+        route = { type: "query", name: "workspace:circleRecap" };
+        args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/typing$/)) && method === "GET") {
+        route = { type: "query", name: "workspace:listTyping" };
+        args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/typing$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:setTyping" };
+        args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/messages\/([^/]+)$/)) && method === "PATCH") {
+        route = { type: "mutation", name: "workspace:editMessage" };
+        args = { messageId: match[1], ...body };
+      } else if ((match = url.pathname.match(/^\/messages\/([^/]+)$/)) && method === "DELETE") {
+        route = { type: "mutation", name: "workspace:deleteMessage" };
+        args = { messageId: match[1] };
+      } else if ((match = url.pathname.match(/^\/tasks\/([^/]+)\/nudge$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:nudgeTask" };
+        args = { taskId: match[1] };
       }
     }
     if (!route) return notFound();
+    return { route, args };
+}
+
+function friendlyError(cause) {
+  const message = cause?.data || cause?.message || "The request failed. Please try again.";
+  const error = new Error(String(message).replace(/^Uncaught Error:\s*/, ""));
+  if (/unauthenticated|not authenticated/i.test(error.message)) error.status = 401;
+  return error;
+}
+
+export function createCloudApi(client) {
+  return async function cloudApi(path, options = {}) {
+    const { route, args } = resolveRoute(path, options);
     try {
       const reference = makeFunctionReference(route.name);
       return route.type === "query"
         ? await client.query(reference, args)
         : await client.mutation(reference, args);
     } catch (cause) {
-      const message = cause?.data || cause?.message || "The request failed. Please try again.";
-      const error = new Error(String(message).replace(/^Uncaught Error:\s*/, ""));
-      if (/unauthenticated|not authenticated/i.test(error.message)) error.status = 401;
-      throw error;
+      throw friendlyError(cause);
     }
+  };
+}
+
+// Subscribes to a GET path; onData fires on every change pushed by Convex. Returns an unsubscribe function.
+export function createCloudLive(client) {
+  return function live(path, onData, onError = () => {}) {
+    let route;
+    let args;
+    try {
+      ({ route, args } = resolveRoute(path));
+    } catch (error) {
+      onError(error);
+      return () => {};
+    }
+    const watch = client.watchQuery(makeFunctionReference(route.name), args);
+    const deliver = () => {
+      try {
+        const result = watch.localQueryResult();
+        if (result !== undefined) onData(result);
+      } catch (cause) {
+        onError(friendlyError(cause));
+      }
+    };
+    const unsubscribe = watch.onUpdate(deliver);
+    deliver();
+    return unsubscribe;
   };
 }

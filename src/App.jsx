@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, CheckSquare2, Clock3, Heart,
-  House, LogOut, Menu, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
-  Search, Send, Settings, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
+  ArrowLeft, ArrowRight, Bell, CalendarDays, Check, CheckSquare2, Clock3, Heart,
+  Download, Flame, House, LogOut, Menu, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
+  CornerUpLeft, Moon, Repeat, Search, Send, Settings, Sun, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
   Users, X
 } from "lucide-react";
-import { createCloudApi } from "./cloudApi.js";
+import { createCloudApi, createCloudLive } from "./cloudApi.js";
 
 const categories = ["Personal", "Learning", "Building", "Health", "Creative work", "Relationships"];
 const pages = [
@@ -84,6 +84,7 @@ function playCelebrationSound(context) {
 function App({ authClient }) {
   const convexClient = useConvex();
   const api = useMemo(() => createCloudApi(convexClient), [convexClient]);
+  const live = useMemo(() => createCloudLive(convexClient), [convexClient]);
   const { data: authSession, isPending: authPending } = authClient.useSession();
   const inviteTokenFromUrl = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]{32,})\/?$/)?.[1] || "";
   const [user, setUser] = useState(null);
@@ -99,8 +100,18 @@ function App({ authClient }) {
   const [friends, setFriends] = useState([]);
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
-  const [sharedTasks, setSharedTasks] = useState([]);
-  const [messages, setMessages] = useState([]);
+  const [messagesByGroup, setMessagesByGroup] = useState({});
+  const [goalsByGroup, setGoalsByGroup] = useState({});
+  const [typingByGroup, setTypingByGroup] = useState({});
+  const [nudges, setNudges] = useState([]);
+  const [streak, setStreak] = useState(null);
+  const [recap, setRecap] = useState(null);
+  const [activityLoaded, setActivityLoaded] = useState(false);
+  const [replyTo, setReplyTo] = useState(null);
+  const [chatDivider, setChatDivider] = useState(null);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("kinda:theme") || "system"; } catch { return "system"; } });
+  const [notifPermission, setNotifPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  const typingSentRef = useRef(0);
   const [activity, setActivity] = useState([]);
   const [friendSearch, setFriendSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -121,7 +132,15 @@ function App({ authClient }) {
   const [tick, setTick] = useState(Date.now());
   const [menuOpen, setMenuOpen] = useState(false);
   const [seen, setSeen] = useState({ chat: {}, activity: null, shared: null });
-  const [incoming, setIncoming] = useState({ chat: {}, shared: [] });
+  const messages = messagesByGroup[activeGroup?.id] || [];
+  const sharedTasks = goalsByGroup[activeGroup?.id] || [];
+  const incoming = useMemo(() => {
+    const chat = {};
+    const shared = [];
+    Object.entries(messagesByGroup).forEach(([id, list]) => { chat[id] = list.filter(message => message.senderId !== user?.id).map(message => message.createdAt); });
+    Object.entries(goalsByGroup).forEach(([id, list]) => list.forEach(task => { if (task.ownerId !== user?.id) shared.push(`${id}:${task.id}`); }));
+    return { chat, shared };
+  }, [messagesByGroup, goalsByGroup, user?.id]);
 
   const loadWorkspace = useCallback(async () => {
     const [taskData, friendData, groupData] = await Promise.all([
@@ -134,9 +153,7 @@ function App({ authClient }) {
   }, [api]);
 
   const loadActivity = useCallback(async () => {
-    const data = await api("/activity");
-    setActivity(data);
-    setSeen(current => current.activity === null ? { ...current, activity: data[0]?.createdAt || "" } : current);
+    setActivity(await api("/activity"));
   }, [api]);
 
   useEffect(() => {
@@ -155,8 +172,12 @@ function App({ authClient }) {
       setFriends([]);
       setGroups([]);
       setActiveGroup(null);
-      setSharedTasks([]);
-      setMessages([]);
+      setMessagesByGroup({});
+      setGoalsByGroup({});
+      setTypingByGroup({});
+      setNudges([]);
+      setStreak(null);
+      setActivityLoaded(false);
       setActivity([]);
       setScreen(current => current === "dashboard" ? "landing" : current);
       setLoading(false);
@@ -197,61 +218,57 @@ function App({ authClient }) {
 
   useEffect(() => {
     if (!user) return undefined;
-    Promise.all([loadWorkspace(), loadActivity()]).catch(error => setToast(error.message));
-    const clock = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(clock);
-  }, [user?.id, loadWorkspace, loadActivity]);
-
-  useEffect(() => {
-    if (!user || !activeGroup) {
-      setMessages([]);
-      setSharedTasks([]);
-      return undefined;
-    }
-    let cancelled = false;
-    let newestId = 0;
-    let running = false;
-    const refresh = async initial => {
-      if (running) return;
-      running = true;
-      try {
-        const query = initial ? "" : `?after=${newestId}`;
-        const [incoming, visibleTasks, circleData] = await Promise.all([
-          api(`/groups/${activeGroup.id}/messages${query}`),
-          api(`/groups/${activeGroup.id}/goals`),
-          api("/groups")
-        ]);
-        if (cancelled) return;
-        setSharedTasks(visibleTasks);
-        setGroups(circleData);
+    let errorShown = false;
+    const onError = error => { if (!errorShown) { errorShown = true; setToast(error.message); } };
+    const memberKey = group => group.members.map(member => member.id + member.avatar).join(",");
+    const unsubs = [
+      live("/tasks", setTasks, onError),
+      live("/friends", setFriends, onError),
+      live("/groups", groupData => {
+        setGroups(groupData);
         setActiveGroup(current => {
-          const refreshed = circleData.find(group => group.id === activeGroup.id);
-          if (!refreshed) return circleData[0] || null;
-          const currentMembers = current?.members?.map(member => member.id + member.avatar).join(",");
-          const refreshedMembers = refreshed.members.map(member => member.id + member.avatar).join(",");
-          if (current?.id === refreshed.id && currentMembers === refreshedMembers
+          const refreshed = groupData.find(group => group.id === current?.id);
+          if (!refreshed) return groupData[0] || null;
+          if (memberKey(current) === memberKey(refreshed) && current.name === refreshed.name
             && current.taskCount === refreshed.taskCount && current.doneCount === refreshed.doneCount) return current;
           return refreshed;
         });
-        if (initial) setMessages(incoming);
-        else if (incoming.length) setMessages(current => [
-          ...current,
-          ...incoming.filter(message => !current.some(existing => existing.id === message.id))
-        ]);
-        if (incoming.length) newestId = incoming[incoming.length - 1].id;
-      } catch (error) {
-        if (!cancelled) setToast(error.message);
-      } finally {
-        running = false;
-      }
-    };
-    refresh(true);
-    const poll = window.setInterval(() => refresh(false), 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(poll);
-    };
-  }, [user, activeGroup]);
+      }, onError),
+      live("/activity", data => { setActivity(data); setActivityLoaded(true); }, onError),
+      live("/nudges", setNudges, onError),
+      live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError)
+    ];
+    const clock = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => { unsubs.forEach(stop => stop()); window.clearInterval(clock); };
+  }, [user?.id, live]);
+
+  const groupIds = groups.map(group => group.id).join(",");
+  useEffect(() => {
+    if (!user || !groupIds) { setMessagesByGroup({}); setGoalsByGroup({}); return undefined; }
+    const unsubs = groupIds.split(",").flatMap(id => [
+      live(`/groups/${id}/messages`, data => setMessagesByGroup(current => ({ ...current, [id]: data })), () => {}),
+      live(`/groups/${id}/goals`, data => setGoalsByGroup(current => ({ ...current, [id]: data })), () => {})
+    ]);
+    return () => unsubs.forEach(stop => stop());
+  }, [user?.id, groupIds, live]);
+
+  useEffect(() => {
+    if (!user || !activeGroup) return undefined;
+    const id = activeGroup.id;
+    return live(`/groups/${id}/typing`, data => setTypingByGroup(current => {
+      const previous = current[id] || [];
+      return { ...current, [id]: data.map(row => {
+        const old = previous.find(item => item.userId === row.userId && item.updatedAt === row.updatedAt);
+        return { ...row, receivedAt: old ? old.receivedAt : Date.now() };
+      }) };
+    }), () => {});
+  }, [user?.id, activeGroup?.id, live]);
+
+  useEffect(() => {
+    if (!user || page !== "circles" || !activeGroup) { setRecap(null); return undefined; }
+    setRecap(null);
+    return live(`/groups/${activeGroup.id}/recap`, setRecap, () => {});
+  }, [user?.id, page, activeGroup?.id, live]);
 
   // ---- Notification badges ----
   useEffect(() => {
@@ -267,48 +284,29 @@ function App({ authClient }) {
   }, [seen, user?.id]);
 
   useEffect(() => {
-    if (!user) return undefined;
-    const timer = window.setInterval(() => loadActivity().catch(() => {}), 15000);
-    return () => window.clearInterval(timer);
-  }, [user?.id, loadActivity]);
+    if (!user) return;
+    setSeen(current => {
+      const next = { ...current, chat: { ...current.chat } };
+      let changed = false;
+      Object.entries(incoming.chat).forEach(([id, times]) => {
+        if (next.chat[id] === undefined) { next.chat[id] = times[times.length - 1] || ""; changed = true; }
+      });
+      if (next.shared === null && groups.length && Object.keys(goalsByGroup).length >= groups.length) { next.shared = incoming.shared; changed = true; }
+      if (next.activity === null && activityLoaded) { next.activity = activity[0]?.createdAt || ""; changed = true; }
+      return changed ? next : current;
+    });
+  }, [incoming, groups.length, goalsByGroup, activity, activityLoaded, user?.id]);
 
-  const groupIds = groups.map(group => group.id).join(",");
+  const seenRef = useRef(seen);
+  seenRef.current = seen;
   useEffect(() => {
-    if (!user || !groupIds) return undefined;
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const results = await Promise.all(groupIds.split(",").map(async id => {
-          const [msgs, goals] = await Promise.all([api(`/groups/${id}/messages`), api(`/groups/${id}/goals`)]);
-          return {
-            id,
-            times: msgs.filter(message => message.senderId !== user.id).map(message => message.createdAt),
-            shared: goals.filter(task => task.ownerId !== user.id).map(task => `${id}:${task.id}`)
-          };
-        }));
-        if (cancelled) return;
-        const chat = {};
-        let shared = [];
-        results.forEach(item => { chat[item.id] = item.times; shared = shared.concat(item.shared); });
-        setIncoming({ chat, shared });
-        setSeen(current => {
-          const next = { ...current, chat: { ...current.chat } };
-          let changed = false;
-          results.forEach(item => {
-            if (next.chat[item.id] === undefined) { next.chat[item.id] = item.times[item.times.length - 1] || ""; changed = true; }
-          });
-          if (next.shared === null) { next.shared = shared; changed = true; }
-          return changed ? next : current;
-        });
-      } catch { /* ignore, next poll retries */ }
-    };
-    run();
-    const timer = window.setInterval(run, 8000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [user?.id, groupIds, api]);
+    if (page !== "chat" || !activeGroup) return;
+    setChatDivider({ groupId: activeGroup.id, time: seenRef.current.chat[activeGroup.id] ?? null });
+  }, [page, activeGroup?.id, chatMobileOpen]);
 
   useEffect(() => {
     if (!user) return;
+    if (page === "activity" && nudges.some(item => !item.seen)) api("/nudges/seen", { method: "POST", body: "{}" }).catch(() => {});
     if (page === "activity" && activity[0]) {
       setSeen(current => current.activity === activity[0].createdAt ? current : { ...current, activity: activity[0].createdAt });
     }
@@ -320,7 +318,7 @@ function App({ authClient }) {
       const latest = [...(incoming.chat[activeGroup.id] || []), ...fromOthers].sort().pop();
       if (latest) setSeen(current => (current.chat[activeGroup.id] || "") >= latest ? current : { ...current, chat: { ...current.chat, [activeGroup.id]: latest } });
     }
-  }, [page, activity, incoming, messages, activeGroup?.id, chatMobileOpen, user?.id]);
+  }, [page, activity, nudges, incoming, messages, activeGroup?.id, chatMobileOpen, user?.id]);
 
   useEffect(() => {
     if (page !== "chat" || !chatMobileOpen) return;
@@ -345,6 +343,13 @@ function App({ authClient }) {
     };
   }, [user, page, friendSearch]);
 
+  const badges = {
+    chat: Object.entries(incoming.chat).reduce((total, [id, times]) => total + times.filter(time => time > (seen.chat[id] ?? "\uffff")).length, 0),
+    activity: (seen.activity === null || !user ? 0 : activity.filter(item => item.actorId !== user.id && item.createdAt > seen.activity).length) + nudges.filter(item => !item.seen).length,
+    circles: seen.shared === null ? 0 : incoming.shared.filter(key => !seen.shared.includes(key)).length,
+    tasks: tasks.filter(task => !task.done && task.dueDate && task.dueDate <= localDate()).length
+  };
+  const totalBadges = badges.chat + badges.activity + badges.circles;
   const doneTasks = tasks.filter(task => task.done);
   const openTasks = tasks.filter(task => !task.done);
   const todayTasks = tasks.filter(task => task.dueDate === localDate());
@@ -355,6 +360,45 @@ function App({ authClient }) {
     if (filter === "No date") return openTasks.filter(task => !task.dueDate);
     return todayTasks;
   }, [filter, doneTasks, openTasks, todayTasks]);
+
+  useEffect(() => {
+    document.title = user && totalBadges > 0 ? `(${totalBadges}) Kinda — grow together` : "Kinda — grow together";
+  }, [totalBadges, user?.id]);
+
+  const previousAlerts = useRef({ chat: 0, nudges: 0 });
+  useEffect(() => {
+    const unseenNudges = nudges.filter(item => !item.seen).length;
+    const growing = badges.chat > previousAlerts.current.chat || unseenNudges > previousAlerts.current.nudges;
+    previousAlerts.current = { chat: badges.chat, nudges: unseenNudges };
+    if (growing && user && document.hidden && notifPermission === "granted") {
+      try { new Notification("Kinda", { body: unseenNudges ? "Someone sent you a nudge." : "You have new messages in your circles.", icon: "/icon-192.png" }); } catch { /* ignore */ }
+    }
+  }, [badges.chat, nudges, notifPermission, user?.id]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const check = () => {
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      tasks.forEach(task => {
+        if (task.done || !task.reminderTime || task.dueDate !== localDate() || hhmm < task.reminderTime) return;
+        const key = `kinda:reminded:${task.id}:${task.dueDate}`;
+        try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch { return; }
+        setToast(`Reminder: ${task.title}`);
+        if (notifPermission === "granted") try { new Notification("Kinda reminder", { body: task.title, icon: "/icon-192.png" }); } catch { /* ignore */ }
+      });
+    };
+    check();
+    const timer = window.setInterval(check, 30000);
+    return () => window.clearInterval(timer);
+  }, [user?.id, tasks, notifPermission]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme);
+    else root.removeAttribute("data-theme");
+    try { localStorage.setItem("kinda:theme", theme); } catch { /* ignore */ }
+  }, [theme]);
 
   function notify(message) {
     setToast(message);
@@ -406,8 +450,12 @@ function App({ authClient }) {
       setFriends([]);
       setGroups([]);
       setActiveGroup(null);
-      setSharedTasks([]);
-      setMessages([]);
+      setMessagesByGroup({});
+      setGoalsByGroup({});
+      setTypingByGroup({});
+      setNudges([]);
+      setStreak(null);
+      setActivityLoaded(false);
       setActivity([]);
       setScreen("landing");
       setPage("home");
@@ -427,7 +475,9 @@ function App({ authClient }) {
       priority: String(form.get("priority") || "normal"),
       category: String(form.get("category") || "Personal"),
       visibility: String(form.get("visibility") || "private"),
-      targetMinutes: Number(form.get("targetMinutes") || 25)
+      targetMinutes: Number(form.get("targetMinutes") || 25),
+      repeat: String(form.get("repeat") || "none"),
+      reminderTime: String(form.get("reminderTime") || "")
     };
     try {
       if (taskDialog?.task) {
@@ -483,9 +533,10 @@ function App({ authClient }) {
     }
   }
 
-  async function addFriend(email) {
+  async function addFriend(target) {
     try {
-      const added = await api("/friends", { method: "POST", body: JSON.stringify({ email }) });
+      const payload = typeof target === "string" ? { email: target } : target;
+      const added = await api("/friends", { method: "POST", body: JSON.stringify(payload) });
       await Promise.all([loadWorkspace(), loadActivity()]);
       setSearchResults(current => current.map(person => person.id === added.id ? { ...person, isFriend: true } : person));
       setFriendDialog(false);
@@ -527,7 +578,26 @@ function App({ authClient }) {
       const invitation = await api(`/groups/${group.id}/invite`, { method: "POST", body: JSON.stringify({}) });
       const link = `${window.location.origin}/join/${invitation.token}`;
       setInviteLinks(current => ({ ...current, [group.id]: link }));
-      notify("Invite link ready. Share it with your people.");
+      notify("Invite link ready. It works for 7 days.");
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  async function revokeInviteLink(group) {
+    try {
+      await api(`/groups/${group.id}/invite/revoke`, { method: "POST", body: "{}" });
+      setInviteLinks(current => { const next = { ...current }; delete next[group.id]; return next; });
+      notify("Invite link revoked.");
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  async function nudgeTask(task) {
+    try {
+      await api(`/tasks/${task.id}/nudge`, { method: "POST", body: "{}" });
+      notify(`Nudge sent to ${task.ownerName}.`);
     } catch (error) {
       notify(error.message);
     }
@@ -553,9 +623,9 @@ function App({ authClient }) {
     }
   }
 
-  async function reactToActivity(item) {
+  async function reactToActivity(item, emoji = "❤️") {
     try {
-      const response = await api(`/activity/${item.id}/react`, { method: "POST", body: JSON.stringify({}) });
+      const response = await api(`/activity/${item.id}/react`, { method: "POST", body: JSON.stringify({ emoji }) });
       setActivity(current => current.map(entry => entry.id === item.id ? { ...entry, ...response } : entry));
     } catch (error) {
       notify(error.message);
@@ -583,6 +653,61 @@ function App({ authClient }) {
     }
   }
 
+  async function editMessage(message, content) {
+    try {
+      await api(`/messages/${message.id}`, { method: "PATCH", body: JSON.stringify({ content }) });
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  async function deleteMessage(message) {
+    try {
+      await api(`/messages/${message.id}`, { method: "DELETE" });
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  function handleTyping() {
+    if (!activeGroup || Date.now() - typingSentRef.current < 2500) return;
+    typingSentRef.current = Date.now();
+    api(`/groups/${activeGroup.id}/typing`, { method: "POST", body: "{}" }).catch(() => {});
+  }
+
+  async function exportMyData() {
+    try {
+      const data = await api("/export");
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "kinda-export.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  async function deleteAccount(confirm) {
+    try {
+      await api("/account/delete", { method: "POST", body: JSON.stringify({ confirm }) });
+      try { await authClient.signOut(); } catch { /* account is already gone */ }
+      try { localStorage.removeItem(`kinda:seen:${user.id}`); } catch { /* ignore */ }
+      setUser(null);
+      setProfile(null);
+      setTasks([]);
+      setFriends([]);
+      setGroups([]);
+      setActiveGroup(null);
+      setActivity([]);
+      setScreen("landing");
+      setPage("home");
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     const content = newMessage.trim();
@@ -591,14 +716,10 @@ function App({ authClient }) {
     sendingMessageRef.current = true;
     setSendingMessage(true);
     try {
-      const message = await api(`/groups/${groupId}/messages`, {
-        method: "POST", body: JSON.stringify({ content })
+      await api(`/groups/${groupId}/messages`, {
+        method: "POST", body: JSON.stringify({ content, replyTo: replyTo?.id })
       });
-      if (activeGroup?.id === groupId) {
-        setMessages(current => current.some(existing => existing.id === message.id)
-          ? current
-          : [...current, message]);
-      }
+      setReplyTo(null);
       setNewMessage("");
     } catch (error) {
       notify(error.message);
@@ -615,13 +736,6 @@ function App({ authClient }) {
     return <AuthScreen mode={screen} setMode={setScreen} onSubmit={submitAuth} error={authError} busy={authBusy} inviteName={invitePreview?.name} />;
   }
 
-  const badges = {
-    chat: Object.entries(incoming.chat).reduce((total, [id, times]) => total + times.filter(time => time > (seen.chat[id] ?? "\uffff")).length, 0),
-    activity: seen.activity === null ? 0 : activity.filter(item => item.actorId !== user.id && item.createdAt > seen.activity).length,
-    circles: seen.shared === null ? 0 : incoming.shared.filter(key => !seen.shared.includes(key)).length,
-    tasks: tasks.filter(task => !task.done && task.dueDate && task.dueDate <= localDate()).length
-  };
-  const totalBadges = badges.chat + badges.activity + badges.circles;
   const activeTimer = tasks.find(task => task.timerStartedAt && !task.done);
   const activePage = pages.find(item => item.id === page) || pages[0];
   const todayDoneTasks = todayTasks.filter(task => task.done);
@@ -663,6 +777,7 @@ function App({ authClient }) {
           onComplete={(task, done) => updateTask(task, "complete", { done })}
           onTimer={(task, action) => updateTask(task, action)} onReact={reactToActivity}
           onPage={navigate} onCircle={group => { setActiveGroup(group); navigate("circles"); }} onCreateCircle={() => setCircleDialog(true)}
+          streak={streak}
         />}
         {page === "tasks" && <TasksPage
           tasks={filteredTasks} filter={filter} setFilter={setFilter} allCount={tasks.length}
@@ -686,19 +801,26 @@ function App({ authClient }) {
           onCopyInvite={copyInviteLink}
           onCreateTask={() => setTaskDialog({ task: null, groupIds: activeGroup ? [activeGroup.id] : [] })}
           onOpenChat={() => navigate("chat")}
+          recap={recap} onNudge={nudgeTask} onRevokeInvite={revokeInviteLink}
         />}
-        {page === "activity" && <ActivityPage activity={activity} userId={user.id} onReact={reactToActivity}/>}
+        {page === "activity" && <ActivityPage activity={activity} nudges={nudges} userId={user.id} onReact={reactToActivity}/>}
         {page === "chat" && <ChatPage
           groups={groups} activeGroup={activeGroup} setActiveGroup={group => { setActiveGroup(group); setChatMobileOpen(true); }}
           messages={messages} sharedTasks={sharedTasks} user={user} value={newMessage} setValue={setNewMessage}
           onSend={sendMessage} sending={sendingMessage} friends={friends} mobileOpen={chatMobileOpen}
           onMobileBack={() => setChatMobileOpen(false)} onInvite={() => setCircleDialog(true)}
+          typingNames={(typingByGroup[activeGroup?.id] || []).filter(row => tick - row.receivedAt < 5000).map(row => row.name)}
+          replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)}
+          onEdit={editMessage} onDelete={deleteMessage} onTyping={handleTyping}
+          dividerTime={chatDivider && chatDivider.groupId === activeGroup?.id ? chatDivider.time : null}
         />}
         {page === "profile" && <ProfilePage
           user={profile || user} tasks={tasks} friends={friends} editing={profileEditing}
           setEditing={setProfileEditing} onSave={saveProfile} onFriend={openFriend}
         />}
-        {page === "settings" && <SettingsPage user={user} onSignOut={signOut}/>}
+        {page === "settings" && <SettingsPage user={user} onSignOut={signOut} theme={theme} setTheme={setTheme}
+          notifPermission={notifPermission} onEnableNotifications={() => Notification.requestPermission().then(setNotifPermission)}
+          onExport={exportMyData} onDelete={deleteAccount}/>}
       </section>
 
       {taskDialog && <TaskDialog task={taskDialog.task} groups={groups} initialGroupIds={taskDialog.groupIds} onClose={() => setTaskDialog(null)} onSave={saveTask}/>}
@@ -781,11 +903,12 @@ function PageHeader({ eyebrow, title, description, action }) {
   return <header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
 }
 
-function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, tick, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle }) {
+function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, tick, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak }) {
   const activeLeaderboard = groups.find(group => group.id === leaderboardGroupId) || groups[0] || null;
   return <div className="page-content home-page">
     <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase()} title="Home" description={`Good morning, ${user.name.split(/\s+/)[0]}. Here’s today.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
     <section className="today-summary" aria-label="Today's task progress"><div><b>Today</b><span>{done} of {total} tasks complete</span></div><div className="summary-progress"><span style={{ width: `${completion}%` }}/></div><strong>{completion}<small>%</small></strong></section>
+    {streak && (streak.current > 0 || streak.best > 0) && <section className="streak-chip" role="status"><Flame size={16}/><b>{streak.current}-day streak</b><span>{streak.doneToday ? "Nice, you've shown up today." : streak.current ? "Finish one task today to keep it going." : "Finish a task to start a new one."} Best: {streak.best}.</span></section>}
     {remainingTasks > 0 ? <section className="motivation-card" role="status"><span><Heart size={17}/></span><div><b>One step at a time.</b><p>You’ve got {remainingTasks} {remainingTasks === 1 ? "task" : "tasks"} still on your list. Pick one small next step—progress matters more than perfection.</p></div></section> : total > 0 && <section className="motivation-card motivation-complete" role="status"><span><Check size={17}/></span><div><b>Look at what you’ve done.</b><p>Your tasks for today are complete. Take a breath and feel good about showing up.</p></div></section>}
     <div className="home-grid">
       <section className="home-tasks"><div className="section-title-row"><div><p className="eyebrow">YOUR DAY</p><h2>Tasks for today</h2></div><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
@@ -815,7 +938,7 @@ function TaskRow({ task, tick, onComplete, onTimer, onEdit, onDelete }) {
   const remaining = Math.max(0, task.targetMinutes * 60 - elapsed);
   return <article className={`task-row ${task.done ? "task-complete" : ""}`}>
     <button className={`task-check ${task.done ? "checked" : ""}`} aria-label={task.done ? "Reopen task" : "Complete task"} onClick={() => onComplete(!task.done)}>{task.done && <Check size={14}/>}</button>
-    <div className="task-main"><div className="task-heading"><h3>{task.title}</h3>{task.priority === "high" && !task.done && <span className="priority-tag">HIGH PRIORITY</span>}{task.groupIds?.length > 0 && <span className="shared-tag">IN A CIRCLE</span>}</div>{task.description && <p className="task-description">{task.description}</p>}
+    <div className="task-main"><div className="task-heading"><h3>{task.title}</h3>{task.priority === "high" && !task.done && <span className="priority-tag">HIGH PRIORITY</span>}{task.groupIds?.length > 0 && <span className="shared-tag">IN A CIRCLE</span>}{task.repeat && task.repeat !== "none" && <span className="shared-tag"><Repeat size={10}/> REPEATS</span>}</div>{task.description && <p className="task-description">{task.description}</p>}
       <div className="task-meta"><span>{task.category}</span><span className="meta-separator">·</span><CalendarDays size={13}/><span>{dayLabel(task.dueDate)}</span>{task.dueDate && <span className="task-date">{task.dueDate}</span>}</div>
       {!task.done && <div className="task-focus"><span className="focus-readout">{formatTime(remaining)}</span>{onTimer && <button className="timer-control" onClick={() => onTimer(task.timerStartedAt ? "stop" : "start")}>{task.timerStartedAt ? <Pause size={12}/> : <Play size={12}/>} {task.timerStartedAt ? "Pause focus" : elapsed ? "Resume focus" : `${task.targetMinutes} min focus`}</button>}</div>}
     </div>
@@ -827,7 +950,7 @@ function EmptyTasks({ onCreate, title = "Start with one thing.", compact = false
   return <div className={`empty-tasks ${compact ? "empty-compact" : ""}`}><span className="empty-spark">✳</span><h3>{title}</h3><p>Add a task when you’re ready. You can keep it private or share it with friends.</p><button className="text-link" onClick={onCreate}><Plus size={15}/> Create a task</button></div>;
 }
 
-function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat }) {
+function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite }) {
   const memberTaskGroups = (activeGroup?.members || []).map(member => {
     const memberTasks = sharedTasks.filter(task => task.ownerId === member.id);
     const done = memberTasks.filter(task => task.done).length;
@@ -840,38 +963,54 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
   </div>;
   return <div className="page-content">
     <PageHeader eyebrow="YOUR PEOPLE, YOUR SPACE" title="Circles" description="Create a circle, invite friends, share tasks, and follow progress together." action={<button className="button button-primary" onClick={onCreateCircle}><Plus size={16}/> Create circle</button>}/>
-    <label className="search-box"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find someone by name or email" autoComplete="off"/></label>
+    <label className="search-box"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find someone by name" autoComplete="off"/></label>
     {query.trim().length >= 2 && <section className="search-results"><p className="eyebrow">PEOPLE</p>{results.length ? results.map((person, index) => {
       const isMember = activeGroup?.members?.some(member => member.id === person.id);
-      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index} avatar={person.avatar}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || person.email}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || activeGroup.ownerId !== user.id} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd(person.email)}>Add friend</button>}</div>;
+      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index} avatar={person.avatar}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || "Kinda member"}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || activeGroup.ownerId !== user.id} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd({ friendId: person.id })}>Add friend</button>}</div>;
     }) : <p className="quiet-empty">No accounts match that search yet.</p>}</section>}
     <section className="circles-directory"><div className="section-title-row"><div><p className="eyebrow">YOUR CIRCLES</p><h2>{groups.length ? `${groups.length} ${groups.length === 1 ? "circle" : "circles"}` : "Start a circle"}</h2></div></div>
       {groups.length ? <div className="circles-layout"><div className="circles-list">{groups.map((group, index) => <button className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`} key={group.id} onClick={() => onSelect(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"}</small></span><ArrowRight size={15}/></button>)}</div>
         {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button></div></div>
           <div className="circle-progress"><div><b>{sharedTasks.filter(task => task.done).length} of {sharedTasks.length} tasks done</b><span>{sharedTasks.length ? Math.round(sharedTasks.filter(task => task.done).length / sharedTasks.length * 100) : 0}%</span></div><div className="summary-progress"><span style={{ width: `${sharedTasks.length ? sharedTasks.filter(task => task.done).length / sharedTasks.length * 100 : 0}%` }}/></div></div>
+          {recap && <div className="circle-recap"><p className="eyebrow">THIS WEEK</p><b>{recap.total} {recap.total === 1 ? "task" : "tasks"} finished together</b>{recap.top && <span><Flame size={13}/> {recap.top.name} led with {recap.top.completed}</span>}<div className="recap-members">{recap.members.map(member => <span key={member.id}><Avatar name={member.name} avatar={member.avatar}/>{member.completed}</span>)}</div></div>}
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
           <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <span className="circle-member" key={member.id}><Avatar name={member.name} index={index} avatar={member.avatar}/>{member.name}{member.id === activeGroup.ownerId && <small>Owner</small>}</span>)}</div>
-            {activeGroup.ownerId === user.id && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button></div>}</div>}
+            {activeGroup.ownerId === user.id && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
           </div>
-          <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name} avatar={member.avatar}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div></article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
+          <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name} avatar={member.avatar}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div>{task.ownerId !== user.id && !task.done && task.dueDate && task.dueDate < localDate() && <button className="nudge-button" onClick={() => onNudge(task)}><Bell size={13}/> Nudge</button>}</article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
         </section>}
       </div> : <p className="quiet-empty">Create a circle to share tasks and progress with your people.</p>}
     </section>
   </div>;
 }
 
-function ActivityPage({ activity, userId, onReact }) {
+function ActivityPage({ activity, nudges = [], userId, onReact }) {
   return <div className="page-content">
     <PageHeader eyebrow="GOOD THINGS, NOT SCORES" title="Activity" description="A quiet look at what your friends are working on."/>
-    {activity.length ? <ActivityList items={activity} userId={userId} onReact={onReact}/> : <div className="page-empty"><Heart size={22}/><h2>Nothing new just yet.</h2><p>When you and your friends share tasks or finish one, you’ll see it here.</p></div>}
+    {nudges.length > 0 && <section className="nudge-list"><p className="eyebrow">GENTLE NUDGES</p>{nudges.slice(0, 5).map(nudge => <article className={`nudge-item ${nudge.seen ? "" : "nudge-new"}`} key={nudge.id}><Avatar name={nudge.fromName} avatar={nudge.fromAvatar}/><p><b>{nudge.fromName}</b> nudged you about <strong>{nudge.taskTitle}</strong></p><small>{dateTime(nudge.createdAt)}</small></article>)}</section>}
+    {activity.length ? <ActivityList items={activity} userId={userId} onReact={onReact}/> : nudges.length === 0 && <div className="page-empty"><Heart size={22}/><h2>Nothing new just yet.</h2><p>When you and your friends share tasks or finish one, you’ll see it here.</p></div>}
   </div>;
 }
 
-function ActivityList({ items, userId, onReact, compact = false }) {
-  return <div className={`activity-list ${compact ? "activity-list-compact" : ""}`}>{items.map((item, index) => <article className="activity-item" key={item.id}><Avatar name={item.actorName} index={index} avatar={item.actorAvatar}/><div className="activity-copy"><p><b>{item.actorId === userId ? "You" : item.actorName}</b> {item.type === "completed" ? "completed" : "added a task"} <strong>{item.taskTitle}</strong></p><small>{dateTime(item.createdAt)}</small></div><button className={`reaction-button ${item.reacted ? "reacted" : ""}`} onClick={() => onReact(item)} aria-label={item.reacted ? "Remove reaction" : "React to activity"}><Heart size={16} fill={item.reacted ? "currentColor" : "none"}/>{item.reactionCount > 0 && <span>{item.reactionCount}</span>}</button></article>)}</div>;
+const reactionOptions = ["❤️", "🔥", "👏", "🎉", "💪"];
+
+function ReactionPicker({ onPick }) {
+  const [open, setOpen] = useState(false);
+  return <span className="reaction-picker">
+    <button className="reaction-chip reaction-add" onClick={() => setOpen(value => !value)} aria-label="Add reaction" aria-expanded={open}><Plus size={13}/></button>
+    {open && <span className="reaction-options">{reactionOptions.map(emoji => <button key={emoji} className="reaction-chip" onClick={() => { onPick(emoji); setOpen(false); }} aria-label={`React ${emoji}`}>{emoji}</button>)}</span>}
+  </span>;
 }
 
-function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, sending, mobileOpen, onMobileBack, onInvite }) {
+function ActivityList({ items, userId, onReact, compact = false }) {
+  return <div className={`activity-list ${compact ? "activity-list-compact" : ""}`}>{items.map((item, index) => <article className="activity-item" key={item.id}><Avatar name={item.actorName} index={index} avatar={item.actorAvatar}/><div className="activity-copy"><p><b>{item.actorId === userId ? "You" : item.actorName}</b> {item.type === "completed" ? "completed" : "added a task"} <strong>{item.taskTitle}</strong></p><small>{dateTime(item.createdAt)}</small>
+    <div className="reaction-bar">{(item.reactions || []).map(reaction => <button key={reaction.emoji} className={`reaction-chip ${reaction.mine ? "reacted" : ""}`} onClick={() => onReact(item, reaction.emoji)} aria-label={`${reaction.emoji} ${reaction.count}`}>{reaction.emoji}<span>{reaction.count}</span></button>)}<ReactionPicker onPick={emoji => onReact(item, emoji)}/></div></div></article>)}</div>;
+}
+
+function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, sending, mobileOpen, onMobileBack, onInvite, typingNames = [], replyTo, onReply, onCancelReply, onEdit, onDelete, onTyping, dividerTime }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const dividerIndex = dividerTime === null || dividerTime === undefined ? -1 : messages.findIndex(message => message.senderId !== user.id && message.createdAt > dividerTime);
   return <div className="page-content chat-page">
     <PageHeader eyebrow="A LITTLE ENCOURAGEMENT" title="Circle chat" description="Every member of a circle shares one group conversation."/>
     <div className={`chat-layout ${mobileOpen ? "chat-open" : ""}`}>
@@ -881,8 +1020,23 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
       <section className="chat-conversation">
         {activeGroup ? <><header className="chat-header"><button className="mobile-back" onClick={onMobileBack} aria-label="Back to circles"><ArrowLeft size={18}/></button><Avatar name={activeGroup.name}/><div><h2>{activeGroup.name}</h2><small>{activeGroup.memberCount} members · one group chat</small></div></header>
           <div className="chat-shared-tasks">{sharedTasks.slice(0, 3).map(task => <span key={`${task.ownerId}-${task.id}`}><CheckSquare2 size={12}/>{task.ownerName}: {task.title}</span>)}</div>
-          <div className="chat-messages" aria-live="polite">{messages.length ? messages.map(message => <article className={`chat-message ${message.senderId === user.id ? "chat-mine" : ""}`} key={message.id}><Avatar name={message.senderName} avatar={message.senderAvatar}/><div className="message-body"><b>{message.senderId === user.id ? "You" : message.senderName}</b><p>{message.content}</p><small>{dateTime(message.createdAt)}</small></div></article>) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
-          <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => setValue(event.target.value)} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
+          <div className="chat-messages" aria-live="polite">{messages.length ? messages.map((message, index) => {
+            const mine = message.senderId === user.id;
+            return <React.Fragment key={message.id}>
+              {index === dividerIndex && <div className="chat-divider"><span>New messages</span></div>}
+              <article className={`chat-message ${mine ? "chat-mine" : ""}`}><Avatar name={message.senderName} avatar={message.senderAvatar}/><div className="message-body"><b>{mine ? "You" : message.senderName}</b>
+                {message.replyTo && <blockquote className="message-reply"><b>{message.replyTo.senderName}</b><span>{message.replyTo.content}</span></blockquote>}
+                {editingId === message.id
+                  ? <form className="message-edit" onSubmit={async event => { event.preventDefault(); if (editValue.trim()) { await onEdit(message, editValue); setEditingId(null); } }}><input value={editValue} onChange={event => setEditValue(event.target.value)} maxLength={1000} autoFocus aria-label="Edit message"/><button className="text-link" type="submit">Save</button><button className="text-link" type="button" onClick={() => setEditingId(null)}>Cancel</button></form>
+                  : <p>{message.content}</p>}
+                <small>{dateTime(message.createdAt)}{message.edited && " · edited"}</small>
+                <div className="message-actions"><button onClick={() => onReply(message)} aria-label="Reply"><CornerUpLeft size={13}/></button>{mine && <><button onClick={() => { setEditingId(message.id); setEditValue(message.content); }} aria-label="Edit message"><Pencil size={13}/></button><button onClick={() => onDelete(message)} aria-label="Delete message"><Trash2 size={13}/></button></>}</div>
+              </div></article>
+            </React.Fragment>;
+          }) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
+          <div className="typing-indicator" aria-live="polite">{typingNames.length > 0 && `${typingNames.join(", ")} ${typingNames.length > 1 ? "are" : "is"} typing…`}</div>
+          {replyTo && <div className="reply-bar"><span>Replying to <b>{replyTo.senderName}</b>: {replyTo.content.slice(0, 70)}</span><button type="button" onClick={onCancelReply} aria-label="Cancel reply"><X size={14}/></button></div>}
+          <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => { setValue(event.target.value); if (event.target.value) onTyping(); }} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
         </> : <div className="chat-empty chat-no-selection"><MessageCircle size={24}/><h3>Your people are one hello away.</h3><p>Create a circle to give everyone in it one shared conversation.</p><button className="button button-primary" onClick={onInvite}><Plus size={15}/> Create circle</button></div>}
       </section>
     </div>
@@ -900,11 +1054,19 @@ function ProfilePage({ user, tasks, friends, editing, setEditing, onSave, onFrie
   </div>;
 }
 
-function SettingsPage({ user, onSignOut }) {
+function SettingsPage({ user, onSignOut, theme, setTheme, notifPermission, onEnableNotifications, onExport, onDelete }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [confirming, setConfirming] = useState(false);
   return <div className="page-content">
     <PageHeader eyebrow="YOUR SPACE" title="Settings" description="A few useful things about your account."/>
     <section className="settings-section"><p className="eyebrow">ACCOUNT</p><div className="settings-row"><span><b>{user.name}</b><small>{user.email}</small></span><span>Signed in</span></div><div className="settings-row"><span><b>Private tasks</b><small>Only you can see them. Circle-shared tasks are visible to that circle’s members.</small></span><span><Heart size={16}/></span></div></section>
-    <section className="settings-section"><p className="eyebrow">DATA</p><p className="settings-copy">Your Kinda data is stored securely in the cloud. Your tasks stay private unless you choose to share them with friends or a circle.</p></section>
+    <section className="settings-section"><p className="eyebrow">APPEARANCE</p><div className="settings-row"><span><b>Theme</b><small>Follow your device, or pick one.</small></span><span className="theme-options" role="radiogroup" aria-label="Theme">{[["system", "Auto", null], ["light", "Light", Sun], ["dark", "Dark", Moon]].map(([value, label, Icon]) => <button key={value} role="radio" aria-checked={theme === value} className={`theme-option ${theme === value ? "selected" : ""}`} onClick={() => setTheme(value)}>{Icon && <Icon size={13}/>}{label}</button>)}</span></div></section>
+    <section className="settings-section"><p className="eyebrow">NOTIFICATIONS</p><div className="settings-row"><span><b>Browser alerts</b><small>Get a ping for new messages, nudges and task reminders while Kinda is open in a tab.</small></span>{notifPermission === "granted" ? <span>On</span> : notifPermission === "denied" ? <span>Blocked in browser</span> : notifPermission === "unsupported" ? <span>Not supported</span> : <button className="button button-secondary small-button" onClick={onEnableNotifications}><Bell size={13}/> Turn on</button>}</div></section>
+    <section className="settings-section"><p className="eyebrow">YOUR DATA</p><p className="settings-copy">Your Kinda data is stored securely in the cloud. Your tasks stay private unless you choose to share them with friends or a circle.</p>
+      <div className="settings-row"><span><b>Export my data</b><small>Download your profile, tasks and sent messages as a JSON file.</small></span><button className="button button-secondary small-button" onClick={onExport}><Download size={13}/> Export</button></div>
+      <div className="settings-row"><span><b>Delete account</b><small>Permanently removes your account, tasks, messages and friendships. This can’t be undone.</small></span>{!confirming && <button className="button button-secondary small-button danger-button" onClick={() => setConfirming(true)}>Delete…</button>}</div>
+      {confirming && <form className="delete-confirm" onSubmit={event => { event.preventDefault(); onDelete(confirmText); }}><label>Type <b>DELETE</b> to confirm<input value={confirmText} onChange={event => setConfirmText(event.target.value)} autoComplete="off"/></label><div><button className="button button-secondary small-button danger-button" type="submit" disabled={confirmText !== "DELETE"}>Delete my account</button><button className="text-link" type="button" onClick={() => { setConfirming(false); setConfirmText(""); }}>Cancel</button></div></form>}
+    </section>
     <button className="button button-secondary logout-button" onClick={onSignOut}><LogOut size={15}/> Log out</button>
   </div>;
 }
@@ -916,6 +1078,7 @@ function TaskDialog({ task, groups, initialGroupIds = [], onClose, onSave }) {
     <label>Description <span className="optional-label">Optional</span><textarea name="description" defaultValue={task?.description || task?.note || ""} rows="2" maxLength="500" placeholder="Add a little detail"/></label>
     <div className="form-grid">    <label>Due date<input name="dueDate" type="date" defaultValue={task?.dueDate || ""} /></label><label>Priority<select name="priority" defaultValue={task?.priority || "normal"}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
     <div className="form-grid"><label>Category<select name="category" defaultValue={task?.category || "Personal"}>{categories.map(category => <option key={category}>{category}</option>)}</select></label><label>Focus time<select name="targetMinutes" defaultValue={String(task?.targetMinutes || 25)}>{[10, 15, 25, 30, 45, 60, 90].map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}</select></label></div>
+    <div className="form-grid"><label>Repeat <span className="optional-label">needs a due date</span><select name="repeat" defaultValue={task?.repeat || "none"}><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option></select></label><label>Reminder <span className="optional-label">Optional</span><input name="reminderTime" type="time" defaultValue={task?.reminderTime || ""}/></label></div>
     {groups.length > 0 && <fieldset className="circle-share-field"><legend>Share with circles <span className="optional-label">Optional</span></legend><p>Only members of selected circles can see this task and its progress.</p>{groups.map(group => <label className="circle-share-option" key={group.id}><input type="checkbox" name="groupIds" value={group.id} defaultChecked={selectedGroupIds.includes(group.id)}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"}</small></span></label>)}</fieldset>}
     <button className="button button-primary full-button" type="submit">{task ? "Save changes" : "Create task"} <ArrowRight size={15}/></button>
   </form></Modal>;

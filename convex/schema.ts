@@ -21,7 +21,8 @@ export default defineSchema({
     circleId: v.id("circles"),
     token: v.string(),
     createdBy: v.string(),
-    createdAt: v.number()
+    createdAt: v.number(),
+    expiresAt: v.optional(v.number())
   }).index("by_token", ["token"]).index("by_circle", ["circleId"]),
   friendships: defineTable({
     userId: v.string(),
@@ -40,6 +41,8 @@ export default defineSchema({
     elapsedSeconds: v.number(),
     timerStartedAt: v.union(v.string(), v.null()),
     done: v.boolean(),
+    repeat: v.optional(v.string()),
+    reminderTime: v.optional(v.string()),
     createdAt: v.number()
   }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]),
   circleTasks: defineTable({
@@ -52,8 +55,22 @@ export default defineSchema({
     circleId: v.id("circles"),
     senderId: v.string(),
     content: v.string(),
+    replyTo: v.optional(v.id("messages")),
+    editedAt: v.optional(v.number()),
     createdAt: v.number()
-  }).index("by_circle", ["circleId"]),
+  }).index("by_circle", ["circleId"]).index("by_sender_created", ["senderId", "createdAt"]),
+  typing: defineTable({
+    circleId: v.id("circles"),
+    userId: v.string(),
+    updatedAt: v.number()
+  }).index("by_circle", ["circleId"]).index("by_circle_user", ["circleId", "userId"]),
+  nudges: defineTable({
+    toUserId: v.string(),
+    fromUserId: v.string(),
+    taskId: v.id("tasks"),
+    seen: v.boolean(),
+    createdAt: v.number()
+  }).index("by_to", ["toUserId", "createdAt"]).index("by_from_task", ["fromUserId", "taskId"]).index("by_task", ["taskId"]),
   activities: defineTable({
     userId: v.string(),
     taskId: v.id("tasks"),
@@ -63,6 +80,7 @@ export default defineSchema({
   reactions: defineTable({
     activityId: v.id("activities"),
     userId: v.string(),
+    emoji: v.optional(v.string()),
     createdAt: v.number()
-  }).index("by_activity", ["activityId"]).index("by_activity_user", ["activityId", "userId"])
+  }).index("by_activity", ["activityId"]).index("by_activity_user", ["activityId", "userId"]).index("by_user", ["userId"])
 });
