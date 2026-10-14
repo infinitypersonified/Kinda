@@ -3,7 +3,7 @@ import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, CheckSquare2, Clock3, Heart,
-  House, LogOut, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
+  House, LogOut, Menu, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
   Search, Send, Settings, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
   Users, X
 } from "lucide-react";
@@ -117,6 +117,9 @@ function App({ authClient }) {
   const [celebrationOpen, setCelebrationOpen] = useState(false);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
   const [tick, setTick] = useState(Date.now());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [seen, setSeen] = useState({ chat: {}, activity: null, shared: null });
+  const [incoming, setIncoming] = useState({ chat: {}, shared: [] });
 
   const loadWorkspace = useCallback(async () => {
     const [taskData, friendData, groupData] = await Promise.all([
@@ -129,7 +132,9 @@ function App({ authClient }) {
   }, [api]);
 
   const loadActivity = useCallback(async () => {
-    setActivity(await api("/activity"));
+    const data = await api("/activity");
+    setActivity(data);
+    setSeen(current => current.activity === null ? { ...current, activity: data[0]?.createdAt || "" } : current);
   }, [api]);
 
   useEffect(() => {
@@ -246,6 +251,75 @@ function App({ authClient }) {
     };
   }, [user, activeGroup]);
 
+  // ---- Notification badges ----
+  useEffect(() => {
+    if (!user) { setSeen({ chat: {}, activity: null, shared: null }); return; }
+    try {
+      const saved = JSON.parse(localStorage.getItem(`kinda:seen:${user.id}`));
+      setSeen(saved ? { chat: saved.chat || {}, activity: saved.activity ?? null, shared: saved.shared ?? null } : { chat: {}, activity: null, shared: null });
+    } catch { /* ignore */ }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user) try { localStorage.setItem(`kinda:seen:${user.id}`, JSON.stringify(seen)); } catch { /* ignore */ }
+  }, [seen, user?.id]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(() => loadActivity().catch(() => {}), 15000);
+    return () => window.clearInterval(timer);
+  }, [user?.id, loadActivity]);
+
+  const groupIds = groups.map(group => group.id).join(",");
+  useEffect(() => {
+    if (!user || !groupIds) return undefined;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const results = await Promise.all(groupIds.split(",").map(async id => {
+          const [msgs, goals] = await Promise.all([api(`/groups/${id}/messages`), api(`/groups/${id}/goals`)]);
+          return {
+            id,
+            times: msgs.filter(message => message.senderId !== user.id).map(message => message.createdAt),
+            shared: goals.filter(task => task.ownerId !== user.id).map(task => `${id}:${task.id}`)
+          };
+        }));
+        if (cancelled) return;
+        const chat = {};
+        let shared = [];
+        results.forEach(item => { chat[item.id] = item.times; shared = shared.concat(item.shared); });
+        setIncoming({ chat, shared });
+        setSeen(current => {
+          const next = { ...current, chat: { ...current.chat } };
+          let changed = false;
+          results.forEach(item => {
+            if (next.chat[item.id] === undefined) { next.chat[item.id] = item.times[item.times.length - 1] || ""; changed = true; }
+          });
+          if (next.shared === null) { next.shared = shared; changed = true; }
+          return changed ? next : current;
+        });
+      } catch { /* ignore, next poll retries */ }
+    };
+    run();
+    const timer = window.setInterval(run, 8000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [user?.id, groupIds, api]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (page === "activity" && activity[0]) {
+      setSeen(current => current.activity === activity[0].createdAt ? current : { ...current, activity: activity[0].createdAt });
+    }
+    if (page === "circles" && incoming.shared.length) {
+      setSeen(current => (current.shared || []).join("|") === incoming.shared.join("|") ? current : { ...current, shared: incoming.shared });
+    }
+    if (page === "chat" && activeGroup && (chatMobileOpen || !window.matchMedia("(max-width: 780px)").matches)) {
+      const fromOthers = messages.filter(message => message.senderId !== user.id).map(message => message.createdAt);
+      const latest = [...(incoming.chat[activeGroup.id] || []), ...fromOthers].sort().pop();
+      if (latest) setSeen(current => (current.chat[activeGroup.id] || "") >= latest ? current : { ...current, chat: { ...current.chat, [activeGroup.id]: latest } });
+    }
+  }, [page, activity, incoming, messages, activeGroup?.id, chatMobileOpen, user?.id]);
+
   useEffect(() => {
     if (page !== "chat" || !chatMobileOpen) return;
     const node = document.querySelector(".chat-messages");
@@ -288,6 +362,7 @@ function App({ authClient }) {
 
   function navigate(nextPage) {
     setPage(nextPage);
+    setMenuOpen(false);
     setChatMobileOpen(false);
     if (nextPage === "activity") loadActivity().catch(error => notify(error.message));
     if (nextPage === "profile") api("/me").then(setProfile).catch(error => notify(error.message));
@@ -537,19 +612,27 @@ function App({ authClient }) {
     return <AuthScreen mode={screen} setMode={setScreen} onSubmit={submitAuth} error={authError} busy={authBusy} inviteName={invitePreview?.name} />;
   }
 
+  const badges = {
+    chat: Object.entries(incoming.chat).reduce((total, [id, times]) => total + times.filter(time => time > (seen.chat[id] ?? "\uffff")).length, 0),
+    activity: seen.activity === null ? 0 : activity.filter(item => item.actorId !== user.id && item.createdAt > seen.activity).length,
+    circles: seen.shared === null ? 0 : incoming.shared.filter(key => !seen.shared.includes(key)).length,
+    tasks: tasks.filter(task => !task.done && task.dueDate && task.dueDate <= localDate()).length
+  };
+  const totalBadges = badges.chat + badges.activity + badges.circles;
   const activeTimer = tasks.find(task => task.timerStartedAt && !task.done);
   const activePage = pages.find(item => item.id === page) || pages[0];
   const todayDoneTasks = todayTasks.filter(task => task.done);
   const todayCompletion = todayTasks.length ? Math.round(todayDoneTasks.length / todayTasks.length * 100) : 0;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${menuOpen ? "menu-open" : ""}`}>
       <aside className="sidebar">
         <button className="wordmark wordmark-button" onClick={() => navigate("home")}>kinda<span>.</span></button>
         <p className="side-label">YOUR SPACE</p>
         <nav className="side-nav" aria-label="Main navigation">
           {pages.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => navigate(id)} title={label}>
             <Icon size={18}/><span>{label}</span>
+            {badges[id] > 0 && <i className="nav-badge" aria-label={`${badges[id]} new`}>{badges[id] > 99 ? "99+" : badges[id]}</i>}
           </button>)}
         </nav>
         <div className="sidebar-friends"><div className="side-section-heading"><span>YOUR CIRCLES</span><button className="icon-quiet" onClick={() => setCircleDialog(true)} aria-label="Create circle"><Plus size={15}/></button></div>
@@ -560,9 +643,13 @@ function App({ authClient }) {
         <div className="sidebar-bottom"><div className="profile-mini"><Avatar name={user.name} index={-1}/><button className="profile-name" onClick={() => navigate("profile")}>{user.name}<small>View profile</small></button><button className="icon-quiet signout-icon" onClick={signOut} aria-label="Log out"><LogOut size={15}/></button></div></div>
       </aside>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">{pages.map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? "active" : ""} onClick={() => navigate(id)} aria-label={label}><Icon size={20}/><span>{label}</span></button>)}</nav>
+      <button className="drawer-backdrop" aria-label="Close menu" onClick={() => setMenuOpen(false)}/>
 
       <section className="main-area">
+        <header className="mobile-topbar">
+          <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={20}/>{totalBadges > 0 && <i className="nav-dot"/>}</button>
+          <span className="wordmark">kinda<span>.</span></span>
+        </header>
         {page === "home" && <HomePage
           user={user} tasks={todayTasks} done={todayDoneTasks.length} total={todayTasks.length} completion={todayCompletion}
           remainingTasks={openTasks.length}
