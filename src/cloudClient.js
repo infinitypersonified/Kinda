@@ -3,8 +3,8 @@ import { createAuthClient } from "better-auth/react";
 import { convexClient, crossDomainClient } from "@convex-dev/better-auth/client/plugins";
 
 export function createCloudClients() {
-  const convexUrl = import.meta.env.VITE_CONVEX_URL;
-  const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+  const convexUrl = import.meta.env.VITE_CONVEX_URL?.trim().replace(/\/+$/, "");
+  const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL?.trim().replace(/\/+$/, "");
   if (!convexUrl || !convexSiteUrl) return null;
   const convex = new ConvexReactClient(convexUrl);
   const authClient = createAuthClient({
