@@ -19,6 +19,8 @@ const pages = [
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "settings", label: "Settings", icon: Settings }
 ];
+const avatarColorKeys = ["terracotta", "sand", "rose", "olive", "sky", "plum", "teal", "gold"];
+const avatarEmojis = ["🦊", "🐼", "🐯", "🦁", "🐸", "🐙", "🦄", "🐉", "🐧", "🦉", "🐢", "🐨", "🐰", "🐻", "🦋", "🐬", "👻", "👽", "🤖", "🌙", "⭐", "🔥", "🌸", "🍄"];
 const photoOne = "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1200&q=85";
 const photoTwo = "https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=1000&q=85";
 
@@ -225,8 +227,8 @@ function App({ authClient }) {
         setActiveGroup(current => {
           const refreshed = circleData.find(group => group.id === activeGroup.id);
           if (!refreshed) return circleData[0] || null;
-          const currentMembers = current?.members?.map(member => member.id).join(",");
-          const refreshedMembers = refreshed.members.map(member => member.id).join(",");
+          const currentMembers = current?.members?.map(member => member.id + member.avatar).join(",");
+          const refreshedMembers = refreshed.members.map(member => member.id + member.avatar).join(",");
           if (current?.id === refreshed.id && currentMembers === refreshedMembers
             && current.taskCount === refreshed.taskCount && current.doneCount === refreshed.doneCount) return current;
           return refreshed;
@@ -568,7 +570,8 @@ function App({ authClient }) {
         method: "PATCH",
         body: JSON.stringify({
           name: String(form.get("name") || "").trim(),
-          bio: String(form.get("bio") || "").trim()
+          bio: String(form.get("bio") || "").trim(),
+          avatar: String(form.get("avatar") || "") || undefined
         })
       });
       setProfile(updated);
@@ -640,7 +643,7 @@ function App({ authClient }) {
           {!groups.length && <p className="sidebar-empty">Create a circle for your people.</p>}
           <button className="sidebar-add-friend" onClick={() => setCircleDialog(true)}><Plus size={14}/> Create circle</button>
         </div>
-        <div className="sidebar-bottom"><div className="profile-mini"><Avatar name={user.name} index={-1}/><button className="profile-name" onClick={() => navigate("profile")}>{user.name}<small>View profile</small></button><button className="icon-quiet signout-icon" onClick={signOut} aria-label="Log out"><LogOut size={15}/></button></div></div>
+        <div className="sidebar-bottom"><div className="profile-mini"><Avatar name={user.name} index={-1} avatar={user.avatar}/><button className="profile-name" onClick={() => navigate("profile")}>{user.name}<small>View profile</small></button><button className="icon-quiet signout-icon" onClick={signOut} aria-label="Log out"><LogOut size={15}/></button></div></div>
       </aside>
 
       <button className="drawer-backdrop" aria-label="Close menu" onClick={() => setMenuOpen(false)}/>
@@ -708,10 +711,33 @@ function App({ authClient }) {
   );
 }
 
-function Avatar({ name, index = 0, large = false }) {
+function parseAvatar(value) {
+  const [color, emoji = ""] = String(value || "").split("|");
+  return avatarColorKeys.includes(color) ? { color, emoji } : null;
+}
+
+function Avatar({ name, index = 0, large = false, avatar }) {
+  const custom = parseAvatar(avatar);
   const colors = ["avatar-terracotta", "avatar-sand", "avatar-rose", "avatar-olive"];
-  const color = index < 0 ? "avatar-self" : colors[index % colors.length];
-  return <span className={`avatar ${color} ${large ? "avatar-large" : ""}`}>{initials(name)}</span>;
+  const color = custom ? `avatar-c-${custom.color}` : index < 0 ? "avatar-self" : colors[index % colors.length];
+  return <span className={`avatar ${color} ${large ? "avatar-large" : ""} ${custom?.emoji ? "avatar-emoji" : ""}`}>{custom?.emoji || initials(name)}</span>;
+}
+
+function AvatarPicker({ name, defaultValue }) {
+  const start = parseAvatar(defaultValue);
+  const [color, setColor] = useState(start?.color || "terracotta");
+  const [emoji, setEmoji] = useState(start?.emoji || "");
+  return <div className="avatar-picker">
+    <input type="hidden" name="avatar" value={`${color}|${emoji}`}/>
+    <div className="avatar-picker-preview"><Avatar name={name} avatar={`${color}|${emoji}`} large/><span>Pick a color and a character</span></div>
+    <div className="avatar-swatches" role="radiogroup" aria-label="Avatar color">{avatarColorKeys.map(key =>
+      <button type="button" key={key} role="radio" aria-checked={color === key} aria-label={key} className={`swatch avatar-c-${key} ${color === key ? "selected" : ""}`} onClick={() => setColor(key)}/>)}
+    </div>
+    <div className="avatar-emoji-grid" role="radiogroup" aria-label="Avatar character">
+      <button type="button" role="radio" aria-checked={emoji === ""} className={`emoji-option emoji-initials ${emoji === "" ? "selected" : ""}`} onClick={() => setEmoji("")}>Aa</button>
+      {avatarEmojis.map(item => <button type="button" key={item} role="radio" aria-checked={emoji === item} className={`emoji-option ${emoji === item ? "selected" : ""}`} onClick={() => setEmoji(item)}>{item}</button>)}
+    </div>
+  </div>;
 }
 
 function GroupLeaderboard({ group, userId, compact = false, onOpen, onSelectGroup, groups = [] }) {
@@ -730,7 +756,7 @@ function GroupLeaderboard({ group, userId, compact = false, onOpen, onSelectGrou
     <div className="section-title-row"><div><p className="eyebrow">{compact ? "CIRCLE STANDINGS" : group.name}</p><h2><Trophy size={17}/> Leaderboard</h2></div><div className="leaderboard-actions">{groups.length > 1 && onSelectGroup && <select aria-label="Leaderboard circle" value={group.id} onChange={event => onSelectGroup(event.target.value)}>{groups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}{onOpen && <button className="text-link" onClick={onOpen}>{compact ? "Open circle" : "Circle tasks"} <ArrowRight size={14}/></button>}</div></div>
     {ranked.length ? <ol className="leaderboard-list">{ranked.map(member => <li className={`leaderboard-row ${member.rank === 1 ? "leaderboard-first" : ""}`} key={member.id}>
       <span className="leaderboard-rank">{member.rank === 1 ? <Trophy size={15}/> : member.rank === 2 ? <span aria-label="Runner-up">🥈</span> : `#${member.rank}`}</span>
-      <Avatar name={member.name}/>
+      <Avatar name={member.name} avatar={member.avatar}/>
       <span className="leaderboard-person"><b>{member.name}{member.id === userId ? " (you)" : ""}</b><small>{member.id === group.ownerId ? "Circle owner" : member.rank === 1 ? "Leading the way" : member.rank === 2 ? "Runner-up" : "Keep it going"}</small></span>
       <strong>{member.doneCount}<small>/{member.taskCount} done</small></strong>
     </li>)}</ol> : <p className="quiet-empty">Invite people to your circle to start a leaderboard.</p>}
@@ -809,7 +835,7 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
   });
   if (profile) return <div className="page-content">
     <button className="back-link" onClick={onCloseProfile}><ArrowLeft size={15}/> Circles</button>
-    <section className="profile-panel friend-profile-panel"><Avatar name={profile.name} index={1} large/><div className="profile-copy"><p className="eyebrow">YOUR PEOPLE</p><h1>{profile.name}</h1><p>{profile.bio || "Keeping things moving, one task at a time."}</p><small>{profile.friendCount} friends</small></div></section>
+    <section className="profile-panel friend-profile-panel"><Avatar name={profile.name} index={1} large avatar={profile.avatar}/><div className="profile-copy"><p className="eyebrow">YOUR PEOPLE</p><h1>{profile.name}</h1><p>{profile.bio || "Keeping things moving, one task at a time."}</p><small>{profile.friendCount} friends</small></div></section>
     <section className="profile-shared"><div className="section-title-row"><div><p className="eyebrow">LEGACY FRIEND SHARES</p><h2>Tasks</h2></div></div>{profile.tasks?.length ? <div className="task-list">{profile.tasks.map((task, index) => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.title}-${index}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h3>{task.title}</h3><p>{task.category} <span>·</span> {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div></article>)}</div> : <p className="quiet-empty">No friend-shared tasks. Circle tasks are shared with their members.</p>}</section>
   </div>;
   return <div className="page-content">
@@ -817,17 +843,17 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
     <label className="search-box"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find someone by name or email" autoComplete="off"/></label>
     {query.trim().length >= 2 && <section className="search-results"><p className="eyebrow">PEOPLE</p>{results.length ? results.map((person, index) => {
       const isMember = activeGroup?.members?.some(member => member.id === person.id);
-      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || person.email}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || activeGroup.ownerId !== user.id} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd(person.email)}>Add friend</button>}</div>;
+      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index} avatar={person.avatar}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || person.email}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || activeGroup.ownerId !== user.id} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd(person.email)}>Add friend</button>}</div>;
     }) : <p className="quiet-empty">No accounts match that search yet.</p>}</section>}
     <section className="circles-directory"><div className="section-title-row"><div><p className="eyebrow">YOUR CIRCLES</p><h2>{groups.length ? `${groups.length} ${groups.length === 1 ? "circle" : "circles"}` : "Start a circle"}</h2></div></div>
       {groups.length ? <div className="circles-layout"><div className="circles-list">{groups.map((group, index) => <button className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`} key={group.id} onClick={() => onSelect(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"}</small></span><ArrowRight size={15}/></button>)}</div>
         {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button></div></div>
           <div className="circle-progress"><div><b>{sharedTasks.filter(task => task.done).length} of {sharedTasks.length} tasks done</b><span>{sharedTasks.length ? Math.round(sharedTasks.filter(task => task.done).length / sharedTasks.length * 100) : 0}%</span></div><div className="summary-progress"><span style={{ width: `${sharedTasks.length ? sharedTasks.filter(task => task.done).length / sharedTasks.length * 100 : 0}%` }}/></div></div>
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
-          <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <span className="circle-member" key={member.id}><Avatar name={member.name} index={index}/>{member.name}{member.id === activeGroup.ownerId && <small>Owner</small>}</span>)}</div>
+          <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <span className="circle-member" key={member.id}><Avatar name={member.name} index={index} avatar={member.avatar}/>{member.name}{member.id === activeGroup.ownerId && <small>Owner</small>}</span>)}</div>
             {activeGroup.ownerId === user.id && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button></div>}</div>}
           </div>
-          <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div></article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
+          <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name} avatar={member.avatar}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div></article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
         </section>}
       </div> : <p className="quiet-empty">Create a circle to share tasks and progress with your people.</p>}
     </section>
@@ -842,7 +868,7 @@ function ActivityPage({ activity, userId, onReact }) {
 }
 
 function ActivityList({ items, userId, onReact, compact = false }) {
-  return <div className={`activity-list ${compact ? "activity-list-compact" : ""}`}>{items.map((item, index) => <article className="activity-item" key={item.id}><Avatar name={item.actorName} index={index}/><div className="activity-copy"><p><b>{item.actorId === userId ? "You" : item.actorName}</b> {item.type === "completed" ? "completed" : "added a task"} <strong>{item.taskTitle}</strong></p><small>{dateTime(item.createdAt)}</small></div><button className={`reaction-button ${item.reacted ? "reacted" : ""}`} onClick={() => onReact(item)} aria-label={item.reacted ? "Remove reaction" : "React to activity"}><Heart size={16} fill={item.reacted ? "currentColor" : "none"}/>{item.reactionCount > 0 && <span>{item.reactionCount}</span>}</button></article>)}</div>;
+  return <div className={`activity-list ${compact ? "activity-list-compact" : ""}`}>{items.map((item, index) => <article className="activity-item" key={item.id}><Avatar name={item.actorName} index={index} avatar={item.actorAvatar}/><div className="activity-copy"><p><b>{item.actorId === userId ? "You" : item.actorName}</b> {item.type === "completed" ? "completed" : "added a task"} <strong>{item.taskTitle}</strong></p><small>{dateTime(item.createdAt)}</small></div><button className={`reaction-button ${item.reacted ? "reacted" : ""}`} onClick={() => onReact(item)} aria-label={item.reacted ? "Remove reaction" : "React to activity"}><Heart size={16} fill={item.reacted ? "currentColor" : "none"}/>{item.reactionCount > 0 && <span>{item.reactionCount}</span>}</button></article>)}</div>;
 }
 
 function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, sending, mobileOpen, onMobileBack, onInvite }) {
@@ -855,7 +881,7 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
       <section className="chat-conversation">
         {activeGroup ? <><header className="chat-header"><button className="mobile-back" onClick={onMobileBack} aria-label="Back to circles"><ArrowLeft size={18}/></button><Avatar name={activeGroup.name}/><div><h2>{activeGroup.name}</h2><small>{activeGroup.memberCount} members · one group chat</small></div></header>
           <div className="chat-shared-tasks">{sharedTasks.slice(0, 3).map(task => <span key={`${task.ownerId}-${task.id}`}><CheckSquare2 size={12}/>{task.ownerName}: {task.title}</span>)}</div>
-          <div className="chat-messages" aria-live="polite">{messages.length ? messages.map(message => <article className={`chat-message ${message.senderId === user.id ? "chat-mine" : ""}`} key={message.id}><Avatar name={message.senderName}/><div className="message-body"><b>{message.senderId === user.id ? "You" : message.senderName}</b><p>{message.content}</p><small>{dateTime(message.createdAt)}</small></div></article>) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
+          <div className="chat-messages" aria-live="polite">{messages.length ? messages.map(message => <article className={`chat-message ${message.senderId === user.id ? "chat-mine" : ""}`} key={message.id}><Avatar name={message.senderName} avatar={message.senderAvatar}/><div className="message-body"><b>{message.senderId === user.id ? "You" : message.senderName}</b><p>{message.content}</p><small>{dateTime(message.createdAt)}</small></div></article>) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
           <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => setValue(event.target.value)} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
         </> : <div className="chat-empty chat-no-selection"><MessageCircle size={24}/><h3>Your people are one hello away.</h3><p>Create a circle to give everyone in it one shared conversation.</p><button className="button button-primary" onClick={onInvite}><Plus size={15}/> Create circle</button></div>}
       </section>
@@ -867,9 +893,9 @@ function ProfilePage({ user, tasks, friends, editing, setEditing, onSave, onFrie
   const done = tasks.filter(task => task.done).length;
   return <div className="page-content">
     <PageHeader eyebrow="A LITTLE ABOUT YOU" title="Profile" description="Your details, your way." action={!editing && <button className="button button-secondary" onClick={() => setEditing(true)}><Pencil size={14}/> Edit profile</button>}/>
-    <section className="profile-panel"><Avatar name={user.name} index={-1} large/><div className="profile-copy"><h2>{user.name}</h2><p>{user.bio || "A work in progress, task by task."}</p><small>{user.email}</small></div></section>
-    {editing && <form className="profile-edit-form" onSubmit={onSave}><label>Display name<input name="name" defaultValue={user.name} required minLength="2" maxLength="60"/></label><label>Short bio<textarea name="bio" defaultValue={user.bio || ""} maxLength="240" rows="3" placeholder="A few words about you"/></label><div><button className="button button-primary" type="submit">Save profile</button><button className="text-link" type="button" onClick={() => setEditing(false)}>Cancel</button></div></form>}
-    <section className="profile-progress"><div><p className="eyebrow">YOUR TASKS</p><h2>{done} completed</h2><p>{tasks.length} total · visible only as you choose</p></div><div className="profile-friends"><p className="eyebrow">YOUR PEOPLE</p>{friends.length ? <div className="avatar-stack">{friends.slice(0, 5).map((friend, index) => <button key={friend.id} onClick={() => onFriend(friend)} aria-label={`View ${friend.name}`}><Avatar name={friend.name} index={index}/></button>)}</div> : <span>No people added yet</span>}</div></section>
+    <section className="profile-panel"><Avatar name={user.name} index={-1} large avatar={user.avatar}/><div className="profile-copy"><h2>{user.name}</h2><p>{user.bio || "A work in progress, task by task."}</p><small>{user.email}</small></div></section>
+    {editing && <form className="profile-edit-form" onSubmit={onSave}><AvatarPicker name={user.name} defaultValue={user.avatar}/><label>Display name<input name="name" defaultValue={user.name} required minLength="2" maxLength="60"/></label><label>Short bio<textarea name="bio" defaultValue={user.bio || ""} maxLength="240" rows="3" placeholder="A few words about you"/></label><div><button className="button button-primary" type="submit">Save profile</button><button className="text-link" type="button" onClick={() => setEditing(false)}>Cancel</button></div></form>}
+    <section className="profile-progress"><div><p className="eyebrow">YOUR TASKS</p><h2>{done} completed</h2><p>{tasks.length} total · visible only as you choose</p></div><div className="profile-friends"><p className="eyebrow">YOUR PEOPLE</p>{friends.length ? <div className="avatar-stack">{friends.slice(0, 5).map((friend, index) => <button key={friend.id} onClick={() => onFriend(friend)} aria-label={`View ${friend.name}`}><Avatar name={friend.name} index={index} avatar={friend.avatar}/></button>)}</div> : <span>No people added yet</span>}</div></section>
     <section className="profile-shared"><div className="section-title-row"><div><p className="eyebrow">YOUR SHARED TASKS</p><h2>Tasks in your circles</h2></div></div>{tasks.filter(task => task.groupIds?.length || task.visibility === "friends").length ? <div className="task-list">{tasks.filter(task => task.groupIds?.length || task.visibility === "friends").map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={task.id}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h3>{task.title}</h3><p>{task.category} <span>·</span> {dayLabel(task.dueDate)}</p></div></article>)}</div> : <p className="quiet-empty">You haven’t shared any tasks. Everything else stays private.</p>}</section>
   </div>;
 }

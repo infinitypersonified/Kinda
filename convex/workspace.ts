@@ -14,6 +14,19 @@ function isValidDate(value: string | null) {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+const AVATAR_COLORS = ["terracotta", "sand", "rose", "olive", "sky", "plum", "teal", "gold"];
+const AVATAR_EMOJIS = ["🦊", "🐼", "🐯", "🦁", "🐸", "🐙", "🦄", "🐉", "🐧", "🦉", "🐢", "🐨", "🐰", "🐻", "🦋", "🐬", "👻", "👽", "🤖", "🌙", "⭐", "🔥", "🌸", "🍄"];
+
+function validAvatar(value: string) {
+  const [color, emoji = ""] = value.split("|");
+  return AVATAR_COLORS.includes(color) && (emoji === "" || AVATAR_EMOJIS.includes(emoji));
+}
+
+async function avatarOf(ctx: WorkspaceCtx, userId: string) {
+  const profile = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", userId)).first();
+  return profile?.avatar ?? "";
+}
+
 async function requireUser(ctx: Parameters<typeof authComponent.getAuthUser>[0]) {
   const user = await authComponent.getAuthUser(ctx);
   return { id: String(user._id), name: user.name, email: user.email };
@@ -53,27 +66,29 @@ export const me = query({
     const account = await requireUser(ctx);
     const profile = await ctx.db.query("profiles")
       .withIndex("by_user", q => q.eq("userId", account.id)).first();
-    return { ...account, bio: profile?.bio ?? "" };
+    return { ...account, bio: profile?.bio ?? "", avatar: profile?.avatar ?? "" };
   }
 });
 
 export const updateProfile = mutation({
-  args: { name: v.string(), bio: v.string() },
+  args: { name: v.string(), bio: v.string(), avatar: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
     const name = args.name.trim();
     const bio = args.bio.trim();
     if (name.length < 2 || name.length > 60) throw new ConvexError("Your name must be between 2 and 60 characters.");
     if (bio.length > 240) throw new ConvexError("Your bio must be 240 characters or fewer.");
+    if (args.avatar !== undefined && !validAvatar(args.avatar)) throw new ConvexError("That avatar isn't available.");
     const user = await authComponent.getAnyUserById(ctx, account.id);
     if (!user) throw new ConvexError("Your account could not be found.");
     await ctx.runMutation(components.betterAuth.adapter.updateOne, {
       input: { model: "user", where: [{ field: "_id", value: account.id }], update: { name } }
     });
     const existing = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", account.id)).first();
-    if (existing) await ctx.db.patch(existing._id, { bio });
-    else await ctx.db.insert("profiles", { userId: account.id, bio });
-    return { ...account, name, bio };
+    const avatar = args.avatar ?? existing?.avatar ?? "";
+    if (existing) await ctx.db.patch(existing._id, { bio, avatar });
+    else await ctx.db.insert("profiles", { userId: account.id, bio, avatar });
+    return { ...account, name, bio, avatar };
   }
 });
 
@@ -258,6 +273,7 @@ export const listCircles = query({
         return {
           id: record.userId,
           name: person?.name ?? "Member",
+          avatar: await avatarOf(ctx, record.userId),
           taskCount: visibleTasks.length,
           doneCount: visibleTasks.filter(task => task!.done).length
         };
@@ -374,7 +390,7 @@ export const listMessages = query({
     const visible = args.after && afterIndex >= 0 ? ordered.slice(afterIndex + 1) : args.after ? ordered.slice(-1) : ordered;
     return await Promise.all(visible.map(async message => {
       const sender = await authComponent.getAnyUserById(ctx, message.senderId);
-      return { id: String(message._id), senderId: message.senderId, senderName: sender?.name ?? "Member", content: message.content, createdAt: new Date(message.createdAt).toISOString() };
+      return { id: String(message._id), senderId: message.senderId, senderName: sender?.name ?? "Member", senderAvatar: await avatarOf(ctx, message.senderId), content: message.content, createdAt: new Date(message.createdAt).toISOString() };
     }));
   }
 });
@@ -388,7 +404,7 @@ export const sendMessage = mutation({
     if (!content || content.length > 2000) throw new ConvexError("Messages must be between 1 and 2,000 characters.");
     const createdAt = Date.now();
     const id = await ctx.db.insert("messages", { circleId: args.circleId, senderId: account.id, content, createdAt });
-    return { id: String(id), senderId: account.id, senderName: account.name, content, createdAt: new Date(createdAt).toISOString() };
+    return { id: String(id), senderId: account.id, senderName: account.name, senderAvatar: await avatarOf(ctx, account.id), content, createdAt: new Date(createdAt).toISOString() };
   }
 });
 
@@ -400,7 +416,7 @@ export const listFriends = query({
     return await Promise.all(records.map(async record => {
       const friend = await authComponent.getAnyUserById(ctx, record.friendId);
       const profile = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", record.friendId)).first();
-      return friend ? { id: record.friendId, name: friend.name, email: friend.email, bio: profile?.bio ?? "" } : null;
+      return friend ? { id: record.friendId, name: friend.name, email: friend.email, bio: profile?.bio ?? "", avatar: profile?.avatar ?? "" } : null;
     })).then(friends => friends.filter(Boolean));
   }
 });
@@ -416,12 +432,13 @@ export const searchFriends = query({
     });
     const friendships = await ctx.db.query("friendships").withIndex("by_user", q => q.eq("userId", id)).collect();
     const friendIds = new Set(friendships.map(item => item.friendId));
-    return users.filter(person => String(person._id) !== id
-      && (`${person.name} ${person.email}`.toLowerCase().includes(search)))
-      .slice(0, 20).map(person => ({
-        id: String(person._id), name: person.name, email: person.email, bio: "",
-        isFriend: friendIds.has(String(person._id))
-      }));
+    const matches = users.filter(person => String(person._id) !== id
+      && (`${person.name} ${person.email}`.toLowerCase().includes(search))).slice(0, 20);
+    return await Promise.all(matches.map(async person => ({
+      id: String(person._id), name: person.name, email: person.email, bio: "",
+      avatar: await avatarOf(ctx, String(person._id)),
+      isFriend: friendIds.has(String(person._id))
+    })));
   }
 });
 
@@ -460,7 +477,7 @@ export const friendProfile = query({
       title: task.title, category: task.category, dueDate: task.dueDate, done: task.done, priority: task.priority
     }));
     const friendCount = (await ctx.db.query("friendships").withIndex("by_user", q => q.eq("userId", args.friendId)).collect()).length;
-    return { id: args.friendId, name: person.name, bio: profile?.bio ?? "", tasks: visibleTasks, friendCount };
+    return { id: args.friendId, name: person.name, bio: profile?.bio ?? "", avatar: profile?.avatar ?? "", tasks: visibleTasks, friendCount };
   }
 });
 
@@ -479,7 +496,7 @@ export const listActivity = query({
       const actor = await authComponent.getAnyUserById(ctx, item.userId);
       const reactions = await ctx.db.query("reactions").withIndex("by_activity", q => q.eq("activityId", item._id)).collect();
       result.push({
-        id: String(item._id), actorId: item.userId, actorName: actor?.name ?? "Member",
+        id: String(item._id), actorId: item.userId, actorName: actor?.name ?? "Member", actorAvatar: await avatarOf(ctx, item.userId),
         taskId: String(task._id), taskTitle: task.title, type: item.type,
         createdAt: new Date(item.createdAt).toISOString(), reactionCount: reactions.length,
         reacted: reactions.some(reaction => reaction.userId === id)

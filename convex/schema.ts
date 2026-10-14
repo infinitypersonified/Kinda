@@ -4,7 +4,8 @@ import { v } from "convex/values";
 export default defineSchema({
   profiles: defineTable({
     userId: v.string(),
-    bio: v.string()
+    bio: v.string(),
+    avatar: v.optional(v.string())
   }).index("by_user", ["userId"]),
   circles: defineTable({
     name: v.string(),
