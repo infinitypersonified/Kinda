@@ -4,6 +4,7 @@ import { authComponent } from "./auth";
 import { components } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import type { GenericMutationCtx, GenericQueryCtx } from "convex/server";
+import { internal } from "./_generated/api";
 
 type WorkspaceCtx = GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>;
 
@@ -494,6 +495,9 @@ export const sendMessage = mutation({
       circleId: args.circleId, senderId: account.id, content, createdAt,
       ...(args.replyTo ? { replyTo: args.replyTo } : {})
     });
+    await ctx.scheduler.runAfter(0, internal.push.notifyCircleMessage, {
+      circleId: args.circleId, senderId: account.id, senderName: account.name, preview: content.slice(0, 120)
+    });
     const typingRow = await ctx.db.query("typing").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", account.id)).first();
     if (typingRow) await ctx.db.delete(typingRow._id);
     return await mapMessage(ctx, (await ctx.db.get(id))!);
@@ -749,6 +753,9 @@ export const nudgeTask = mutation({
       throw new ConvexError("You already nudged them about this today.");
     }
     await ctx.db.insert("nudges", { toUserId: task.userId, fromUserId: account.id, taskId: task._id, seen: false, createdAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.push.notifyUser, {
+      userId: task.userId, title: `${account.name} nudged you`, body: task.title, tag: `nudge-${task._id}`
+    });
     return { ok: true };
   }
 });
@@ -846,10 +853,33 @@ export const deleteAccount = mutation({
     }
     const profile = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", id)).first();
     if (profile) await ctx.db.delete(profile._id);
+    for (const subscription of await ctx.db.query("pushSubscriptions").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(subscription._id);
 
     await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "session", where: [{ field: "userId", value: id }] } });
     await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "account", where: [{ field: "userId", value: id }] } });
     await ctx.runMutation(components.betterAuth.adapter.deleteOne, { input: { model: "user", where: [{ field: "_id", value: id }] } });
+    return { ok: true };
+  }
+});
+
+export const savePushSubscription = mutation({
+  args: { endpoint: v.string(), p256dh: v.string(), auth: v.string() },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    if (!args.endpoint.startsWith("https://") || args.endpoint.length > 1000) throw new ConvexError("That device can't receive notifications.");
+    const existing = await ctx.db.query("pushSubscriptions").withIndex("by_endpoint", q => q.eq("endpoint", args.endpoint)).first();
+    if (existing) await ctx.db.patch(existing._id, { userId: id, p256dh: args.p256dh, auth: args.auth });
+    else await ctx.db.insert("pushSubscriptions", { userId: id, endpoint: args.endpoint, p256dh: args.p256dh, auth: args.auth, createdAt: Date.now() });
+    return { ok: true };
+  }
+});
+
+export const removePushSubscription = mutation({
+  args: { endpoint: v.string() },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    const rows = await ctx.db.query("pushSubscriptions").withIndex("by_endpoint", q => q.eq("endpoint", args.endpoint)).collect();
+    for (const row of rows) if (row.userId === id) await ctx.db.delete(row._id);
     return { ok: true };
   }
 });

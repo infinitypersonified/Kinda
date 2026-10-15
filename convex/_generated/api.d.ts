@@ -10,6 +10,8 @@
 
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as push from "../push.js";
+import type * as pushData from "../pushData.js";
 import type * as workspace from "../workspace.js";
 
 import type {
@@ -21,6 +23,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
+  push: typeof push;
+  pushData: typeof pushData;
   workspace: typeof workspace;
 }>;
 

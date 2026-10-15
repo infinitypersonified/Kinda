@@ -59,6 +59,13 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     createdAt: v.number()
   }).index("by_circle", ["circleId"]).index("by_sender_created", ["senderId", "createdAt"]),
+  pushSubscriptions: defineTable({
+    userId: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    createdAt: v.number()
+  }).index("by_user", ["userId"]).index("by_endpoint", ["endpoint"]),
   typing: defineTable({
     circleId: v.id("circles"),
     userId: v.string(),
