@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { authComponent } from "./auth";
 import { components } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
@@ -45,6 +45,18 @@ function checkRepeatAndReminder(repeat: string | undefined, reminderTime: string
   if (reminderTime !== undefined && reminderTime !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderTime)) {
     throw new ConvexError("Choose a valid reminder time.");
   }
+}
+
+function reminderTimestamp(dueDate: string | null, reminderTime: string | undefined, tzOffsetMinutes: number | undefined) {
+  if (!dueDate || !reminderTime) return undefined;
+  const [year, month, day] = dueDate.split("-").map(Number);
+  const [hours, minutes] = reminderTime.split(":").map(Number);
+  return Date.UTC(year, month - 1, day, hours, minutes) + (tzOffsetMinutes ?? 0) * 60000;
+}
+
+async function scheduleReminder(ctx: MutationCtx, taskId: Id<"tasks">, reminderAt: number | undefined) {
+  if (reminderAt === undefined || reminderAt < Date.now() - 60000) return;
+  await ctx.scheduler.runAt(reminderAt, internal.reminders.fireReminder, { taskId, reminderAt });
 }
 
 function localDayKey(timestamp: number, tzOffsetMinutes: number) {
@@ -139,6 +151,7 @@ export const createTask = mutation({
     targetMinutes: v.number(),
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
+    tzOffset: v.optional(v.number()),
     groupIds: v.array(v.id("circles"))
   },
   handler: async (ctx, args) => {
@@ -168,8 +181,11 @@ export const createTask = mutation({
       done: false,
       repeat: args.repeat ?? "none",
       reminderTime: args.reminderTime ?? "",
+      tzOffset: args.tzOffset,
+      reminderAt: reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset),
       createdAt: Date.now()
     });
+    await scheduleReminder(ctx, taskId, reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset));
     for (const circleId of args.groupIds) {
       await ctx.db.insert("circleTasks", { circleId, taskId, sharedBy: account.id, createdAt: Date.now() });
     }
@@ -192,6 +208,7 @@ export const updateTask = mutation({
     targetMinutes: v.number(),
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
+    tzOffset: v.optional(v.number()),
     groupIds: v.array(v.id("circles"))
   },
   handler: async (ctx, args) => {
@@ -212,8 +229,10 @@ export const updateTask = mutation({
     await ctx.db.patch(task._id, {
       title, description: args.description.trim(), category: args.category, dueDate: args.dueDate,
       priority: args.priority, visibility: args.visibility, targetMinutes: args.targetMinutes,
-      repeat: args.repeat ?? "none", reminderTime: args.reminderTime ?? ""
+      repeat: args.repeat ?? "none", reminderTime: args.reminderTime ?? "",
+      tzOffset: args.tzOffset, reminderAt: reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset)
     });
+    await scheduleReminder(ctx, task._id, reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset));
     const existingLinks = await ctx.db.query("circleTasks")
       .withIndex("by_task", q => q.eq("taskId", task._id)).collect();
     const keep = new Set(args.groupIds.map(String));
@@ -267,8 +286,10 @@ export const taskAction = mutation({
             userId: id, title: task.title, description: task.description, category: task.category,
             dueDate: nextDueDate(task.dueDate, task.repeat), priority: task.priority, visibility: task.visibility,
             targetMinutes: task.targetMinutes, elapsedSeconds: 0, timerStartedAt: null, done: false,
-            repeat: task.repeat, reminderTime: task.reminderTime ?? "", createdAt: now
+            repeat: task.repeat, reminderTime: task.reminderTime ?? "", tzOffset: task.tzOffset,
+            reminderAt: reminderTimestamp(nextDueDate(task.dueDate, task.repeat), task.reminderTime, task.tzOffset), createdAt: now
           });
+          await scheduleReminder(ctx, nextId, reminderTimestamp(nextDueDate(task.dueDate, task.repeat), task.reminderTime, task.tzOffset));
           const links = await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
           for (const link of links) {
             await ctx.db.insert("circleTasks", { circleId: link.circleId, taskId: nextId, sharedBy: id, createdAt: now });
@@ -366,7 +387,7 @@ export const circleTasks = query({
       const task = await ctx.db.get(link.taskId);
       if (!task) return null;
       const owner = await authComponent.getAnyUserById(ctx, task.userId);
-      return { id: String(task._id), ownerId: task.userId, ownerName: owner?.name ?? "Member", title: task.title, category: task.category, dueDate: task.dueDate, done: task.done };
+      return { id: String(task._id), ownerId: task.userId, ownerName: owner?.name ?? "Member", title: task.title, category: task.category, dueDate: task.dueDate, createdAt: task.createdAt, done: task.done };
     })).then(tasks => tasks.filter(Boolean));
   }
 });

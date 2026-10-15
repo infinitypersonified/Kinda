@@ -43,6 +43,8 @@ export default defineSchema({
     done: v.boolean(),
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
+    reminderAt: v.optional(v.number()),
+    tzOffset: v.optional(v.number()),
     createdAt: v.number()
   }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]),
   circleTasks: defineTable({

@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as push from "../push.js";
 import type * as pushData from "../pushData.js";
+import type * as reminders from "../reminders.js";
 import type * as workspace from "../workspace.js";
 
 import type {
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   push: typeof push;
   pushData: typeof pushData;
+  reminders: typeof reminders;
   workspace: typeof workspace;
 }>;
 
