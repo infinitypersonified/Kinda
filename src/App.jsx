@@ -13,6 +13,7 @@ import { WeeklyPage } from "./weekly.jsx";
 const ClockContext = createContext(Date.now());
 
 function ClockProvider({ children }) {
+  const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
