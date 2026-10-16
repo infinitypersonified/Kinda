@@ -453,7 +453,7 @@ const server = createServer(async (request, response) => {
     if ((url.pathname === "/api/tasks" || url.pathname === "/api/goals") && request.method === "POST") {
       const body = await readBody(request);
       const title = String(body.title || "").trim();
-      const categories = new Set(["Personal", "Learning", "Building", "Health", "Creative work", "Relationships"]);
+      const categories = new Set(["Personal", "Learning", "Building", "Health", "Creative work", "Relationships", "Religion", "Work"]);
       const targetMinutes = Number(body.targetMinutes);
       if (!title || title.length > 120) {
         json(response, 400, { error: "A task needs a title of 1 to 120 characters." });
