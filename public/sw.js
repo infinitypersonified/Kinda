@@ -1,5 +1,5 @@
 // Minimal service worker: makes Kinda installable and keeps the app shell available briefly offline.
-const CACHE = "kinda-shell-v3";
+const CACHE = "kinda-shell-v4";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/manifest.webmanifest", "/icon-192.png"])).then(() => self.skipWaiting()));
 });
@@ -20,6 +20,7 @@ self.addEventListener("push", event => {
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => {
     // The app is on screen: it already shows messages and reminders itself.
     if (clients.some(client => client.visibilityState === "visible")) return undefined;
+    try { if (self.navigator && self.navigator.setAppBadge) self.navigator.setAppBadge(); } catch (error) { /* badge is optional */ }
     return self.registration.showNotification(data.title || "Kinda", {
       body: data.body || "",
       tag: data.tag || "kinda",

@@ -58,6 +58,7 @@ export default defineSchema({
     senderId: v.string(),
     content: v.string(),
     replyTo: v.optional(v.id("messages")),
+    mentions: v.optional(v.array(v.string())),
     editedAt: v.optional(v.number()),
     createdAt: v.number()
   }).index("by_circle", ["circleId"]).index("by_sender_created", ["senderId", "createdAt"]),

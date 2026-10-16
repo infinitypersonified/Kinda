@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
-  ArrowLeft, ArrowRight, Bell, CalendarDays, Check, CheckSquare2, Clock3, Heart,
-  Download, Flame, House, LogOut, Menu, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
+  ArrowLeft, ArrowRight, BarChart3, Bell, CalendarDays, Check, CheckSquare2, Clock3, Heart,
+  Download, Flame, House, LogOut, Menu, Minimize2, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
   CornerUpLeft, Moon, Repeat, Search, Send, Settings, Share, Sun, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
   Users, X
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
+import { WeeklyPage } from "./weekly.jsx";
 
 const categories = ["Personal", "Learning", "Building", "Health", "Creative work", "Relationships"];
 const pages = [
@@ -15,6 +16,7 @@ const pages = [
   { id: "tasks", label: "My Tasks", icon: CheckSquare2 },
   { id: "circles", label: "Circles", icon: Users },
   { id: "activity", label: "Activity", icon: Heart },
+  { id: "weekly", label: "Weekly", icon: BarChart3 },
   { id: "chat", label: "Chat", icon: MessageCircle },
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "settings", label: "Settings", icon: Settings }
@@ -86,14 +88,14 @@ function playCelebrationSound(context) {
   window.setTimeout(() => context.close(), 1100);
 }
 
-const WHATS_NEW_VERSION = "2026-10";
+const WHATS_NEW_VERSION = "2026-10-16";
 const whatsNew = [
-  ["⚡", "Everything is live", "Chats, tasks and activity update instantly, with a badge on each tab when something is new."],
-  ["💬", "Better chat", "Reply to, edit and delete messages, see who is typing, and spot where new messages start."],
-  ["🎨", "Your own avatar", "Pick a color and a character in Edit profile."],
-  ["🔥", "Streaks, reactions and nudges", "Keep a daily streak, react with 🔥 👏 🎉 💪, and nudge a friend about an overdue task."],
-  ["🔁", "Recurring tasks and reminders", "Repeat a task daily, on weekdays or weekly, and set a reminder time."],
-  ["🌙", "Dark mode and install", "Switch themes in Settings, and add Kinda to your home screen with push notifications."]
+  ["📊", "Weekly summary", "See what you finished and what is still waiting each week, then download it as a PDF or CSV."],
+  ["⏱️", "Your own focus time", "Set any length from 1 minute to 24 hours, and enjoy the new full-screen focus mode."],
+  ["✨", "A livelier app", "Smoother animations, a progress ring on Home, and swipe a task to complete or delete it."],
+  ["📅", "Every day on its own", "Today only shows today. Unfinished tasks from earlier days wait in their own card."],
+  ["🎨", "Make it yours", "Choose an accent color, a dark theme, and your own avatar."],
+  ["👋", "Leave a circle", "You can now leave any circle from its page."]
 ];
 
 const pushSupported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && Boolean(import.meta.env.VITE_VAPID_PUBLIC_KEY);
@@ -106,6 +108,153 @@ function urlBase64ToUint8Array(base64) {
 function subscriptionBody(subscription) {
   const json = subscription.toJSON();
   return { endpoint: json.endpoint, p256dh: json.keys?.p256dh || "", auth: json.keys?.auth || "" };
+}
+
+const accents = [
+  ["terracotta", "Terracotta", "#d96c3b"], ["plum", "Plum", "#9a5bb0"], ["teal", "Teal", "#2f9488"],
+  ["sky", "Sky", "#3b82c4"], ["olive", "Olive", "#7b8f3a"], ["rose", "Rose", "#d65a7a"]
+];
+
+function formatMinutes(total) {
+  const minutes = Math.max(0, Math.round(Number(total) || 0));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+function dueLabel(task, nowMs) {
+  const today = localDate();
+  const day = taskDay(task);
+  if (task.done) return { text: dayLabel(task.dueDate), tone: "" };
+  const gap = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
+  if (gap < 0) return { text: `Overdue · ${-gap}d`, tone: "late" };
+  if (gap === 0) {
+    if (task.reminderTime) {
+      const [hours, minutes] = task.reminderTime.split(":").map(Number);
+      const now = new Date(nowMs);
+      const diff = hours * 60 + minutes - (now.getHours() * 60 + now.getMinutes());
+      if (diff > 0) return { text: diff < 60 ? `In ${diff}m` : `In ${Math.floor(diff / 60)}h${diff % 60 ? ` ${diff % 60}m` : ""}`, tone: diff < 60 ? "soon" : "" };
+      return { text: `Was due ${task.reminderTime}`, tone: "late" };
+    }
+    return { text: "Today", tone: "" };
+  }
+  return { text: gap === 1 ? "Tomorrow" : `In ${gap} days`, tone: "" };
+}
+
+function CountUp({ value }) {
+  const [shown, setShown] = useState(value);
+  const fromRef = useRef(value);
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === value) return undefined;
+    const startedAt = performance.now();
+    let frame;
+    const step = now => {
+      const progress = Math.min(1, (now - startedAt) / 650);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setShown(Math.round(from + (value - from) * eased));
+      if (progress < 1) frame = requestAnimationFrame(step);
+      else fromRef.current = value;
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return <>{shown}</>;
+}
+
+function ProgressRing({ percent, size = 76, stroke = 7, children }) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  return <span className="progress-ring" style={{ width: size, height: size }}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle className="ring-track" cx={size / 2} cy={size / 2} r={radius} strokeWidth={stroke} fill="none"/>
+      <circle className="ring-value" cx={size / 2} cy={size / 2} r={radius} strokeWidth={stroke} fill="none" strokeLinecap="round"
+        strokeDasharray={circumference} strokeDashoffset={circumference * (1 - Math.min(100, Math.max(0, percent)) / 100)}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}/>
+    </svg>
+    <span className="ring-label">{children}</span>
+  </span>;
+}
+
+function SkeletonList({ rows = 3 }) {
+  return <div className="skeleton-list" aria-hidden="true">{Array.from({ length: rows }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton skeleton-dot"/><div><span className="skeleton skeleton-line"/><span className="skeleton skeleton-line short"/></div></div>)}</div>;
+}
+
+function FocusTimeField({ defaultValue = 25 }) {
+  const [minutes, setMinutes] = useState(String(defaultValue));
+  const value = Number(minutes);
+  return <div className="focus-time-field">
+    <label>Focus time <span className="optional-label">{value > 0 ? formatMinutes(value) : "Enter minutes"}</span>
+      <input name="targetMinutes" type="number" inputMode="numeric" min="1" max="1440" step="1" value={minutes} onChange={event => setMinutes(event.target.value)} required/>
+    </label>
+    <div className="chip-row">{[15, 25, 45, 60, 90, 120].map(preset => <button type="button" key={preset} className={`chip ${value === preset ? "selected" : ""}`} onClick={() => setMinutes(String(preset))}>{formatMinutes(preset)}</button>)}</div>
+  </div>;
+}
+
+function renderMessageContent(text, members, userId) {
+  const names = members.filter(member => member.name).map(member => member.name).sort((a, b) => b.length - a.length);
+  if (!names.length || !text.includes("@")) return text;
+  const pattern = new RegExp(`(@(?:${names.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}))`, "g");
+  return text.split(pattern).map((part, index) => {
+    if (!part.startsWith("@")) return part;
+    const member = members.find(item => `@${item.name}` === part);
+    return <span key={index} className={`mention ${member?.id === userId ? "mention-me" : ""}`}>{part}</span>;
+  });
+}
+
+function InAppBanner({ banner, onOpen, onClose }) {
+  return <div className="in-app-banner" role="status" key={banner.id}>
+    <button className="banner-main" onClick={onOpen}>
+      {banner.avatarName ? <Avatar name={banner.avatarName} avatar={banner.avatar}/> : <span className="banner-icon"><Bell size={15}/></span>}
+      <span><b>{banner.title}</b><small>{banner.body}</small></span>
+    </button>
+    <button className="icon-quiet" onClick={onClose} aria-label="Dismiss notification"><X size={14}/></button>
+  </div>;
+}
+
+function ConfirmDialog({ title, children, confirmLabel, danger, onConfirm, onCancel }) {
+  return <Modal title={title} onClose={onCancel}>
+    <div className="confirm-body">{children}</div>
+    <div className="reminder-actions"><button className={`button button-secondary ${danger ? "danger-button" : ""}`} onClick={onConfirm}>{confirmLabel}</button><button className="button button-primary" onClick={onCancel}>Cancel</button></div>
+  </Modal>;
+}
+
+function OnboardingCard({ steps, onDismiss }) {
+  const doneCount = steps.filter(step => step.done).length;
+  return <section className="onboarding-card" aria-label="Getting started">
+    <div className="onboarding-head"><div><p className="eyebrow">GETTING STARTED</p><b>{doneCount} of {steps.length} done</b></div><button className="icon-quiet" onClick={onDismiss} aria-label="Hide getting started"><X size={15}/></button></div>
+    <div className="summary-progress"><span style={{ width: `${doneCount / steps.length * 100}%` }}/></div>
+    {steps.map(step => <div className={`onboarding-step ${step.done ? "done" : ""}`} key={step.id}><span className="onboarding-check">{step.done && <Check size={12}/>}</span><span>{step.label}</span>{!step.done && <button className="text-link" onClick={step.action}>{step.cta}</button>}</div>)}
+  </section>;
+}
+
+function FocusMode({ task, tick, onClose, onToggle, onDone, onExtend }) {
+  const elapsed = task.elapsedSeconds + (task.timerStartedAt ? Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000)) : 0);
+  const total = task.targetMinutes * 60;
+  const remaining = Math.max(0, total - elapsed);
+  const running = Boolean(task.timerStartedAt);
+  const chimed = useRef(false);
+  useEffect(() => {
+    if (remaining === 0 && !chimed.current) { chimed.current = true; playChime(); }
+    if (remaining > 0) chimed.current = false;
+  }, [remaining]);
+  const percent = total ? Math.min(100, elapsed / total * 100) : 0;
+  return <div className={`focus-mode ${running ? "running" : ""}`} role="dialog" aria-modal="true" aria-label="Focus mode">
+    <button className="focus-minimize icon-quiet" onClick={onClose} aria-label="Minimize focus mode"><Minimize2 size={18}/></button>
+    <p className="eyebrow">{remaining === 0 ? "TIME’S UP" : running ? "FOCUSING" : "PAUSED"}</p>
+    <ProgressRing percent={percent} size={280} stroke={9}><span className="focus-time">{formatTime(remaining)}</span><small>{formatMinutes(task.targetMinutes)} session</small></ProgressRing>
+    <h2>{task.title}</h2>
+    <div className="focus-actions">
+      {remaining > 0 && <button className="button button-primary" onClick={onToggle}>{running ? <><Pause size={15}/> Pause</> : <><Play size={15}/> Resume</>}</button>}
+      <button className="button button-secondary" onClick={() => onExtend(5)}><Plus size={15}/> 5 min</button>
+      <button className="button button-secondary" onClick={onDone}><Check size={15}/> Done</button>
+    </div>
+  </div>;
 }
 
 let chimeContext = null;
@@ -236,6 +385,15 @@ function App({ authClient }) {
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [reminderQueue, setReminderQueue] = useState([]);
   const [splash, setSplash] = useState(true);
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+  const [justDoneId, setJustDoneId] = useState(null);
+  const [focusTaskId, setFocusTaskId] = useState(null);
+  const [banner, setBanner] = useState(null);
+  const [leaveTarget, setLeaveTarget] = useState(null);
+  const [onboardingHidden, setOnboardingHidden] = useState(() => { try { return localStorage.getItem("kinda:onboarding-dismissed") === "1"; } catch { return false; } });
+  const [accent, setAccent] = useState(() => { try { return localStorage.getItem("kinda:accent") || "terracotta"; } catch { return "terracotta"; } });
+  const bannerSeen = useRef({});
+  const nudgeSeenId = useRef(null);
   const [pushOn, setPushOn] = useState(false);
   const [activity, setActivity] = useState([]);
   const [friendSearch, setFriendSearch] = useState("");
@@ -343,11 +501,12 @@ function App({ authClient }) {
 
   useEffect(() => {
     if (!user) return undefined;
+    setTasksLoaded(false);
     let errorShown = false;
     const onError = error => { if (!errorShown) { errorShown = true; setToast(error.message); } };
     const memberKey = group => group.members.map(member => member.id + member.avatar).join(",");
     const unsubs = [
-      live("/tasks", setTasks, onError),
+      live("/tasks", data => { setTasks(data); setTasksLoaded(true); }, onError),
       live("/friends", setFriends, onError),
       live("/groups", groupData => {
         setGroups(groupData);
@@ -495,6 +654,13 @@ function App({ authClient }) {
       })
     };
   });
+  const onboardingSteps = [
+    { id: "task", label: "Add your first task", cta: "Add task", done: tasks.length > 0, action: () => setTaskDialog({ task: null }) },
+    { id: "circle", label: "Create a circle for your people", cta: "Create", done: groups.length > 0, action: () => setCircleDialog(true) },
+    { id: "invite", label: "Invite a friend to a circle", cta: "Invite", done: groups.some(group => group.memberCount > 1) || friends.length > 0, action: () => navigate("circles") },
+    { id: "avatar", label: "Pick your avatar", cta: "Choose", done: Boolean(user?.avatar), action: () => navigate("profile") }
+  ];
+  const focusTask = tasks.find(task => task.id === focusTaskId && !task.done);
   const viewActiveGroup = viewGroups.find(group => group.id === activeGroup?.id) || activeGroup;
   const openTodayTasks = todayTasks.filter(task => !task.done);
   const filteredTasks = useMemo(() => {
@@ -551,6 +717,54 @@ function App({ authClient }) {
     const timer = window.setInterval(check, 15000);
     return () => window.clearInterval(timer);
   }, [user?.id, tasks]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (accent && accent !== "terracotta") root.setAttribute("data-accent", accent);
+    else root.removeAttribute("data-accent");
+    try { localStorage.setItem("kinda:accent", accent); } catch { /* ignore */ }
+  }, [accent]);
+
+  useEffect(() => {
+    if (!("setAppBadge" in navigator)) return;
+    try {
+      if (user && totalBadges > 0) navigator.setAppBadge(totalBadges);
+      else navigator.clearAppBadge();
+    } catch { /* app badges are optional */ }
+  }, [totalBadges, user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    Object.entries(messagesByGroup).forEach(([groupId, list]) => {
+      const last = list[list.length - 1];
+      if (bannerSeen.current[groupId] === undefined) { bannerSeen.current[groupId] = last?.id ?? null; return; }
+      if (!last || last.id === bannerSeen.current[groupId]) return;
+      bannerSeen.current[groupId] = last.id;
+      if (last.senderId === user.id) return;
+      const viewing = page === "chat" && activeGroup?.id === groupId && (chatMobileOpen || !window.matchMedia("(max-width: 780px)").matches);
+      if (viewing || document.hidden) return;
+      const group = groups.find(item => item.id === groupId);
+      const mentioned = (last.mentions || []).includes(user.id);
+      setBanner({ id: last.id, kind: "chat", groupId, avatarName: last.senderName, avatar: last.senderAvatar,
+        title: `${mentioned ? "Mentioned by " : ""}${last.senderName} · ${group?.name || "Circle"}`, body: last.content });
+    });
+  }, [messagesByGroup]);
+
+  useEffect(() => {
+    if (!user) return;
+    const latest = nudges[0];
+    if (!latest) return;
+    if (nudgeSeenId.current === null) { nudgeSeenId.current = latest.id; return; }
+    if (latest.id === nudgeSeenId.current) return;
+    nudgeSeenId.current = latest.id;
+    if (!document.hidden && !latest.seen) setBanner({ id: latest.id, kind: "nudge", avatarName: latest.fromName, avatar: latest.fromAvatar, title: `${latest.fromName} nudged you`, body: latest.taskTitle });
+  }, [nudges]);
+
+  useEffect(() => {
+    if (!banner) return undefined;
+    const timer = window.setTimeout(() => setBanner(null), 6500);
+    return () => window.clearTimeout(timer);
+  }, [banner?.id]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -693,7 +907,7 @@ function App({ authClient }) {
       priority: String(form.get("priority") || "normal"),
       category: String(form.get("category") || "Personal"),
       visibility: String(form.get("visibility") || "private"),
-      targetMinutes: Number(form.get("targetMinutes") || 25),
+      targetMinutes: Math.min(1440, Math.max(1, Math.round(Number(form.get("targetMinutes")) || 25))),
       repeat: String(form.get("repeat") || "none"),
       reminderTime: String(form.get("reminderTime") || ""),
       tzOffset: new Date().getTimezoneOffset()
@@ -714,6 +928,10 @@ function App({ authClient }) {
   }
 
   async function updateTask(task, action, body = {}) {
+    if (action === "complete" && body.done && !task.done) {
+      setJustDoneId(task.id);
+      window.setTimeout(() => setJustDoneId(current => current === task.id ? null : current), 1100);
+    }
     const willFinishAllTasks = action === "complete" && body.done && !task.done
       && tasks.length > 0 && tasks.every(item => item.id === task.id || item.done);
     let soundReady = null;
@@ -738,6 +956,35 @@ function App({ authClient }) {
       }
     } catch (error) {
       if (soundReady) soundReady.then(context => context.close()).catch(() => {});
+      notify(error.message);
+    }
+  }
+
+  async function patchTask(task, overrides = {}) {
+    return api(`/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({
+      title: task.title, description: task.description || "", category: task.category, dueDate: task.dueDate,
+      priority: task.priority, visibility: task.visibility, targetMinutes: task.targetMinutes,
+      repeat: task.repeat || "none", reminderTime: task.reminderTime || "",
+      tzOffset: new Date().getTimezoneOffset(), groupIds: task.groupIds || [], ...overrides
+    }) });
+  }
+
+  async function extendFocus(task, minutes) {
+    try { await patchTask(task, { targetMinutes: Math.min(1440, task.targetMinutes + minutes) }); } catch (error) { notify(error.message); }
+  }
+
+  function handleTimer(task, action) {
+    updateTask(task, action);
+    if (action === "start") setFocusTaskId(task.id);
+  }
+
+  async function leaveCircle(group) {
+    try {
+      await api(`/groups/${group.id}/leave`, { method: "POST", body: "{}" });
+      setLeaveTarget(null);
+      notify(`You left ${group.name}.`);
+    } catch (error) {
+      setLeaveTarget(null);
       notify(error.message);
     }
   }
@@ -950,7 +1197,10 @@ function App({ authClient }) {
     setSendingMessage(true);
     try {
       await api(`/groups/${groupId}/messages`, {
-        method: "POST", body: JSON.stringify({ content, replyTo: replyTo?.id })
+        method: "POST", body: JSON.stringify({
+          content, replyTo: replyTo?.id,
+          mentions: (activeGroup.members || []).filter(member => member.id !== user.id && content.includes(`@${member.name}`)).map(member => member.id)
+        })
       });
       setReplyTo(null);
       setNewMessage("");
@@ -982,7 +1232,7 @@ function App({ authClient }) {
         <nav className="side-nav" aria-label="Main navigation">
           {pages.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => navigate(id)} title={label}>
             <Icon size={18}/><span>{label}</span>
-            {badges[id] > 0 && <i className="nav-badge" aria-label={`${badges[id]} new`}>{badges[id] > 99 ? "99+" : badges[id]}</i>}
+            {badges[id] > 0 && <i key={badges[id]} className="nav-badge" aria-label={`${badges[id]} new`}>{badges[id] > 99 ? "99+" : badges[id]}</i>}
           </button>)}
         </nav>
         <div className="sidebar-friends"><div className="side-section-heading"><span>YOUR CIRCLES</span><button className="icon-quiet" onClick={() => setCircleDialog(true)} aria-label="Create circle"><Plus size={15}/></button></div>
@@ -1009,15 +1259,17 @@ function App({ authClient }) {
           activity={activity.slice(0, 4)} groups={viewGroups} tick={tick}
           onCreate={() => setTaskDialog({ task: null })} onEdit={task => setTaskDialog({ task })}
           onComplete={(task, done) => updateTask(task, "complete", { done })}
-          onTimer={(task, action) => updateTask(task, action)} onReact={reactToActivity}
+          onTimer={handleTimer} onReact={reactToActivity}
           onPage={navigate} onCircle={group => { setActiveGroup(group); navigate("circles"); }} onCreateCircle={() => setCircleDialog(true)}
-          streak={streak}
+          streak={streak} loaded={tasksLoaded} justDoneId={justDoneId}
+          onboarding={onboardingHidden || onboardingSteps.every(step => step.done) ? null : onboardingSteps}
+          onDismissOnboarding={() => { setOnboardingHidden(true); try { localStorage.setItem("kinda:onboarding-dismissed", "1"); } catch { /* ignore */ } }}
         />}
-        {page === "tasks" && <TasksPage
+        {page === "tasks" && <TasksPage loaded={tasksLoaded} justDoneId={justDoneId}
           tasks={filteredTasks} filter={filter} setFilter={setFilter} allCount={tasks.length}
           tick={tick} onCreate={() => setTaskDialog({ task: null })}
           onEdit={task => setTaskDialog({ task })} onComplete={(task, done) => updateTask(task, "complete", { done })}
-          onTimer={(task, action) => updateTask(task, action)} onDelete={deleteTask}
+          onTimer={handleTimer} onDelete={deleteTask}
         />}
         {page === "circles" && <CirclesPage
           groups={viewGroups} activeGroup={viewActiveGroup} onSelect={setActiveGroup}
@@ -1035,7 +1287,7 @@ function App({ authClient }) {
           onCopyInvite={copyInviteLink}
           onCreateTask={() => setTaskDialog({ task: null, groupIds: activeGroup ? [activeGroup.id] : [] })}
           onOpenChat={() => navigate("chat")}
-          recap={recap} onNudge={nudgeTask} onRevokeInvite={revokeInviteLink}
+          recap={recap} onNudge={nudgeTask} onRevokeInvite={revokeInviteLink} onLeave={setLeaveTarget}
         />}
         {page === "activity" && <ActivityPage activity={activity} nudges={nudges} userId={user.id} onReact={reactToActivity}/>}
         {page === "chat" && <ChatPage
@@ -1048,6 +1300,7 @@ function App({ authClient }) {
           onEdit={editMessage} onDelete={deleteMessage} onTyping={handleTyping}
           dividerTime={chatDivider && chatDivider.groupId === activeGroup?.id ? chatDivider.time : null}
         />}
+        {page === "weekly" && <WeeklyPage tasks={tasks} userName={user.name} onError={notify}/>}
         {page === "profile" && <ProfilePage
           user={profile || user} tasks={tasks} friends={friends} editing={profileEditing}
           setEditing={setProfileEditing} onSave={saveProfile} onFriend={openFriend}
@@ -1055,18 +1308,31 @@ function App({ authClient }) {
         {page === "settings" && <SettingsPage user={user} onSignOut={signOut} theme={theme} setTheme={setTheme}
           notifPermission={notifPermission} onEnableNotifications={() => Notification.requestPermission().then(setNotifPermission)}
           onExport={exportMyData} onDelete={deleteAccount}
-          pushOn={pushOn} onTogglePush={() => pushOn ? disablePush() : enablePush()} onWhatsNew={() => setShowWhatsNew(true)}/>}
+          pushOn={pushOn} onTogglePush={() => pushOn ? disablePush() : enablePush()} onWhatsNew={() => setShowWhatsNew(true)} accent={accent} setAccent={setAccent}/>}
       </section>
 
       {taskDialog && <TaskDialog task={taskDialog.task} groups={groups} initialGroupIds={taskDialog.groupIds} onClose={() => setTaskDialog(null)} onSave={saveTask}/>}
       {friendDialog && <FriendDialog onClose={() => setFriendDialog(false)} onSubmit={addFriend}/>}
       {circleDialog && <CircleDialog onClose={() => setCircleDialog(false)} onSubmit={createCircle}/>}
+      {banner && <InAppBanner banner={banner} onClose={() => setBanner(null)} onOpen={() => {
+        const target = banner;
+        setBanner(null);
+        if (target.kind === "chat") { const group = groups.find(item => item.id === target.groupId); if (group) setActiveGroup(group); navigate("chat"); setChatMobileOpen(true); }
+        else navigate("activity");
+      }}/>}
+      {focusTask && <FocusMode task={focusTask} tick={tick} onClose={() => setFocusTaskId(null)}
+        onToggle={() => updateTask(focusTask, focusTask.timerStartedAt ? "stop" : "start")}
+        onDone={() => { updateTask(focusTask, "complete", { done: true }); setFocusTaskId(null); }}
+        onExtend={minutes => extendFocus(focusTask, minutes)}/>}
+      {leaveTarget && <ConfirmDialog title={`Leave ${leaveTarget.name}?`} confirmLabel="Leave circle" danger onConfirm={() => leaveCircle(leaveTarget)} onCancel={() => setLeaveTarget(null)}>
+        <p>You’ll stop seeing this circle’s chat and tasks, and the tasks you shared with it will be removed from the circle.{leaveTarget.ownerId === user.id ? " Ownership passes to the member who has been here longest." : ""}</p>
+      </ConfirmDialog>}
       {reminderQueue[0] && <ReminderDialog reminder={reminderQueue[0]} onDismiss={() => setReminderQueue(queue => queue.slice(1))}
         onDone={() => { const task = reminderQueue[0]; setReminderQueue(queue => queue.slice(1)); updateTask(task, "complete", { done: true }); }}/>}
       {showWhatsNew && !reminderQueue[0] && <WhatsNewDialog onClose={closeWhatsNew}/>}
       {celebrationOpen && <CelebrationDialog onClose={() => setCelebrationOpen(false)}/>}
       {toast && <div className="toast" role="status"><span className="toast-mark"><Check size={15}/></span>{toast}</div>}
-      {activeTimer && <div className="running-timer" aria-live="off"><span className="timer-live-dot"/><Clock3 size={14}/><span>{formatTime(activeTimer.targetMinutes * 60 - activeTimer.elapsedSeconds - Math.max(0, Math.floor((tick - Date.parse(activeTimer.timerStartedAt)) / 1000)))}</span><small>{activeTimer.title}</small></div>}
+      {activeTimer && <button className="running-timer" aria-live="off" onClick={() => setFocusTaskId(activeTimer.id)} aria-label="Open focus mode"><span className="timer-live-dot"/><Clock3 size={14}/><span>{formatTime(activeTimer.targetMinutes * 60 - activeTimer.elapsedSeconds - Math.max(0, Math.floor((tick - Date.parse(activeTimer.timerStartedAt)) / 1000)))}</span><small>{activeTimer.title}</small></button>}
     </main>
   );
 }
@@ -1141,12 +1407,13 @@ function PageHeader({ eyebrow, title, description, action }) {
   return <header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
 }
 
-function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, tick, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier }) {
+function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, tick, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier, loaded = true, justDoneId, onboarding, onDismissOnboarding }) {
   const activeLeaderboard = groups.find(group => group.id === leaderboardGroupId) || groups[0] || null;
   return <div className="page-content home-page">
-    <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase()} title="Home" description={`Good morning, ${user.name.split(/\s+/)[0]}. Here’s today.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
+    <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase()} title="Home" description={`${greeting()}, ${user.name.split(/\s+/)[0]}. Here’s today.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
     <InstallCard/>
-    <section className="today-summary" aria-label="Today's task progress"><div><b>Today</b><span>{done} of {total} tasks complete</span></div><div className="summary-progress"><span style={{ width: `${completion}%` }}/></div><strong>{completion}<small>%</small></strong></section>
+    {onboarding && <OnboardingCard steps={onboarding} onDismiss={onDismissOnboarding}/>}
+    <section className="today-summary" aria-label="Today's task progress"><ProgressRing percent={completion}><b className="ring-number"><CountUp value={completion}/><small>%</small></b></ProgressRing><div className="summary-copy"><b>Today</b><span>{done} of {total} tasks complete</span><small>{total === 0 ? "Nothing planned yet." : completion === 100 ? "All done. Lovely." : `${total - done} to go`}</small></div></section>
     {streak && (streak.current > 0 || streak.best > 0) && <section className="streak-chip" role="status"><Flame size={16}/><b>{streak.current}-day streak</b><span>{streak.doneToday ? "Nice, you've shown up today." : streak.current ? "Finish one task today to keep it going." : "Finish a task to start a new one."} Best: {streak.best}.</span></section>}
     {earlier.length > 0 && <section className="earlier-card" aria-label="Unfinished tasks from earlier days"><div className="earlier-head"><div><p className="eyebrow">FROM EARLIER DAYS</p><b>{earlier.length} unfinished {earlier.length === 1 ? "task" : "tasks"}</b></div><button className="text-link" onClick={() => onMoveToToday(earlier)}>Move all to today</button></div>
       {earlier.slice(0, 3).map(task => <article className="earlier-row" key={task.id}><span><b>{task.title}</b><small>{dayLabel(taskDay(task))}</small></span><button className="text-link" onClick={() => onMoveToToday([task])}>Move to today</button></article>)}
@@ -1154,7 +1421,7 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
     {remainingTasks > 0 ? <section className="motivation-card" role="status"><span><Heart size={17}/></span><div><b>One step at a time.</b><p>You’ve got {remainingTasks} {remainingTasks === 1 ? "task" : "tasks"} still on your list. Pick one small next step—progress matters more than perfection.</p></div></section> : total > 0 && <section className="motivation-card motivation-complete" role="status"><span><Check size={17}/></span><div><b>Look at what you’ve done.</b><p>Your tasks for today are complete. Take a breath and feel good about showing up.</p></div></section>}
     <div className="home-grid">
       <section className="home-tasks"><div className="section-title-row"><div><p className="eyebrow">YOUR DAY</p><h2>Tasks for today</h2></div><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
-        {tasks.length ? <div className="task-list">{tasks.slice(0, 7).map(task => <TaskRow key={task.id} task={task} tick={tick} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={null}/>)}</div> : <EmptyTasks onCreate={onCreate} compact/>}
+        {!loaded ? <SkeletonList/> : tasks.length ? <div className="task-list">{tasks.slice(0, 7).map(task => <TaskRow key={task.id} task={task} tick={tick} justDone={justDoneId === task.id} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={null}/>)}</div> : <EmptyTasks onCreate={onCreate} compact/>}
       </section>
       <aside className="home-social"><section className="home-feed"><div className="section-title-row"><div><p className="eyebrow">AROUND YOU</p><h2>Friends’ activity</h2></div><button className="icon-quiet" onClick={() => onPage("activity")} aria-label="See all activity"><ArrowRight size={16}/></button></div>
         {activity.length ? <ActivityList items={activity} userId={user.id} onReact={onReact} compact/> : <p className="quiet-empty">Friend activity will appear when your friends share a task or finish one.</p>}</section>
@@ -1167,32 +1434,69 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
   </div>;
 }
 
-function TasksPage({ tasks, filter, setFilter, allCount, tick, onCreate, onEdit, onComplete, onTimer, onDelete }) {
+function TasksPage({ tasks, filter, setFilter, allCount, tick, onCreate, onEdit, onComplete, onTimer, onDelete, loaded = true, justDoneId }) {
   return <div className="page-content">
     <PageHeader eyebrow="MAKE A LITTLE ROOM FOR WHAT MATTERS" title="My Tasks" description={`${allCount} ${allCount === 1 ? "task" : "tasks"} on your list.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
     <div className="task-filters"><SlidersHorizontal size={16}/>{["Today", "Earlier", "Upcoming", "Completed", "No date"].map(item => <button className={filter === item ? "filter-active" : ""} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div>
-    {tasks.length ? <section className="task-list task-list-page">{tasks.map(task => <TaskRow key={task.id} task={task} tick={tick} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={() => onDelete(task)}/>)}</section> : <EmptyTasks onCreate={onCreate} title={filter === "Completed" ? "No completed tasks yet." : filter === "Upcoming" ? "Nothing coming up." : "A clear page."}/>}
+    {!loaded ? <SkeletonList rows={4}/> : tasks.length ? <section className="task-list task-list-page">{tasks.map(task => <TaskRow key={task.id} task={task} tick={tick} justDone={justDoneId === task.id} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={() => onDelete(task)}/>)}</section> : <EmptyTasks onCreate={onCreate} title={filter === "Completed" ? "No completed tasks yet." : filter === "Upcoming" ? "Nothing coming up." : "A clear page."}/>}
   </div>;
 }
 
-function TaskRow({ task, tick, onComplete, onTimer, onEdit, onDelete }) {
+function TaskRow({ task, tick, onComplete, onTimer, onEdit, onDelete, justDone }) {
   const elapsed = task.elapsedSeconds + (task.timerStartedAt ? Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000)) : 0);
   const remaining = Math.max(0, task.targetMinutes * 60 - elapsed);
-  return <article className={`task-row ${task.done ? "task-complete" : ""}`}>
-    <button className={`task-check ${task.done ? "checked" : ""}`} aria-label={task.done ? "Reopen task" : "Complete task"} onClick={() => onComplete(!task.done)}>{task.done && <Check size={14}/>}</button>
-    <div className="task-main"><div className="task-heading"><h3>{task.title}</h3>{task.priority === "high" && !task.done && <span className="priority-tag">HIGH PRIORITY</span>}{task.groupIds?.length > 0 && <span className="shared-tag">IN A CIRCLE</span>}{task.repeat && task.repeat !== "none" && <span className="shared-tag"><Repeat size={10}/> REPEATS</span>}</div>{task.description && <p className="task-description">{task.description}</p>}
-      <div className="task-meta"><span>{task.category}</span><span className="meta-separator">·</span><CalendarDays size={13}/><span>{dayLabel(task.dueDate)}</span>{task.dueDate && <span className="task-date">{task.dueDate}</span>}</div>
-      {!task.done && <div className="task-focus"><span className="focus-readout">{formatTime(remaining)}</span>{onTimer && <button className="timer-control" onClick={() => onTimer(task.timerStartedAt ? "stop" : "start")}>{task.timerStartedAt ? <Pause size={12}/> : <Play size={12}/>} {task.timerStartedAt ? "Pause focus" : elapsed ? "Resume focus" : `${task.targetMinutes} min focus`}</button>}</div>}
-    </div>
-    <div className="task-actions">{onEdit && <button className="icon-quiet task-action" onClick={onEdit} aria-label="Edit task"><Pencil size={14}/></button>}{onDelete && <button className="icon-quiet task-action" onClick={onDelete} aria-label="Delete task"><Trash2 size={14}/></button>}</div>
-  </article>;
+  const due = dueLabel(task, tick);
+  const [dx, setDx] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const drag = useRef(null);
+  function down(event) {
+    if (event.pointerType !== "touch" || event.target.closest("button")) return;
+    drag.current = { x: event.clientX, y: event.clientY, locked: false };
+  }
+  function move(event) {
+    const current = drag.current;
+    if (!current) return;
+    const moveX = event.clientX - current.x;
+    const moveY = event.clientY - current.y;
+    if (!current.locked) {
+      if (Math.abs(moveY) > 10 && Math.abs(moveY) > Math.abs(moveX)) { drag.current = null; setDx(0); return; }
+      if (Math.abs(moveX) < 8) return;
+      current.locked = true;
+    }
+    setDx(Math.max(onDelete ? -110 : 0, Math.min(130, (revealed ? -88 : 0) + moveX)));
+  }
+  function up() {
+    const current = drag.current;
+    drag.current = null;
+    if (!current || !current.locked) return;
+    if (dx > 90) { onComplete(!task.done); setDx(0); setRevealed(false); }
+    else if (onDelete && dx < -60) { setRevealed(true); setDx(-88); }
+    else { setRevealed(false); setDx(0); }
+  }
+  return <div className="task-swipe">
+    <div className="swipe-bg swipe-bg-done" aria-hidden="true"><Check size={16}/> {task.done ? "Reopen" : "Done"}</div>
+    {onDelete && <button className="swipe-bg swipe-bg-delete" onClick={onDelete} tabIndex={revealed ? 0 : -1}><Trash2 size={16}/> Delete</button>}
+    <article className={`task-row priority-${task.priority} ${task.done ? "task-complete" : ""} ${justDone ? "task-pop" : ""} ${dx ? "dragging" : ""}`}
+      style={dx ? { transform: `translateX(${dx}px)`, transition: "none" } : undefined}
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <button className={`task-check ${task.done ? "checked" : ""}`} aria-label={task.done ? "Reopen task" : "Complete task"} onClick={() => onComplete(!task.done)}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path className="check-path" d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        {justDone && <span className="spark-burst" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ "--a": `${index * 45}deg` }}/>)}</span>}
+      </button>
+      <div className="task-main"><div className="task-heading"><h3>{task.title}</h3>{task.priority === "high" && !task.done && <span className="priority-tag">HIGH PRIORITY</span>}{task.groupIds?.length > 0 && <span className="shared-tag">IN A CIRCLE</span>}{task.repeat && task.repeat !== "none" && <span className="shared-tag"><Repeat size={10}/> REPEATS</span>}</div>{task.description && <p className="task-description">{task.description}</p>}
+        <div className="task-meta"><span className="category-chip">{task.category}</span><CalendarDays size={13}/><span className={`due ${due.tone}`}>{due.text}</span>{task.dueDate && <span className="task-date">{task.dueDate}</span>}</div>
+        {!task.done && <div className="task-focus"><span className="focus-readout">{formatTime(remaining)}</span>{onTimer && <button className="timer-control" onClick={() => onTimer(task.timerStartedAt ? "stop" : "start")}>{task.timerStartedAt ? <Pause size={12}/> : <Play size={12}/>} {task.timerStartedAt ? "Pause focus" : elapsed ? "Resume focus" : `${formatMinutes(task.targetMinutes)} focus`}</button>}</div>}
+      </div>
+      <div className="task-actions">{onEdit && <button className="icon-quiet task-action" onClick={onEdit} aria-label="Edit task"><Pencil size={14}/></button>}{onDelete && <button className="icon-quiet task-action" onClick={onDelete} aria-label="Delete task"><Trash2 size={14}/></button>}</div>
+    </article>
+  </div>;
 }
 
 function EmptyTasks({ onCreate, title = "Start with one thing.", compact = false }) {
   return <div className={`empty-tasks ${compact ? "empty-compact" : ""}`}><span className="empty-spark">✳</span><h3>{title}</h3><p>Add a task when you’re ready. You can keep it private or share it with friends.</p><button className="text-link" onClick={onCreate}><Plus size={15}/> Create a task</button></div>;
 }
 
-function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0 }) {
+function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0, onLeave }) {
   const memberTaskGroups = (activeGroup?.members || []).map(member => {
     const memberTasks = sharedTasks.filter(task => task.ownerId === member.id);
     const done = memberTasks.filter(task => task.done).length;
@@ -1212,7 +1516,7 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
     }) : <p className="quiet-empty">No accounts match that search yet.</p>}</section>}
     <section className="circles-directory"><div className="section-title-row"><div><p className="eyebrow">YOUR CIRCLES</p><h2>{groups.length ? `${groups.length} ${groups.length === 1 ? "circle" : "circles"}` : "Start a circle"}</h2></div></div>
       {groups.length ? <div className="circles-layout"><div className="circles-list">{groups.map((group, index) => <button className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`} key={group.id} onClick={() => onSelect(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"}</small></span><ArrowRight size={15}/></button>)}</div>
-        {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button></div></div>
+        {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button><button className="button button-secondary small-button danger-button" onClick={() => onLeave(activeGroup)}><LogOut size={14}/> Leave</button></div></div>
           <div className="circle-progress">{earlierCount > 0 && <small className="quiet-note">Showing today only · {earlierCount} from earlier days hidden</small>}<div><b>{sharedTasks.filter(task => task.done).length} of {sharedTasks.length} tasks done</b><span>{sharedTasks.length ? Math.round(sharedTasks.filter(task => task.done).length / sharedTasks.length * 100) : 0}%</span></div><div className="summary-progress"><span style={{ width: `${sharedTasks.length ? sharedTasks.filter(task => task.done).length / sharedTasks.length * 100 : 0}%` }}/></div></div>
           {recap && <div className="circle-recap"><p className="eyebrow">THIS WEEK</p><b>{recap.total} {recap.total === 1 ? "task" : "tasks"} finished together</b>{recap.top && <span><Flame size={13}/> {recap.top.name} led with {recap.top.completed}</span>}<div className="recap-members">{recap.members.map(member => <span key={member.id}><Avatar name={member.name} avatar={member.avatar}/>{member.completed}</span>)}</div></div>}
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
@@ -1253,6 +1557,9 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const dividerIndex = dividerTime === null || dividerTime === undefined ? -1 : messages.findIndex(message => message.senderId !== user.id && message.createdAt > dividerTime);
+  const members = activeGroup?.members || [];
+  const mentionMatch = value.match(/(^|\s)@([^\s@]*)$/);
+  const suggestions = mentionMatch ? members.filter(member => member.id !== user.id && member.name.toLowerCase().includes(mentionMatch[2].toLowerCase())).slice(0, 5) : [];
   return <div className="page-content chat-page">
     <PageHeader eyebrow="A LITTLE ENCOURAGEMENT" title="Circle chat" description="Every member of a circle shares one group conversation."/>
     <div className={`chat-layout ${mobileOpen ? "chat-open" : ""}`}>
@@ -1264,20 +1571,26 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
           <div className="chat-shared-tasks">{sharedTasks.slice(0, 3).map(task => <span key={`${task.ownerId}-${task.id}`}><CheckSquare2 size={12}/>{task.ownerName}: {task.title}</span>)}</div>
           <div className="chat-messages" aria-live="polite">{messages.length ? messages.map((message, index) => {
             const mine = message.senderId === user.id;
+            const previous = messages[index - 1];
+            const grouped = previous && previous.senderId === message.senderId && index !== dividerIndex && Date.parse(message.createdAt) - Date.parse(previous.createdAt) < 5 * 60 * 1000;
+            const mentionsMe = (message.mentions || []).includes(user.id);
             return <React.Fragment key={message.id}>
               {index === dividerIndex && <div className="chat-divider"><span>New messages</span></div>}
-              <article className={`chat-message ${mine ? "chat-mine" : ""}`}><Avatar name={message.senderName} avatar={message.senderAvatar}/><div className="message-body"><b>{mine ? "You" : message.senderName}</b>
+              <article className={`chat-message ${mine ? "chat-mine" : ""} ${grouped ? "chat-grouped" : ""} ${mentionsMe ? "mentions-me" : ""}`}>{grouped ? <span className="avatar-spacer"/> : <Avatar name={message.senderName} avatar={message.senderAvatar}/>}<div className="message-body">{!grouped && <b>{mine ? "You" : message.senderName}</b>}
+                <div className="message-bubble">
                 {message.replyTo && <blockquote className="message-reply"><b>{message.replyTo.senderName}</b><span>{message.replyTo.content}</span></blockquote>}
                 {editingId === message.id
                   ? <form className="message-edit" onSubmit={async event => { event.preventDefault(); if (editValue.trim()) { await onEdit(message, editValue); setEditingId(null); } }}><input value={editValue} onChange={event => setEditValue(event.target.value)} maxLength={1000} autoFocus aria-label="Edit message"/><button className="text-link" type="submit">Save</button><button className="text-link" type="button" onClick={() => setEditingId(null)}>Cancel</button></form>
-                  : <p>{message.content}</p>}
+                  : <p>{renderMessageContent(message.content, members, user.id)}</p>}
+                </div>
                 <small>{dateTime(message.createdAt)}{message.edited && " · edited"}</small>
                 <div className="message-actions"><button onClick={() => onReply(message)} aria-label="Reply"><CornerUpLeft size={13}/></button>{mine && <><button onClick={() => { setEditingId(message.id); setEditValue(message.content); }} aria-label="Edit message"><Pencil size={13}/></button><button onClick={() => onDelete(message)} aria-label="Delete message"><Trash2 size={13}/></button></>}</div>
               </div></article>
             </React.Fragment>;
-          }) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement.</p></div>}</div>
+          }) : <div className="chat-empty"><MessageCircle size={22}/><h3>A fresh conversation.</h3><p>Say hello, share a little progress, or send some encouragement. Type @ to mention someone.</p></div>}</div>
           <div className="typing-indicator" aria-live="polite">{typingNames.length > 0 && `${typingNames.join(", ")} ${typingNames.length > 1 ? "are" : "is"} typing…`}</div>
           {replyTo && <div className="reply-bar"><span>Replying to <b>{replyTo.senderName}</b>: {replyTo.content.slice(0, 70)}</span><button type="button" onClick={onCancelReply} aria-label="Cancel reply"><X size={14}/></button></div>}
+          {suggestions.length > 0 && <div className="mention-list" role="listbox" aria-label="Mention someone">{suggestions.map(member => <button type="button" role="option" key={member.id} onClick={() => setValue(value.replace(/(^|\s)@([^\s@]*)$/, `$1@${member.name} `))}><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}</span></button>)}</div>}
           <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => { setValue(event.target.value); if (event.target.value) onTyping(); }} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
         </> : <div className="chat-empty chat-no-selection"><MessageCircle size={24}/><h3>Your people are one hello away.</h3><p>Create a circle to give everyone in it one shared conversation.</p><button className="button button-primary" onClick={onInvite}><Plus size={15}/> Create circle</button></div>}
       </section>
@@ -1296,14 +1609,14 @@ function ProfilePage({ user, tasks, friends, editing, setEditing, onSave, onFrie
   </div>;
 }
 
-function SettingsPage({ user, onSignOut, theme, setTheme, notifPermission, onEnableNotifications, onExport, onDelete, pushOn, onTogglePush, onWhatsNew }) {
+function SettingsPage({ user, onSignOut, theme, setTheme, notifPermission, onEnableNotifications, onExport, onDelete, pushOn, onTogglePush, onWhatsNew, accent, setAccent }) {
   const { isIOS, standalone } = useInstall();
   const [confirmText, setConfirmText] = useState("");
   const [confirming, setConfirming] = useState(false);
   return <div className="page-content">
     <PageHeader eyebrow="YOUR SPACE" title="Settings" description="A few useful things about your account."/>
     <section className="settings-section"><p className="eyebrow">ACCOUNT</p><div className="settings-row"><span><b>{user.name}</b><small>{user.email}</small></span><span>Signed in</span></div><div className="settings-row"><span><b>Private tasks</b><small>Only you can see them. Circle-shared tasks are visible to that circle’s members.</small></span><span><Heart size={16}/></span></div></section>
-    <section className="settings-section"><p className="eyebrow">APPEARANCE</p><div className="settings-row"><span><b>Theme</b><small>Follow your device, or pick one.</small></span><span className="theme-options" role="radiogroup" aria-label="Theme">{[["system", "Auto", null], ["light", "Light", Sun], ["dark", "Dark", Moon]].map(([value, label, Icon]) => <button key={value} role="radio" aria-checked={theme === value} className={`theme-option ${theme === value ? "selected" : ""}`} onClick={() => setTheme(value)}>{Icon && <Icon size={13}/>}{label}</button>)}</span></div></section>
+    <section className="settings-section"><p className="eyebrow">APPEARANCE</p><div className="settings-row"><span><b>Accent color</b><small>Changes buttons, badges and highlights.</small></span><span className="accent-options" role="radiogroup" aria-label="Accent color">{accents.map(([key, label, color]) => <button key={key} role="radio" aria-checked={accent === key} aria-label={label} className={`accent-swatch ${accent === key ? "selected" : ""}`} style={{ background: color }} onClick={() => setAccent(key)}/>)}</span></div><div className="settings-row"><span><b>Theme</b><small>Follow your device, or pick one.</small></span><span className="theme-options" role="radiogroup" aria-label="Theme">{[["system", "Auto", null], ["light", "Light", Sun], ["dark", "Dark", Moon]].map(([value, label, Icon]) => <button key={value} role="radio" aria-checked={theme === value} className={`theme-option ${theme === value ? "selected" : ""}`} onClick={() => setTheme(value)}>{Icon && <Icon size={13}/>}{label}</button>)}</span></div></section>
     <section className="settings-section"><p className="eyebrow">APP</p><InstallCard variant="row"/><div className="settings-row"><span><b>What’s new</b><small>See the latest things we’ve added.</small></span><button className="button button-secondary small-button" onClick={onWhatsNew}><Sparkles size={13}/> See</button></div></section>
     {!pushSupported && <section className="settings-section"><p className="eyebrow">PUSH NOTIFICATIONS</p><div className="settings-row"><span><b>Push notifications</b><small>{typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window ? "Not set up on this site yet." : isIOS && !standalone ? "On iPhone, add Kinda to your Home Screen first, then reopen it from there." : "This browser doesn’t support push notifications."}</small></span><span>Unavailable</span></div></section>}
     {pushSupported && <section className="settings-section"><p className="eyebrow">PUSH NOTIFICATIONS</p><div className="settings-row"><span><b>Notify me, even when Kinda is closed</b><small>{isIOS && !standalone ? "On iPhone, add Kinda to your Home Screen first, then turn this on." : "Messages in your circles and nudges from friends."}</small></span>{notifPermission === "denied" ? <span>Blocked in browser</span> : <button className="button button-secondary small-button" onClick={onTogglePush}><Bell size={13}/> {pushOn ? "Turn off" : "Turn on"}</button>}</div></section>}
@@ -1323,7 +1636,8 @@ function TaskDialog({ task, groups, initialGroupIds = [], onClose, onSave }) {
     <label>Task<input name="title" autoFocus defaultValue={task?.title || ""} placeholder="What would you like to do?" required maxLength="120"/></label>
     <label>Description <span className="optional-label">Optional</span><textarea name="description" defaultValue={task?.description || task?.note || ""} rows="2" maxLength="500" placeholder="Add a little detail"/></label>
     <div className="form-grid">    <label>Due date<input name="dueDate" type="date" defaultValue={task ? (task.dueDate || "") : localDate()} /></label><label>Priority<select name="priority" defaultValue={task?.priority || "normal"}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
-    <div className="form-grid"><label>Category<select name="category" defaultValue={task?.category || "Personal"}>{categories.map(category => <option key={category}>{category}</option>)}</select></label><label>Focus time<select name="targetMinutes" defaultValue={String(task?.targetMinutes || 25)}>{[10, 15, 25, 30, 45, 60, 90].map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}</select></label></div>
+    <div className="form-grid"><label>Category<select name="category" defaultValue={task?.category || "Personal"}>{categories.map(category => <option key={category}>{category}</option>)}</select></label></div>
+    <FocusTimeField defaultValue={task?.targetMinutes || 25}/>
     <div className="form-grid"><label>Repeat <span className="optional-label">needs a due date</span><select name="repeat" defaultValue={task?.repeat || "none"}><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option></select></label><label>Reminder <span className="optional-label">Optional</span><input name="reminderTime" type="time" defaultValue={task?.reminderTime || ""}/></label></div>
     {groups.length > 0 && <fieldset className="circle-share-field"><legend>Share with circles <span className="optional-label">Optional</span></legend><p>Only members of selected circles can see this task and its progress.</p>{groups.map(group => <label className="circle-share-option" key={group.id}><input type="checkbox" name="groupIds" value={group.id} defaultChecked={selectedGroupIds.includes(group.id)}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"}</small></span></label>)}</fieldset>}
     <button className="button button-primary full-button" type="submit">{task ? "Save changes" : "Create task"} <ArrowRight size={15}/></button>

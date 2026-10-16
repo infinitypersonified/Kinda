@@ -82,6 +82,9 @@ function resolveRoute(path, options = {}) {
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/invite\/revoke$/)) && method === "POST") {
         route = { type: "mutation", name: "workspace:revokeInvite" };
         args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/leave$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:leaveCircle" };
+        args = { circleId: match[1] };
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/recap$/)) && method === "GET") {
         route = { type: "query", name: "workspace:circleRecap" };
         args = { circleId: match[1] };

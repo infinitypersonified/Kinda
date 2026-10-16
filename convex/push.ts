@@ -29,11 +29,11 @@ async function deliver(ctx: ActionCtx, subscriptions: Subscription[], payload: {
 }
 
 export const notifyCircleMessage = internalAction({
-  args: { circleId: v.id("circles"), senderId: v.string(), senderName: v.string(), preview: v.string() },
+  args: { circleId: v.id("circles"), excludeUserIds: v.array(v.string()), senderName: v.string(), preview: v.string() },
   handler: async (ctx, args) => {
     if (!configure()) return;
     const { circleName, subscriptions } = await ctx.runQuery(internal.pushData.circleRecipients, {
-      circleId: args.circleId, excludeUserId: args.senderId
+      circleId: args.circleId, excludeUserIds: args.excludeUserIds
     });
     await deliver(ctx, subscriptions, { title: `${args.senderName} · ${circleName}`, body: args.preview, tag: `chat-${args.circleId}` });
   }

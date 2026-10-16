@@ -480,7 +480,7 @@ async function mapMessage(ctx: WorkspaceCtx, message: Doc<"messages">) {
   return {
     id: String(message._id), senderId: message.senderId, senderName: sender?.name ?? "Member",
     senderAvatar: await avatarOf(ctx, message.senderId), content: message.content, replyTo,
-    edited: Boolean(message.editedAt), createdAt: new Date(message.createdAt).toISOString()
+    mentions: message.mentions ?? [], edited: Boolean(message.editedAt), createdAt: new Date(message.createdAt).toISOString()
   };
 }
 
@@ -498,7 +498,7 @@ export const listMessages = query({
 });
 
 export const sendMessage = mutation({
-  args: { circleId: v.id("circles"), content: v.string(), replyTo: v.optional(v.id("messages")) },
+  args: { circleId: v.id("circles"), content: v.string(), replyTo: v.optional(v.id("messages")), mentions: v.optional(v.array(v.string())) },
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
     await requireCircleMember(ctx, args.circleId, account.id);
@@ -512,13 +512,26 @@ export const sendMessage = mutation({
       const original = await ctx.db.get(args.replyTo);
       if (!original || original.circleId !== args.circleId) throw new ConvexError("That message could not be found.");
     }
+    const mentioned: string[] = [];
+    for (const mentionId of [...new Set(args.mentions ?? [])].filter(item => item !== account.id).slice(0, 10)) {
+      const member = await ctx.db.query("circleMembers").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", mentionId)).first();
+      if (member) mentioned.push(mentionId);
+    }
     const id = await ctx.db.insert("messages", {
       circleId: args.circleId, senderId: account.id, content, createdAt,
-      ...(args.replyTo ? { replyTo: args.replyTo } : {})
+      ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+      ...(mentioned.length ? { mentions: mentioned } : {})
     });
+    const circleDoc = await ctx.db.get(args.circleId);
     await ctx.scheduler.runAfter(0, internal.push.notifyCircleMessage, {
-      circleId: args.circleId, senderId: account.id, senderName: account.name, preview: content.slice(0, 120)
+      circleId: args.circleId, excludeUserIds: [account.id, ...mentioned], senderName: account.name, preview: content.slice(0, 120)
     });
+    for (const mentionId of mentioned) {
+      await ctx.scheduler.runAfter(0, internal.push.notifyUser, {
+        userId: mentionId, title: `${account.name} mentioned you in ${circleDoc?.name ?? "a circle"}`,
+        body: content.slice(0, 120), tag: `mention-${args.circleId}`
+      });
+    }
     const typingRow = await ctx.db.query("typing").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", account.id)).first();
     if (typingRow) await ctx.db.delete(typingRow._id);
     return await mapMessage(ctx, (await ctx.db.get(id))!);
@@ -901,6 +914,33 @@ export const removePushSubscription = mutation({
     const { id } = await requireUser(ctx);
     const rows = await ctx.db.query("pushSubscriptions").withIndex("by_endpoint", q => q.eq("endpoint", args.endpoint)).collect();
     for (const row of rows) if (row.userId === id) await ctx.db.delete(row._id);
+    return { ok: true };
+  }
+});
+
+export const leaveCircle = mutation({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    await requireCircleMember(ctx, args.circleId, id);
+    const circle = await ctx.db.get(args.circleId);
+    if (!circle) throw new ConvexError("That circle could not be found.");
+    const membership = await ctx.db.query("circleMembers").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", id)).first();
+    if (membership) await ctx.db.delete(membership._id);
+    for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) {
+      if (link.sharedBy === id) await ctx.db.delete(link._id);
+    }
+    for (const row of await ctx.db.query("typing").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    const remaining = (await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect())
+      .sort((a, b) => a.joinedAt - b.joinedAt);
+    if (remaining.length === 0) {
+      for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(link._id);
+      for (const message of await ctx.db.query("messages").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(message._id);
+      for (const invite of await ctx.db.query("invites").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(invite._id);
+      await ctx.db.delete(args.circleId);
+    } else if (circle.ownerId === id) {
+      await ctx.db.patch(args.circleId, { ownerId: remaining[0].userId });
+    }
     return { ok: true };
   }
 });
