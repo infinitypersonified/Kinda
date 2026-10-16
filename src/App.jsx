@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
@@ -9,6 +9,20 @@ import {
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
 import { WeeklyPage } from "./weekly.jsx";
+
+const ClockContext = createContext(Date.now());
+
+function ClockProvider({ children }) {
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <ClockContext.Provider value={tick}>{children}</ClockContext.Provider>;
+}
+
+function useClock() {
+  return useContext(ClockContext);
+}
 
 const categories = ["Personal", "Learning", "Building", "Health", "Creative work", "Relationships"];
 const pages = [
@@ -233,7 +247,8 @@ function OnboardingCard({ steps, onDismiss }) {
   </section>;
 }
 
-function FocusMode({ task, tick, onClose, onToggle, onDone, onExtend }) {
+function FocusMode({ task, onClose, onToggle, onDone, onExtend }) {
+  const tick = useClock();
   const elapsed = task.elapsedSeconds + (task.timerStartedAt ? Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000)) : 0);
   const total = task.targetMinutes * 60;
   const remaining = Math.max(0, total - elapsed);
@@ -358,13 +373,14 @@ function App({ authClient }) {
   const { data: authSession, isPending: authPending } = authClient.useSession();
   const inviteTokenFromUrl = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]{32,})\/?$/)?.[1] || "";
   const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState(inviteTokenFromUrl ? "invite" : window.location.hash === "#login" ? "login" : window.location.hash === "#signup" ? "signup" : "landing");
+  const [screen, setScreen] = useState(inviteTokenFromUrl ? "invite" : (window.location.pathname.includes("reset-password") || new URLSearchParams(window.location.search).has("reset-password") || new URLSearchParams(window.location.search).has("token")) ? "reset" : window.location.hash === "#login" ? "login" : window.location.hash === "#signup" ? "signup" : "landing");
   const [inviteToken, setInviteToken] = useState(inviteTokenFromUrl);
   const [invitePreview, setInvitePreview] = useState(null);
   const [inviteError, setInviteError] = useState("");
   const [page, setPage] = useState("home");
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [friends, setFriends] = useState([]);
@@ -412,7 +428,6 @@ function App({ authClient }) {
   const [toast, setToast] = useState("");
   const [celebrationOpen, setCelebrationOpen] = useState(false);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
-  const [tick, setTick] = useState(Date.now());
   const [menuOpen, setMenuOpen] = useState(false);
   const [seen, setSeen] = useState({ chat: {}, activity: null, shared: null });
   const messages = messagesByGroup[activeGroup?.id] || [];
@@ -449,6 +464,10 @@ function App({ authClient }) {
     if (authPending) return;
     const account = authSession?.user;
     if (!account) {
+      if (user) {
+        setLoading(false);
+        return;
+      }
       setUser(null);
       setProfile(null);
       setTasks([]);
@@ -477,7 +496,7 @@ function App({ authClient }) {
     }).catch(error => {
       if (!cancelled) {
         setLoading(false);
-        setScreen("login");
+        if (!user) setScreen("login");
         setToast(`Your cloud session could not be verified: ${error.message}`);
       }
     });
@@ -522,8 +541,7 @@ function App({ authClient }) {
       live("/nudges", setNudges, onError),
       live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError)
     ];
-    const clock = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => { unsubs.forEach(stop => stop()); window.clearInterval(clock); };
+    return () => { unsubs.forEach(stop => stop()); };
   }, [user?.id, live]);
 
   const groupIds = groups.map(group => group.id).join(",");
@@ -848,17 +866,43 @@ function App({ authClient }) {
   async function submitAuth(event) {
     event.preventDefault();
     setAuthError("");
+    setAuthNotice("");
     setAuthBusy(true);
     const form = new FormData(event.currentTarget);
-    const payload = {
-      name: String(form.get("name") || "").trim(),
-      email: String(form.get("email") || "").trim(),
-      password: String(form.get("password") || "")
-    };
+    const email = String(form.get("email") || "").trim();
+    const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    const name = String(form.get("name") || "").trim();
+
     try {
+      if (screen === "forgot") {
+        const response = await authClient.requestPasswordReset({
+          email,
+          redirectTo: `${window.location.origin}/?reset-password=1`
+        });
+        if (response.error) throw new Error(response.error.message || "Could not request a password reset.");
+        setAuthNotice("If an account exists for that email, a password reset link will arrive shortly.");
+        return;
+      }
+
+      if (screen === "reset") {
+        if (password.length < 8) throw new Error("Your password must be at least 8 characters.");
+        if (password !== confirmPassword) throw new Error("The passwords do not match.");
+        const url = new URL(window.location.href);
+        const token = url.searchParams.get("token") || url.pathname.match(/\/reset-password\/([^/]+)/)?.[1] || "";
+        if (!token) throw new Error("This reset link is missing its token. Request a new password reset link.");
+        const response = await authClient.resetPassword({ newPassword: password, token });
+        if (response.error) throw new Error(response.error.message || "Could not reset your password.");
+        window.history.replaceState(null, "", "/");
+        setAuthNotice("Your password has been reset. Log in with your new password.");
+        setScreen("login");
+        return;
+      }
+
+      const payload = { name, email, password };
       const response = screen === "signup"
         ? await authClient.signUp.email(payload)
-        : await authClient.signIn.email({ email: payload.email, password: payload.password });
+        : await authClient.signIn.email({ email, password });
       if (response.error) throw new Error(response.error.message || "Could not sign in. Please try again.");
       const account = response.data?.user;
       if (!account) throw new Error("Sign-in completed without an account. Please try again.");
@@ -928,10 +972,38 @@ function App({ authClient }) {
   }
 
   async function updateTask(task, action, body = {}) {
-    if (action === "complete" && body.done && !task.done) {
-      setJustDoneId(task.id);
-      window.setTimeout(() => setJustDoneId(current => current === task.id ? null : current), 1100);
+    const now = Date.now();
+    const previousTasks = tasks;
+    const previousTask = task;
+    const elapsedNow = task.timerStartedAt
+      ? Math.max(0, Math.floor((now - Date.parse(task.timerStartedAt)) / 1000))
+      : 0;
+    let optimisticTask = { ...task };
+
+    if (action === "complete") {
+      optimisticTask = {
+        ...task,
+        done: Boolean(body.done),
+        elapsedSeconds: task.elapsedSeconds + elapsedNow,
+        timerStartedAt: null
+      };
+      if (body.done && !task.done) {
+        setJustDoneId(task.id);
+        window.setTimeout(() => setJustDoneId(current => current === task.id ? null : current), 1100);
+      }
+    } else if (action === "start") {
+      optimisticTask = {
+        ...task,
+        timerStartedAt: task.timerStartedAt || new Date(now).toISOString()
+      };
+    } else if (action === "stop") {
+      optimisticTask = {
+        ...task,
+        elapsedSeconds: task.elapsedSeconds + elapsedNow,
+        timerStartedAt: null
+      };
     }
+
     const willFinishAllTasks = action === "complete" && body.done && !task.done
       && tasks.length > 0 && tasks.every(item => item.id === task.id || item.done);
     let soundReady = null;
@@ -942,8 +1014,33 @@ function App({ authClient }) {
         notify(`The celebration sound couldn't play: ${error.message}`);
       }
     }
+
+    if (action === "start") {
+      setTasks(current => current.map(item => {
+        if (item.id === task.id) return optimisticTask;
+        if (!item.timerStartedAt || item.done) return item;
+        const elapsed = Math.max(0, Math.floor((now - Date.parse(item.timerStartedAt)) / 1000));
+        return { ...item, elapsedSeconds: item.elapsedSeconds + elapsed, timerStartedAt: null };
+      }));
+    } else {
+      setTasks(current => current.map(item => item.id === task.id ? optimisticTask : item));
+    }
+
     try {
-      const updated = await api(`/tasks/${task.id}/${action}`, { method: "POST", body: JSON.stringify(body) });
+      let updated;
+      try {
+        updated = await api(`/tasks/${task.id}/${action}`, {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+      } catch (firstError) {
+        if (firstError.status !== 401 && !/unauthenticated|not authenticated/i.test(firstError.message || "")) throw firstError;
+        await authClient.convex.token();
+        updated = await api(`/tasks/${task.id}/${action}`, {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+      }
       setTasks(current => current.map(item => item.id === task.id ? updated : item));
       if (action === "complete" && updated.done) {
         loadActivity().catch(error => notify(error.message));
@@ -956,6 +1053,11 @@ function App({ authClient }) {
       }
     } catch (error) {
       if (soundReady) soundReady.then(context => context.close()).catch(() => {});
+      setTasks(current => current.map(item => {
+        if (item.id === previousTask.id) return previousTask;
+        const old = previousTasks.find(previous => previous.id === item.id);
+        return old && action === "start" ? old : item;
+      }));
       notify(error.message);
     }
   }
@@ -970,7 +1072,15 @@ function App({ authClient }) {
   }
 
   async function extendFocus(task, minutes) {
-    try { await patchTask(task, { targetMinutes: Math.min(1440, task.targetMinutes + minutes) }); } catch (error) { notify(error.message); }
+    const previousTarget = task.targetMinutes;
+    const targetMinutes = Math.min(1440, previousTarget + minutes);
+    setTasks(current => current.map(item => item.id === task.id ? { ...item, targetMinutes } : item));
+    try {
+      await patchTask(task, { targetMinutes });
+    } catch (error) {
+      setTasks(current => current.map(item => item.id === task.id ? { ...item, targetMinutes: previousTarget } : item));
+      notify(error.message);
+    }
   }
 
   function handleTimer(task, action) {
@@ -1215,8 +1325,8 @@ function App({ authClient }) {
   if (loading || splash) return <KindaLoader/>;
   if (screen === "invite" && !user) return <InviteScreen invitation={invitePreview} error={inviteError} onSignup={() => setScreen("signup")} onLogin={() => setScreen("login")} onHome={() => { setInviteToken(""); setScreen("landing"); window.history.replaceState(null, "", "/"); }} />;
   if (screen === "landing" && !user) return <Landing onStart={() => setScreen("signup")} onLogin={() => setScreen("login")} />;
-  if ((screen === "signup" || screen === "login") && !user) {
-    return <AuthScreen mode={screen} setMode={setScreen} onSubmit={submitAuth} error={authError} busy={authBusy} inviteName={invitePreview?.name} />;
+  if (["signup", "login", "forgot", "reset"].includes(screen) && !user) {
+    return <AuthScreen mode={screen} setMode={next => { setAuthError(""); setAuthNotice(""); setScreen(next); }} onSubmit={submitAuth} error={authError} notice={authNotice} busy={authBusy} inviteName={invitePreview?.name} />;
   }
 
   const activeTimer = tasks.find(task => task.timerStartedAt && !task.done);
@@ -1225,6 +1335,7 @@ function App({ authClient }) {
   const todayCompletion = todayTasks.length ? Math.round(todayDoneTasks.length / todayTasks.length * 100) : 0;
 
   return (
+    <ClockProvider>
     <main className={`app-shell ${menuOpen ? "menu-open" : ""}`}>
       <aside className="sidebar">
         <button className="wordmark wordmark-button" onClick={() => navigate("home")}>kinda<span>.</span></button>
@@ -1256,7 +1367,7 @@ function App({ authClient }) {
           onShowEarlier={() => { setFilter("Earlier"); navigate("tasks"); }}
           leaderboardGroupId={leaderboardGroupId ?? groups[0]?.id}
           onSelectLeaderboardGroup={setLeaderboardGroupId}
-          activity={activity.slice(0, 4)} groups={viewGroups} tick={tick}
+          activity={activity.slice(0, 4)} groups={viewGroups}
           onCreate={() => setTaskDialog({ task: null })} onEdit={task => setTaskDialog({ task })}
           onComplete={(task, done) => updateTask(task, "complete", { done })}
           onTimer={handleTimer} onReact={reactToActivity}
@@ -1267,7 +1378,7 @@ function App({ authClient }) {
         />}
         {page === "tasks" && <TasksPage loaded={tasksLoaded} justDoneId={justDoneId}
           tasks={filteredTasks} filter={filter} setFilter={setFilter} allCount={tasks.length}
-          tick={tick} onCreate={() => setTaskDialog({ task: null })}
+          onCreate={() => setTaskDialog({ task: null })}
           onEdit={task => setTaskDialog({ task })} onComplete={(task, done) => updateTask(task, "complete", { done })}
           onTimer={handleTimer} onDelete={deleteTask}
         />}
@@ -1295,7 +1406,7 @@ function App({ authClient }) {
           messages={messages} sharedTasks={sharedTasksToday} user={user} value={newMessage} setValue={setNewMessage}
           onSend={sendMessage} sending={sendingMessage} friends={friends} mobileOpen={chatMobileOpen}
           onMobileBack={() => setChatMobileOpen(false)} onInvite={() => setCircleDialog(true)}
-          typingNames={(typingByGroup[activeGroup?.id] || []).filter(row => tick - row.receivedAt < 5000).map(row => row.name)}
+          typingNames={(typingByGroup[activeGroup?.id] || []).filter(row => Date.now() - row.receivedAt < 5000).map(row => row.name)}
           replyTo={replyTo} onReply={setReplyTo} onCancelReply={() => setReplyTo(null)}
           onEdit={editMessage} onDelete={deleteMessage} onTyping={handleTyping}
           dividerTime={chatDivider && chatDivider.groupId === activeGroup?.id ? chatDivider.time : null}
@@ -1320,7 +1431,7 @@ function App({ authClient }) {
         if (target.kind === "chat") { const group = groups.find(item => item.id === target.groupId); if (group) setActiveGroup(group); navigate("chat"); setChatMobileOpen(true); }
         else navigate("activity");
       }}/>}
-      {focusTask && <FocusMode task={focusTask} tick={tick} onClose={() => setFocusTaskId(null)}
+      {focusTask && <FocusMode task={focusTask} onClose={() => setFocusTaskId(null)}
         onToggle={() => updateTask(focusTask, focusTask.timerStartedAt ? "stop" : "start")}
         onDone={() => { updateTask(focusTask, "complete", { done: true }); setFocusTaskId(null); }}
         onExtend={minutes => extendFocus(focusTask, minutes)}/>}
@@ -1332,9 +1443,16 @@ function App({ authClient }) {
       {showWhatsNew && !reminderQueue[0] && <WhatsNewDialog onClose={closeWhatsNew}/>}
       {celebrationOpen && <CelebrationDialog onClose={() => setCelebrationOpen(false)}/>}
       {toast && <div className="toast" role="status"><span className="toast-mark"><Check size={15}/></span>{toast}</div>}
-      {activeTimer && <button className="running-timer" aria-live="off" onClick={() => setFocusTaskId(activeTimer.id)} aria-label="Open focus mode"><span className="timer-live-dot"/><Clock3 size={14}/><span>{formatTime(activeTimer.targetMinutes * 60 - activeTimer.elapsedSeconds - Math.max(0, Math.floor((tick - Date.parse(activeTimer.timerStartedAt)) / 1000)))}</span><small>{activeTimer.title}</small></button>}
+      {activeTimer && <RunningTimer task={activeTimer} onOpen={() => setFocusTaskId(activeTimer.id)}/>}
     </main>
+    </ClockProvider>
   );
+}
+
+function RunningTimer({ task, onOpen }) {
+  const tick = useClock();
+  const remaining = task.targetMinutes * 60 - task.elapsedSeconds - Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000));
+  return <button className="running-timer" aria-live="off" onClick={onOpen} aria-label="Open focus mode"><span className="timer-live-dot"/><Clock3 size={14}/><span>{formatTime(remaining)}</span><small>{task.title}</small></button>;
 }
 
 function parseAvatar(value) {
@@ -1434,7 +1552,8 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
   </div>;
 }
 
-function TasksPage({ tasks, filter, setFilter, allCount, tick, onCreate, onEdit, onComplete, onTimer, onDelete, loaded = true, justDoneId }) {
+function TasksPage({ tasks, filter, setFilter, allCount, onCreate, onEdit, onComplete, onTimer, onDelete, loaded = true, justDoneId }) {
+  const tick = useClock();
   return <div className="page-content">
     <PageHeader eyebrow="MAKE A LITTLE ROOM FOR WHAT MATTERS" title="My Tasks" description={`${allCount} ${allCount === 1 ? "task" : "tasks"} on your list.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
     <div className="task-filters"><SlidersHorizontal size={16}/>{["Today", "Earlier", "Upcoming", "Completed", "No date"].map(item => <button className={filter === item ? "filter-active" : ""} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div>
@@ -1707,9 +1826,33 @@ function Landing({ onStart, onLogin }) {
   </main>;
 }
 
-function AuthScreen({ mode, setMode, onSubmit, error, busy, inviteName }) {
+function AuthScreen({ mode, setMode, onSubmit, error, notice, busy, inviteName }) {
   const signup = mode === "signup";
-  return <main className="auth-screen"><div className="auth-left"><button className="wordmark wordmark-button" onClick={() => setMode("landing")}>kinda<span>.</span></button><div className="auth-photo"><img src={photoOne} alt="Friends working on their goals together"/></div><div className="auth-copy"><p className="eyebrow">A LITTLE MORE TOGETHER</p><h1>Good things<br/>get <em>shared.</em></h1><p>A thoughtful place to keep track of tasks and make room for your people.</p></div><div className="auth-bottom">TASKS, FRIENDS, YOUR OWN PACE.</div></div><div className="auth-right"><form className="auth-form" onSubmit={onSubmit}><p className="eyebrow">{signup ? "START WHERE YOU ARE" : "WELCOME BACK"}</p><h2>{signup ? "Make yourself at home." : "Come on in."}</h2><p className="auth-form-copy">{inviteName ? `${signup ? "Create an account" : "Log in"} to join ${inviteName}.` : signup ? "Start with a fresh page and a little intention." : "Your people and tasks are right here."}</p>{signup && <label>Your name<input name="name" placeholder="How should we call you?" autoComplete="name" minLength="2" maxLength="60" required/></label>}<label>Email address<input type="email" name="email" placeholder="you@example.com" autoComplete="email" maxLength="254" required/></label><label>Password<input type="password" name="password" placeholder="At least 8 characters" minLength="8" maxLength="128" autoComplete={signup ? "new-password" : "current-password"} required/></label>{error && <p className="auth-error" role="alert">{error}</p>}<button className="button button-primary full-button" type="submit" disabled={busy}>{busy ? "One moment…" : signup ? "Create account" : "Log in"} <ArrowRight size={16}/></button><p className="auth-switch">{signup ? "Already have an account?" : "New around here?"} <button type="button" onClick={() => setMode(signup ? "login" : "signup")}>{signup ? "Log in" : "Create an account"}</button></p><p className="auth-privacy"><Heart size={14}/> Your tasks are private unless you choose to share.</p></form></div></main>;
+  const forgot = mode === "forgot";
+  const reset = mode === "reset";
+  const title = signup ? "Make yourself at home." : forgot ? "Let’s get you back in." : reset ? "Choose a new password." : "Come on in.";
+  const heading = signup ? "START WHERE YOU ARE" : forgot ? "PASSWORD HELP" : reset ? "A FRESH START" : "WELCOME BACK";
+  const copy = forgot
+    ? "Enter the email address on your account and we’ll send a reset link if it exists."
+    : reset
+      ? "Choose a new password with at least 8 characters."
+      : inviteName
+        ? `${signup ? "Create an account" : "Log in"} to join ${inviteName}.`
+        : signup
+          ? "Start with a fresh page and a little intention."
+          : "Your people and tasks are right here.";
+
+  return <main className="auth-screen"><div className="auth-left"><button className="wordmark wordmark-button" onClick={() => setMode("landing")}>kinda<span>.</span></button><div className="auth-photo"><img src={photoOne} alt="Friends working on their goals together"/></div><div className="auth-copy"><p className="eyebrow">A LITTLE MORE TOGETHER</p><h1>Good things<br/>get <em>shared.</em></h1><p>A thoughtful place to keep track of tasks and make room for your people.</p></div><div className="auth-bottom">TASKS, FRIENDS, YOUR OWN PACE.</div></div><div className="auth-right"><form className="auth-form" onSubmit={onSubmit}><p className="eyebrow">{heading}</p><h2>{title}</h2><p className="auth-form-copy">{copy}</p>
+    {signup && <label>Your name<input name="name" placeholder="How should we call you?" autoComplete="name" minLength="2" maxLength="60" required/></label>}
+    {!reset && <label>Email address<input type="email" name="email" placeholder="you@example.com" autoComplete="email" maxLength="254" required/></label>}
+    {!forgot && <label>{reset ? "New password" : "Password"}<input type="password" name="password" placeholder="At least 8 characters" minLength="8" maxLength="128" autoComplete={signup || reset ? "new-password" : "current-password"} required/></label>}
+    {reset && <label>Confirm new password<input type="password" name="confirmPassword" placeholder="Enter the password again" minLength="8" maxLength="128" autoComplete="new-password" required/></label>}
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    {notice && <p className="auth-notice" role="status">{notice}</p>}
+    <button className="button button-primary full-button" type="submit" disabled={busy}>{busy ? "One moment…" : signup ? "Create account" : forgot ? "Send reset link" : reset ? "Reset password" : "Log in"} <ArrowRight size={16}/></button>
+    {mode === "login" && <p className="auth-switch"><button type="button" onClick={() => setMode("forgot")}>Forgot password?</button></p>}
+    <p className="auth-switch">{signup ? "Already have an account?" : reset || forgot ? "Remembered your password?" : "New around here?"} <button type="button" onClick={() => setMode(signup || reset || forgot ? "login" : "signup")}>{signup ? "Log in" : reset || forgot ? "Log in" : "Create an account"}</button></p>
+    <p className="auth-privacy"><Heart size={14}/> Your tasks are private unless you choose to share.</p></form></div></main>;
 }
 
 export default App;

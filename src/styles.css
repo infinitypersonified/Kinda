@@ -4489,3 +4489,5 @@ body .week-bar-count {
     padding: 12px 8px 8px;
   }
 }
+
+.auth-notice { color: #2f7654; font-size: 0.9rem; line-height: 1.5; margin: 0; }
