@@ -88,6 +88,15 @@ function resolveRoute(path, options = {}) {
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/recap$/)) && method === "GET") {
         route = { type: "query", name: "workspace:circleRecap" };
         args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/assignments$/)) && method === "GET") {
+        route = { type: "query", name: "workspace:listAssignments" };
+        args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/assignments$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:createAssignment" };
+        args = { circleId: match[1], ...body };
+      } else if ((match = url.pathname.match(/^\/assignments\/([^/]+)$/)) && method === "DELETE") {
+        route = { type: "mutation", name: "workspace:deleteAssignment" };
+        args = { assignmentId: match[1] };
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/typing$/)) && method === "GET") {
         route = { type: "query", name: "workspace:listTyping" };
         args = { circleId: match[1] };

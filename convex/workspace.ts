@@ -76,6 +76,26 @@ async function requireCircleMember(ctx: WorkspaceCtx, circleId: Id<"circles">, u
   return membership;
 }
 
+const STREAK_PERCENT = 80;
+
+async function removeTaskCompletely(ctx: MutationCtx, task: Doc<"tasks">) {
+  for (const link of await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect()) await ctx.db.delete(link._id);
+  for (const nudge of await ctx.db.query("nudges").withIndex("by_task", q => q.eq("taskId", task._id)).collect()) await ctx.db.delete(nudge._id);
+  for (const activity of await ctx.db.query("activities").withIndex("by_task", q => q.eq("taskId", task._id)).collect()) {
+    for (const reaction of await ctx.db.query("reactions").withIndex("by_activity", q => q.eq("activityId", activity._id)).collect()) await ctx.db.delete(reaction._id);
+    await ctx.db.delete(activity._id);
+  }
+  await ctx.db.delete(task._id);
+}
+
+async function deleteCircleAssignments(ctx: MutationCtx, circleId: Id<"circles">) {
+  const rows = await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", circleId)).collect();
+  for (const row of rows) {
+    for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", row._id)).collect()) await removeTaskCompletely(ctx, task);
+    await ctx.db.delete(row._id);
+  }
+}
+
 async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
   const links = await ctx.db.query("circleTasks")
     .withIndex("by_task", q => q.eq("taskId", task._id)).collect();
@@ -94,6 +114,8 @@ async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
     repeat: task.repeat ?? "none",
     reminderTime: task.reminderTime ?? "",
     createdAt: task.createdAt,
+    assignmentId: task.assignmentId ? String(task.assignmentId) : null,
+    assignedByName: task.assignedByName ?? null,
     groupIds: links.map(link => String(link.circleId))
   };
 }
@@ -216,6 +238,7 @@ export const updateTask = mutation({
     checkRepeatAndReminder(args.repeat, args.reminderTime);
     const task = await ctx.db.get(args.taskId);
     if (!task || task.userId !== id) throw new ConvexError("That task could not be found.");
+    if (task.assignmentId) throw new ConvexError("This task was assigned by your circle owner, so it can't be edited.");
     const title = args.title.trim();
     if (!title || title.length > 120) throw new ConvexError("Task titles must be 1–120 characters.");
     if (args.description.length > 2000) throw new ConvexError("Task descriptions must be 2,000 characters or fewer.");
@@ -307,18 +330,8 @@ export const deleteTask = mutation({
     const { id } = await requireUser(ctx);
     const task = await ctx.db.get(args.taskId);
     if (!task || task.userId !== id) throw new ConvexError("That task could not be found.");
-    const links = await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
-    const activities = await ctx.db.query("activities").withIndex("by_user", q => q.eq("userId", id)).collect();
-    const taskActivities = activities.filter(item => item.taskId === task._id);
-    for (const link of links) await ctx.db.delete(link._id);
-    const nudges = await ctx.db.query("nudges").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
-    for (const nudge of nudges) await ctx.db.delete(nudge._id);
-    for (const activity of taskActivities) {
-      const reactions = await ctx.db.query("reactions").withIndex("by_activity", q => q.eq("activityId", activity._id)).collect();
-      for (const reaction of reactions) await ctx.db.delete(reaction._id);
-      await ctx.db.delete(activity._id);
-    }
-    await ctx.db.delete(task._id);
+    if (task.assignmentId) throw new ConvexError("This task was assigned by your circle owner, so it can't be deleted.");
+    await removeTaskCompletely(ctx, task);
     return { ok: true };
   }
 });
@@ -727,24 +740,40 @@ export const myStreak = query({
   args: { tzOffset: v.number() },
   handler: async (ctx, args) => {
     const { id } = await requireUser(ctx);
-    const activities = await ctx.db.query("activities").withIndex("by_user", q => q.eq("userId", id)).collect();
-    const days = new Set(activities.filter(item => item.type === "completed").map(item => localDayKey(item.createdAt, args.tzOffset)));
     const dayMs = 24 * 60 * 60 * 1000;
     const now = Date.now();
+    const tasks = await ctx.db.query("tasks")
+      .withIndex("by_user_created", q => q.eq("userId", id).gte("createdAt", now - 400 * dayMs)).collect();
+    const perDay = new Map<string, { total: number; done: number }>();
+    for (const task of tasks) {
+      const key = task.dueDate ?? localDayKey(task.createdAt, args.tzOffset);
+      const entry = perDay.get(key) ?? { total: 0, done: 0 };
+      entry.total += 1;
+      if (task.done) entry.done += 1;
+      perDay.set(key, entry);
+    }
+    // A day counts when at least one task was planned and 80% or more of that day's tasks are done.
+    const qualifies = (key: string) => {
+      const entry = perDay.get(key);
+      return Boolean(entry && entry.total > 0 && entry.done * 100 >= entry.total * STREAK_PERCENT);
+    };
     const keyAt = (offsetDays: number) => localDayKey(now - offsetDays * dayMs, args.tzOffset);
-    const doneToday = days.has(keyAt(0));
+    const todayKey = keyAt(0);
+    const today = perDay.get(todayKey) ?? { total: 0, done: 0 };
+    const qualifiedToday = qualifies(todayKey);
     let current = 0;
-    for (let offset = doneToday ? 0 : 1; days.has(keyAt(offset)); offset++) current++;
-    const sorted = [...days].sort();
+    for (let offset = qualifiedToday ? 0 : 1; qualifies(keyAt(offset)); offset++) current++;
+    const sorted = [...perDay.keys()].filter(qualifies).sort();
     let best = 0;
     let run = 0;
     let previous = "";
     for (const day of sorted) {
-      run = previous && Math.round((Date.parse(day) - Date.parse(previous)) / dayMs) === 1 ? run + 1 : 1;
+      run = previous && Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${previous}T00:00:00Z`)) / dayMs) === 1 ? run + 1 : 1;
       best = Math.max(best, run);
       previous = day;
     }
-    return { current, best, doneToday };
+    const needed = today.total ? Math.max(0, Math.ceil((STREAK_PERCENT * today.total) / 100) - today.done) : 0;
+    return { current, best, doneToday: qualifiedToday, todayTotal: today.total, todayDone: today.done, needed, percent: STREAK_PERCENT };
   }
 });
 
@@ -874,6 +903,7 @@ export const deleteAccount = mutation({
       if (others.length) {
         await ctx.db.patch(circle._id, { ownerId: others[0].userId });
       } else {
+        await deleteCircleAssignments(ctx, circle._id);
         for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", circle._id)).collect()) await ctx.db.delete(link._id);
         for (const message of await ctx.db.query("messages").withIndex("by_circle", q => q.eq("circleId", circle._id)).collect()) await ctx.db.delete(message._id);
         for (const invite of await ctx.db.query("invites").withIndex("by_circle", q => q.eq("circleId", circle._id)).collect()) await ctx.db.delete(invite._id);
@@ -927,6 +957,11 @@ export const leaveCircle = mutation({
     if (!circle) throw new ConvexError("That circle could not be found.");
     const membership = await ctx.db.query("circleMembers").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", id)).first();
     if (membership) await ctx.db.delete(membership._id);
+    for (const assignment of await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) {
+      for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", assignment._id)).collect()) {
+        if (task.userId === id) await removeTaskCompletely(ctx, task);
+      }
+    }
     for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) {
       if (link.sharedBy === id) await ctx.db.delete(link._id);
     }
@@ -934,6 +969,7 @@ export const leaveCircle = mutation({
     const remaining = (await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect())
       .sort((a, b) => a.joinedAt - b.joinedAt);
     if (remaining.length === 0) {
+      await deleteCircleAssignments(ctx, args.circleId);
       for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(link._id);
       for (const message of await ctx.db.query("messages").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(message._id);
       for (const invite of await ctx.db.query("invites").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(invite._id);
@@ -941,6 +977,95 @@ export const leaveCircle = mutation({
     } else if (circle.ownerId === id) {
       await ctx.db.patch(args.circleId, { ownerId: remaining[0].userId });
     }
+    return { ok: true };
+  }
+});
+
+export const createAssignment = mutation({
+  args: {
+    circleId: v.id("circles"),
+    title: v.string(),
+    description: v.string(),
+    category: v.string(),
+    dueDate: v.union(v.string(), v.null()),
+    priority: v.string(),
+    targetMinutes: v.number(),
+    includeSelf: v.boolean()
+  },
+  handler: async (ctx, args) => {
+    const account = await requireUser(ctx);
+    const circle = await ctx.db.get(args.circleId);
+    if (!circle || circle.ownerId !== account.id) throw new ConvexError("Only the circle owner can assign tasks.");
+    const title = args.title.trim();
+    if (!title || title.length > 120) throw new ConvexError("Task titles must be 1–120 characters.");
+    if (args.description.length > 2000) throw new ConvexError("Task descriptions must be 2,000 characters or fewer.");
+    if (!["low", "normal", "high"].includes(args.priority)) throw new ConvexError("Choose a valid priority.");
+    if (!isValidDate(args.dueDate)) throw new ConvexError("Choose a valid due date.");
+    if (!Number.isInteger(args.targetMinutes) || args.targetMinutes < 1 || args.targetMinutes > 1440) {
+      throw new ConvexError("Focus time must be between 1 and 1,440 minutes.");
+    }
+    const members = await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect();
+    const assignees = members.filter(member => args.includeSelf || member.userId !== account.id);
+    if (!assignees.length) throw new ConvexError("Invite someone to your circle before assigning tasks.");
+    const now = Date.now();
+    const assignmentId = await ctx.db.insert("assignments", {
+      circleId: args.circleId, createdBy: account.id, title, description: args.description.trim(),
+      category: args.category, dueDate: args.dueDate, priority: args.priority, targetMinutes: args.targetMinutes, createdAt: now
+    });
+    for (const member of assignees) {
+      const taskId = await ctx.db.insert("tasks", {
+        userId: member.userId, title, description: args.description.trim(), category: args.category,
+        dueDate: args.dueDate, priority: args.priority, visibility: "private", targetMinutes: args.targetMinutes,
+        elapsedSeconds: 0, timerStartedAt: null, done: false, repeat: "none", reminderTime: "",
+        assignmentId, assignedByName: account.name, createdAt: now
+      });
+      await ctx.db.insert("circleTasks", { circleId: args.circleId, taskId, sharedBy: member.userId, createdAt: now });
+      if (member.userId !== account.id) {
+        await ctx.scheduler.runAfter(0, internal.push.notifyUser, {
+          userId: member.userId, title: `${account.name} assigned a task in ${circle.name}`, body: title, tag: `assign-${assignmentId}`
+        });
+      }
+    }
+    return { id: String(assignmentId), assigned: assignees.length };
+  }
+});
+
+export const listAssignments = query({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    await requireCircleMember(ctx, args.circleId, id);
+    const circle = await ctx.db.get(args.circleId);
+    const isOwner = circle?.ownerId === id;
+    const rows = await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", args.circleId)).order("desc").take(30);
+    return await Promise.all(rows.map(async row => {
+      const tasks = await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", row._id)).collect();
+      const creator = await authComponent.getAnyUserById(ctx, row.createdBy);
+      const members = isOwner ? await Promise.all(tasks.map(async task => {
+        const person = await authComponent.getAnyUserById(ctx, task.userId);
+        return { id: task.userId, name: person?.name ?? "Member", avatar: await avatarOf(ctx, task.userId), done: task.done };
+      })) : [];
+      const mine = tasks.find(task => task.userId === id);
+      return {
+        id: String(row._id), title: row.title, description: row.description, category: row.category,
+        dueDate: row.dueDate, priority: row.priority, createdAt: new Date(row.createdAt).toISOString(),
+        createdByName: creator?.name ?? "Owner", total: tasks.length, doneCount: tasks.filter(task => task.done).length,
+        members, mineDone: mine ? mine.done : null
+      };
+    }));
+  }
+});
+
+export const deleteAssignment = mutation({
+  args: { assignmentId: v.id("assignments") },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    const row = await ctx.db.get(args.assignmentId);
+    if (!row) throw new ConvexError("That assignment could not be found.");
+    const circle = await ctx.db.get(row.circleId);
+    if (!circle || circle.ownerId !== id) throw new ConvexError("Only the circle owner can remove assigned tasks.");
+    for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", row._id)).collect()) await removeTaskCompletely(ctx, task);
+    await ctx.db.delete(row._id);
     return { ok: true };
   }
 });

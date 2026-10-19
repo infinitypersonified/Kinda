@@ -5,10 +5,11 @@ import {
   ArrowLeft, ArrowRight, BarChart3, Bell, CalendarDays, Check, CheckSquare2, Clock3, Heart,
   Download, Flame, House, LogOut, Menu, Minimize2, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
   CornerUpLeft, Moon, Repeat, Search, Send, Settings, Share, Sun, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
-  Users, X
+  ChevronDown, Flag, Smile, Users, X
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
 import { WeeklyPage } from "./weekly.jsx";
+import { emojiGroups } from "./emoji.js";
 
 const ClockContext = createContext(Date.now());
 
@@ -25,7 +26,17 @@ function useClock() {
   return useContext(ClockContext);
 }
 
-const categories = ["Personal", "Learning", "Building", "Health", "Creative work", "Relationships"];
+const categories = ["Personal", "Work", "Learning", "Building", "Creative work", "Spiritual", "Health", "Fitness", "Relationships", "Family", "Finance", "Home & errands", "Self-care", "Community"];
+function useStableCallback(fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args) => ref.current(...args), []);
+}
+
+function categorySlug(name) {
+  return String(name || "other").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 const pages = [
   { id: "home", label: "Home", icon: House },
   { id: "tasks", label: "My Tasks", icon: CheckSquare2 },
@@ -103,14 +114,14 @@ function playCelebrationSound(context) {
   window.setTimeout(() => context.close(), 1100);
 }
 
-const WHATS_NEW_VERSION = "2026-10-16";
+const WHATS_NEW_VERSION = "2026-10-17";
 const whatsNew = [
-  ["📊", "Weekly summary", "See what you finished and what is still waiting each week, then download it as a PDF or CSV."],
-  ["⏱️", "Your own focus time", "Set any length from 1 minute to 24 hours, and enjoy the new full-screen focus mode."],
-  ["✨", "A livelier app", "Smoother animations, a progress ring on Home, and swipe a task to complete or delete it."],
-  ["📅", "Every day on its own", "Today only shows today. Unfinished tasks from earlier days wait in their own card."],
-  ["🎨", "Make it yours", "Choose an accent color, a dark theme, and your own avatar."],
-  ["👋", "Leave a circle", "You can now leave any circle from its page."]
+  ["📣", "Assign a task to the whole circle", "Circle owners can give everyone the same task and see who has finished it."],
+  ["🔥", "Streaks now mean 80%", "A day counts when you finish at least 80% of that day's tasks, not just one."],
+  ["😊", "Emojis in chat", "Tap the smiley beside the message box to add emojis, with your recent ones saved."],
+  ["🏷️", "More categories", "Spiritual, Work, Fitness, Finance, Family, Self-care and more."],
+  ["⚡", "Instant updates", "Adding, completing and moving tasks now respond immediately."],
+  ["🎨", "A calmer, cleaner look", "Simpler lists, a dedicated focus mode and clearer navigation."]
 ];
 
 const pushSupported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && Boolean(import.meta.env.VITE_VAPID_PUBLIC_KEY);
@@ -126,8 +137,8 @@ function subscriptionBody(subscription) {
 }
 
 const accents = [
-  ["terracotta", "Terracotta", "#d96c3b"], ["plum", "Plum", "#9a5bb0"], ["teal", "Teal", "#2f9488"],
-  ["sky", "Sky", "#3b82c4"], ["olive", "Olive", "#7b8f3a"], ["rose", "Rose", "#d65a7a"]
+  ["terracotta", "Terracotta", "#c25a2c"], ["plum", "Plum", "#8447a0"], ["teal", "Teal", "#25796f"],
+  ["sky", "Sky", "#2f6fae"], ["olive", "Olive", "#66782c"], ["rose", "Rose", "#c24468"]
 ];
 
 function formatMinutes(total) {
@@ -384,6 +395,38 @@ function App({ authClient }) {
   const [authNotice, setAuthNotice] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [tasks, setTasks] = useState([]);
+  const serverTasksRef = useRef([]);
+  const opsRef = useRef([]);
+  const opCounter = useRef(0);
+  // Server data plus any changes that are still on their way. Pending changes are re-applied on top of every
+  // live update, so a task never flickers back to its old state while a request is in flight.
+  const renderTasks = useCallback(() => {
+    let list = serverTasksRef.current;
+    for (const op of opsRef.current) {
+      if (op.type === "patch") list = list.map(task => task.id === op.taskId ? { ...task, ...op.patch } : task);
+      else if (op.type === "remove") list = list.filter(task => task.id !== op.taskId);
+      else if (op.type === "create" && !list.some(task => task.title === op.task.title && Math.abs(task.createdAt - op.task.createdAt) < 8000)) list = [op.task, ...list];
+    }
+    setTasks(list);
+  }, []);
+  const applyServerTasks = useCallback(data => { serverTasksRef.current = data; renderTasks(); }, [renderTasks]);
+  const stageOp = useCallback(op => { op.id = ++opCounter.current; opsRef.current = [...opsRef.current, op]; renderTasks(); return op.id; }, [renderTasks]);
+  const settleOps = useCallback((ids, serverTask, removedId) => {
+    opsRef.current = opsRef.current.filter(op => !ids.includes(op.id));
+    if (serverTask) serverTasksRef.current = serverTasksRef.current.some(task => task.id === serverTask.id)
+      ? serverTasksRef.current.map(task => task.id === serverTask.id ? serverTask : task)
+      : [serverTask, ...serverTasksRef.current];
+    if (removedId) serverTasksRef.current = serverTasksRef.current.filter(task => task.id !== removedId);
+    renderTasks();
+  }, [renderTasks]);
+  const resetTasks = useCallback(() => { serverTasksRef.current = []; opsRef.current = []; setTasks([]); }, []);
+  const [assignments, setAssignments] = useState([]);
+  const [assignDialog, setAssignDialog] = useState(false);
+  const [assignmentToDelete, setAssignmentToDelete] = useState(null);
+  const completeTask = useStableCallback((task, done) => updateTask(task, "complete", { done }));
+  const editTask = useStableCallback(task => setTaskDialog({ task }));
+  const timerTask = useStableCallback((task, action) => handleTimer(task, action));
+  const removeTask = useStableCallback(task => deleteTask(task));
   const [friends, setFriends] = useState([]);
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
@@ -445,11 +488,11 @@ function App({ authClient }) {
     const [taskData, friendData, groupData] = await Promise.all([
       api("/tasks"), api("/friends"), api("/groups")
     ]);
-    setTasks(taskData);
+    applyServerTasks(taskData);
     setFriends(friendData);
     setGroups(groupData);
     setActiveGroup(current => groupData.find(group => group.id === current?.id) || groupData[0] || null);
-  }, [api]);
+  }, [api, applyServerTasks]);
 
   const loadActivity = useCallback(async () => {
     setActivity(await api("/activity"));
@@ -471,7 +514,7 @@ function App({ authClient }) {
       }
       setUser(null);
       setProfile(null);
-      setTasks([]);
+      resetTasks();
       setFriends([]);
       setGroups([]);
       setActiveGroup(null);
@@ -526,7 +569,7 @@ function App({ authClient }) {
     const onError = error => { if (!errorShown) { errorShown = true; setToast(error.message); } };
     const memberKey = group => group.members.map(member => member.id + member.avatar).join(",");
     const unsubs = [
-      live("/tasks", data => { setTasks(data); setTasksLoaded(true); }, onError),
+      live("/tasks", data => { applyServerTasks(data); setTasksLoaded(true); }, onError),
       live("/friends", setFriends, onError),
       live("/groups", groupData => {
         setGroups(groupData);
@@ -566,6 +609,12 @@ function App({ authClient }) {
       }) };
     }), () => {});
   }, [user?.id, activeGroup?.id, live]);
+
+  useEffect(() => {
+    if (!user || page !== "circles" || !activeGroup) { setAssignments([]); return undefined; }
+    setAssignments([]);
+    return live(`/groups/${activeGroup.id}/assignments`, setAssignments, () => {});
+  }, [user?.id, page, activeGroup?.id, live]);
 
   useEffect(() => {
     if (!user || page !== "circles" || !activeGroup) { setRecap(null); return undefined; }
@@ -923,7 +972,7 @@ function App({ authClient }) {
       if (response.error) throw new Error(response.error.message || "Could not log out. Please try again.");
       setUser(null);
       setProfile(null);
-      setTasks([]);
+      resetTasks();
       setFriends([]);
       setGroups([]);
       setActiveGroup(null);
@@ -957,52 +1006,58 @@ function App({ authClient }) {
       reminderTime: String(form.get("reminderTime") || ""),
       tzOffset: new Date().getTimezoneOffset()
     };
-    try {
-      if (taskDialog?.task) {
-        const updated = await api(`/tasks/${taskDialog.task.id}`, { method: "PATCH", body: JSON.stringify(body) });
-        setTasks(current => current.map(task => task.id === updated.id ? updated : task));
-      } else {
-        const created = await api("/tasks", { method: "POST", body: JSON.stringify(body) });
-        setTasks(current => current.some(task => task.id === created.id) ? current : [created, ...current]);
-        loadActivity().catch(error => notify(error.message));
+    if (!body.title || body.title.length > 120) { notify("Task titles must be 1–120 characters."); return; }
+    const editing = taskDialog?.task;
+    setTaskDialog(null);
+    if (editing) {
+      const { tzOffset, ...patch } = body;
+      const opId = stageOp({ type: "patch", taskId: editing.id, patch });
+      try {
+        const updated = await api(`/tasks/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        settleOps([opId], updated);
+      } catch (error) {
+        settleOps([opId]);
+        notify(error.message);
       }
-      setTaskDialog(null);
+      return;
+    }
+    const { tzOffset, ...fields } = body;
+    const draft = { id: `tmp-${Date.now()}`, ...fields, elapsedSeconds: 0, timerStartedAt: null, done: false, createdAt: Date.now(), assignmentId: null, assignedByName: null };
+    const opId = stageOp({ type: "create", task: draft });
+    try {
+      const created = await api("/tasks", { method: "POST", body: JSON.stringify(body) });
+      settleOps([opId], created);
+      if (body.visibility === "friends") loadActivity().catch(error => notify(error.message));
     } catch (error) {
+      settleOps([opId]);
       notify(error.message);
     }
   }
 
   async function updateTask(task, action, body = {}) {
     const now = Date.now();
-    const previousTasks = tasks;
-    const previousTask = task;
     const elapsedNow = task.timerStartedAt
       ? Math.max(0, Math.floor((now - Date.parse(task.timerStartedAt)) / 1000))
       : 0;
-    let optimisticTask = { ...task };
-
+    let patch = {};
     if (action === "complete") {
-      optimisticTask = {
-        ...task,
-        done: Boolean(body.done),
-        elapsedSeconds: task.elapsedSeconds + elapsedNow,
-        timerStartedAt: null
-      };
+      patch = { done: Boolean(body.done), elapsedSeconds: task.elapsedSeconds + elapsedNow, timerStartedAt: null };
       if (body.done && !task.done) {
         setJustDoneId(task.id);
         window.setTimeout(() => setJustDoneId(current => current === task.id ? null : current), 1100);
       }
     } else if (action === "start") {
-      optimisticTask = {
-        ...task,
-        timerStartedAt: task.timerStartedAt || new Date(now).toISOString()
-      };
+      patch = { timerStartedAt: task.timerStartedAt || new Date(now).toISOString() };
     } else if (action === "stop") {
-      optimisticTask = {
-        ...task,
-        elapsedSeconds: task.elapsedSeconds + elapsedNow,
-        timerStartedAt: null
-      };
+      patch = { elapsedSeconds: task.elapsedSeconds + elapsedNow, timerStartedAt: null };
+    }
+    const opIds = [stageOp({ type: "patch", taskId: task.id, patch })];
+    if (action === "start") {
+      tasks.forEach(item => {
+        if (item.id === task.id || !item.timerStartedAt || item.done) return;
+        const elapsed = Math.max(0, Math.floor((now - Date.parse(item.timerStartedAt)) / 1000));
+        opIds.push(stageOp({ type: "patch", taskId: item.id, patch: { elapsedSeconds: item.elapsedSeconds + elapsed, timerStartedAt: null } }));
+      });
     }
 
     const willFinishAllTasks = action === "complete" && body.done && !task.done
@@ -1016,33 +1071,16 @@ function App({ authClient }) {
       }
     }
 
-    if (action === "start") {
-      setTasks(current => current.map(item => {
-        if (item.id === task.id) return optimisticTask;
-        if (!item.timerStartedAt || item.done) return item;
-        const elapsed = Math.max(0, Math.floor((now - Date.parse(item.timerStartedAt)) / 1000));
-        return { ...item, elapsedSeconds: item.elapsedSeconds + elapsed, timerStartedAt: null };
-      }));
-    } else {
-      setTasks(current => current.map(item => item.id === task.id ? optimisticTask : item));
-    }
-
     try {
       let updated;
       try {
-        updated = await api(`/tasks/${task.id}/${action}`, {
-          method: "POST",
-          body: JSON.stringify(body)
-        });
+        updated = await api(`/tasks/${task.id}/${action}`, { method: "POST", body: JSON.stringify(body) });
       } catch (firstError) {
         if (firstError.status !== 401 && !/unauthenticated|not authenticated/i.test(firstError.message || "")) throw firstError;
         await authClient.convex.token();
-        updated = await api(`/tasks/${task.id}/${action}`, {
-          method: "POST",
-          body: JSON.stringify(body)
-        });
+        updated = await api(`/tasks/${task.id}/${action}`, { method: "POST", body: JSON.stringify(body) });
       }
-      setTasks(current => current.map(item => item.id === task.id ? updated : item));
+      settleOps(opIds, updated);
       if (action === "complete" && updated.done) {
         loadActivity().catch(error => notify(error.message));
         if (willFinishAllTasks) {
@@ -1054,11 +1092,7 @@ function App({ authClient }) {
       }
     } catch (error) {
       if (soundReady) soundReady.then(context => context.close()).catch(() => {});
-      setTasks(current => current.map(item => {
-        if (item.id === previousTask.id) return previousTask;
-        const old = previousTasks.find(previous => previous.id === item.id);
-        return old && action === "start" ? old : item;
-      }));
+      settleOps(opIds);
       notify(error.message);
     }
   }
@@ -1073,13 +1107,12 @@ function App({ authClient }) {
   }
 
   async function extendFocus(task, minutes) {
-    const previousTarget = task.targetMinutes;
-    const targetMinutes = Math.min(1440, previousTarget + minutes);
-    setTasks(current => current.map(item => item.id === task.id ? { ...item, targetMinutes } : item));
+    const targetMinutes = Math.min(1440, task.targetMinutes + minutes);
+    const opId = stageOp({ type: "patch", taskId: task.id, patch: { targetMinutes } });
     try {
-      await patchTask(task, { targetMinutes });
+      settleOps([opId], await patchTask(task, { targetMinutes }));
     } catch (error) {
-      setTasks(current => current.map(item => item.id === task.id ? { ...item, targetMinutes: previousTarget } : item));
+      settleOps([opId]);
       notify(error.message);
     }
   }
@@ -1101,25 +1134,63 @@ function App({ authClient }) {
   }
 
   async function moveToToday(list) {
+    const movable = list.filter(task => !task.assignmentId);
+    if (!movable.length) return;
+    const dueDate = localDate();
+    const staged = movable.map(task => ({ task, opId: stageOp({ type: "patch", taskId: task.id, patch: { dueDate } }) }));
+    notify(movable.length === 1 ? "Moved to today." : `Moved ${movable.length} tasks to today.`);
+    await Promise.all(staged.map(async ({ task, opId }) => {
+      try {
+        settleOps([opId], await patchTask(task, { dueDate }));
+      } catch (error) {
+        settleOps([opId]);
+        notify(error.message);
+      }
+    }));
+  }
+
+  async function deleteTask(task) {
+    if (task.assignmentId) { notify("This task was assigned by your circle owner, so it can't be deleted."); return; }
+    const opId = stageOp({ type: "remove", taskId: task.id });
+    notify("Task deleted.");
     try {
-      await Promise.all(list.map(task => api(`/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({
-        title: task.title, description: task.description || "", category: task.category, dueDate: localDate(),
-        priority: task.priority, visibility: task.visibility, targetMinutes: task.targetMinutes,
-        repeat: task.repeat || "none", reminderTime: task.reminderTime || "",
-        tzOffset: new Date().getTimezoneOffset(), groupIds: task.groupIds || []
-      }) })));
-      notify("Moved to today.");
+      await api(`/tasks/${task.id}`, { method: "DELETE" });
+      settleOps([opId], null, task.id);
+    } catch (error) {
+      settleOps([opId]);
+      notify(error.message);
+    }
+  }
+
+  async function saveAssignment(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const body = {
+      title: String(form.get("title") || "").trim(),
+      description: String(form.get("description") || "").trim(),
+      category: String(form.get("category") || "Personal"),
+      dueDate: String(form.get("dueDate") || "") || null,
+      priority: String(form.get("priority") || "normal"),
+      targetMinutes: Math.min(1440, Math.max(1, Math.round(Number(form.get("targetMinutes")) || 25))),
+      includeSelf: form.get("includeSelf") === "on"
+    };
+    if (!body.title || body.title.length > 120) { notify("Task titles must be 1–120 characters."); return; }
+    try {
+      const result = await api(`/groups/${activeGroup.id}/assignments`, { method: "POST", body: JSON.stringify(body) });
+      setAssignDialog(false);
+      notify(`Assigned to ${result.assigned} ${result.assigned === 1 ? "member" : "members"}.`);
     } catch (error) {
       notify(error.message);
     }
   }
 
-  async function deleteTask(task) {
+  async function deleteAssignment(assignment) {
     try {
-      await api(`/tasks/${task.id}`, { method: "DELETE" });
-      setTasks(current => current.filter(item => item.id !== task.id));
-      notify("Task deleted.");
+      await api(`/assignments/${assignment.id}`, { method: "DELETE" });
+      setAssignmentToDelete(null);
+      notify("Assigned task removed for everyone.");
     } catch (error) {
+      setAssignmentToDelete(null);
       notify(error.message);
     }
   }
@@ -1287,7 +1358,7 @@ function App({ authClient }) {
       try { localStorage.removeItem(`kinda:seen:${user.id}`); } catch { /* ignore */ }
       setUser(null);
       setProfile(null);
-      setTasks([]);
+      resetTasks();
       setFriends([]);
       setGroups([]);
       setActiveGroup(null);
@@ -1340,12 +1411,14 @@ function App({ authClient }) {
     <main className={`app-shell ${menuOpen ? "menu-open" : ""}`}>
       <aside className="sidebar">
         <button className="wordmark wordmark-button" onClick={() => navigate("home")}>kinda<span>.</span></button>
-        <p className="side-label">YOUR SPACE</p>
         <nav className="side-nav" aria-label="Main navigation">
-          {pages.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => navigate(id)} title={label}>
-            <Icon size={18}/><span>{label}</span>
-            {badges[id] > 0 && <i key={badges[id]} className="nav-badge" aria-label={`${badges[id]} new`}>{badges[id] > 99 ? "99+" : badges[id]}</i>}
-          </button>)}
+          {[["Plan", ["home", "tasks", "weekly"]], ["Together", ["circles", "chat", "activity"]], ["You", ["profile", "settings"]]].map(([heading, ids]) => <div className="nav-group" key={heading}>
+            <p className="side-label">{heading}</p>
+            {ids.map(id => { const { label, icon: Icon } = pages.find(item => item.id === id); return <button key={id} className={`nav-item ${page === id ? "active" : ""}`} aria-current={page === id ? "page" : undefined} onClick={() => navigate(id)} title={label}>
+              <Icon size={18}/><span>{label}</span>
+              {badges[id] > 0 && <i key={badges[id]} className="nav-badge" aria-label={`${badges[id]} new`}>{badges[id] > 99 ? "99+" : badges[id]}</i>}
+            </button>; })}
+          </div>)}
         </nav>
         <div className="sidebar-friends"><div className="side-section-heading"><span>YOUR CIRCLES</span><button className="icon-quiet" onClick={() => setCircleDialog(true)} aria-label="Create circle"><Plus size={15}/></button></div>
           {groups.slice(0, 5).map((group, index) => <button className="friend-mini" key={group.id} onClick={() => { setActiveGroup(group); navigate("circles"); }}><Avatar name={group.name} index={index}/><span>{group.name}</span></button>)}
@@ -1369,9 +1442,9 @@ function App({ authClient }) {
           leaderboardGroupId={leaderboardGroupId ?? groups[0]?.id}
           onSelectLeaderboardGroup={setLeaderboardGroupId}
           activity={activity.slice(0, 4)} groups={viewGroups}
-          onCreate={() => setTaskDialog({ task: null })} onEdit={task => setTaskDialog({ task })}
-          onComplete={(task, done) => updateTask(task, "complete", { done })}
-          onTimer={handleTimer} onReact={reactToActivity}
+          onCreate={() => setTaskDialog({ task: null })} onEdit={editTask}
+          onComplete={completeTask}
+          onTimer={timerTask} onReact={reactToActivity}
           onPage={navigate} onCircle={group => { setActiveGroup(group); navigate("circles"); }} onCreateCircle={() => setCircleDialog(true)}
           streak={streak} loaded={tasksLoaded} justDoneId={justDoneId}
           onboarding={onboardingHidden || onboardingSteps.every(step => step.done) ? null : onboardingSteps}
@@ -1380,8 +1453,8 @@ function App({ authClient }) {
         {page === "tasks" && <TasksPage loaded={tasksLoaded} justDoneId={justDoneId}
           tasks={filteredTasks} filter={filter} setFilter={setFilter} allCount={tasks.length}
           onCreate={() => setTaskDialog({ task: null })}
-          onEdit={task => setTaskDialog({ task })} onComplete={(task, done) => updateTask(task, "complete", { done })}
-          onTimer={handleTimer} onDelete={deleteTask}
+          onEdit={editTask} onComplete={completeTask}
+          onTimer={timerTask} onDelete={removeTask}
         />}
         {page === "circles" && <CirclesPage
           groups={viewGroups} activeGroup={viewActiveGroup} onSelect={setActiveGroup}
@@ -1400,6 +1473,7 @@ function App({ authClient }) {
           onCreateTask={() => setTaskDialog({ task: null, groupIds: activeGroup ? [activeGroup.id] : [] })}
           onOpenChat={() => navigate("chat")}
           recap={recap} onNudge={nudgeTask} onRevokeInvite={revokeInviteLink} onLeave={setLeaveTarget}
+          assignments={assignments} onAssign={() => setAssignDialog(true)} onDeleteAssignment={setAssignmentToDelete}
         />}
         {page === "activity" && <ActivityPage activity={activity} nudges={nudges} userId={user.id} onReact={reactToActivity}/>}
         {page === "chat" && <ChatPage
@@ -1424,6 +1498,10 @@ function App({ authClient }) {
       </section>
 
       {taskDialog && <TaskDialog task={taskDialog.task} groups={groups} initialGroupIds={taskDialog.groupIds} onClose={() => setTaskDialog(null)} onSave={saveTask}/>}
+      {assignDialog && activeGroup && <AssignDialog group={activeGroup} onClose={() => setAssignDialog(false)} onSubmit={saveAssignment}/>}
+      {assignmentToDelete && <ConfirmDialog title="Remove this assigned task?" confirmLabel="Remove for everyone" danger onConfirm={() => deleteAssignment(assignmentToDelete)} onCancel={() => setAssignmentToDelete(null)}>
+        <p>“{assignmentToDelete.title}” will be removed from every member’s list, including anything they have already completed.</p>
+      </ConfirmDialog>}
       {friendDialog && <FriendDialog onClose={() => setFriendDialog(false)} onSubmit={addFriend}/>}
       {circleDialog && <CircleDialog onClose={() => setCircleDialog(false)} onSubmit={createCircle}/>}
       {banner && <InAppBanner banner={banner} onClose={() => setBanner(null)} onOpen={() => {
@@ -1523,29 +1601,52 @@ function CelebrationDialog({ onClose }) {
 }
 
 function PageHeader({ eyebrow, title, description, action }) {
-  return <header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
+  const label = typeof eyebrow === "string" && eyebrow.length > 1 && eyebrow === eyebrow.toUpperCase() ? eyebrow.charAt(0) + eyebrow.slice(1).toLowerCase() : eyebrow;
+  return <header className="page-header"><div><p className="eyebrow">{label}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
 }
 
-function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, tick, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier, loaded = true, justDoneId, onboarding, onDismissOnboarding }) {
+function StreakLine({ streak }) {
+  const { current, doneToday, todayTotal, todayDone, needed, percent } = streak;
+  const detail = doneToday ? `You have reached ${percent}% today, so your streak is safe.`
+    : todayTotal === 0 ? `Plan a few tasks and finish ${percent}% of them to keep it going.`
+    : `${todayDone} of ${todayTotal} done. ${needed} more to reach ${percent}%.`;
+  return <p className="streak-line" role="status"><Flame size={15}/><b>{current}-day streak</b><span>{detail}</span></p>;
+}
+
+function EarlierDays({ tasks, onMove, onShowAll }) {
+  const [open, setOpen] = useState(false);
+  const movable = tasks.filter(task => !task.assignmentId);
+  return <section className="earlier-days" aria-label="Unfinished tasks from earlier days">
+    <div className="earlier-bar">
+      <button className="earlier-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}><ChevronDown size={15} className={open ? "open" : ""}/><b>{tasks.length} unfinished from earlier days</b></button>
+      {movable.length > 0 && <button className="text-link" onClick={() => onMove(movable)}>Move {movable.length === 1 ? "it" : "all"} to today</button>}
+    </div>
+    {open && <div className="earlier-list">{tasks.slice(0, 4).map(task => <div className="earlier-row" key={task.id}><span><b>{task.title}</b><small>{dayLabel(taskDay(task))}{task.assignmentId ? " · Assigned" : ""}</small></span>{!task.assignmentId && <button className="text-link" onClick={() => onMove([task])}>Move to today</button>}</div>)}{tasks.length > 4 && <button className="text-link" onClick={onShowAll}>See all {tasks.length}</button>}</div>}
+  </section>;
+}
+
+function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier, loaded = true, justDoneId, onboarding, onDismissOnboarding }) {
   const activeLeaderboard = groups.find(group => group.id === leaderboardGroupId) || groups[0] || null;
+  const next = tasks.find(task => !task.done && !task.timerStartedAt);
   return <div className="page-content home-page">
-    <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase()} title="Home" description={`${greeting()}, ${user.name.split(/\s+/)[0]}. Here’s today.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
+    <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title={`${greeting()}, ${user.name.split(/\s+/)[0]}`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> New task</button>}/>
     <InstallCard/>
     {onboarding && <OnboardingCard steps={onboarding} onDismiss={onDismissOnboarding}/>}
-    <section className="today-summary" aria-label="Today's task progress"><ProgressRing percent={completion}><b className="ring-number"><CountUp value={completion}/><small>%</small></b></ProgressRing><div className="summary-copy"><b>Today</b><span>{done} of {total} tasks complete</span><small>{total === 0 ? "Nothing planned yet." : completion === 100 ? "All done. Lovely." : `${total - done} to go`}</small></div></section>
-    {streak && (streak.current > 0 || streak.best > 0) && <section className="streak-chip" role="status"><Flame size={16}/><b>{streak.current}-day streak</b><span>{streak.doneToday ? "Nice, you've shown up today." : streak.current ? "Finish one task today to keep it going." : "Finish a task to start a new one."} Best: {streak.best}.</span></section>}
-    {earlier.length > 0 && <section className="earlier-card" aria-label="Unfinished tasks from earlier days"><div className="earlier-head"><div><p className="eyebrow">FROM EARLIER DAYS</p><b>{earlier.length} unfinished {earlier.length === 1 ? "task" : "tasks"}</b></div><button className="text-link" onClick={() => onMoveToToday(earlier)}>Move all to today</button></div>
-      {earlier.slice(0, 3).map(task => <article className="earlier-row" key={task.id}><span><b>{task.title}</b><small>{dayLabel(taskDay(task))}</small></span><button className="text-link" onClick={() => onMoveToToday([task])}>Move to today</button></article>)}
-      {earlier.length > 3 && <button className="text-link" onClick={onShowEarlier}>See all {earlier.length}</button>}</section>}
-    {remainingTasks > 0 ? <section className="motivation-card" role="status"><span><Heart size={17}/></span><div><b>One step at a time.</b><p>You’ve got {remainingTasks} {remainingTasks === 1 ? "task" : "tasks"} still on your list. Pick one small next step—progress matters more than perfection.</p></div></section> : total > 0 && <section className="motivation-card motivation-complete" role="status"><span><Check size={17}/></span><div><b>Look at what you’ve done.</b><p>Your tasks for today are complete. Take a breath and feel good about showing up.</p></div></section>}
+    <section className="day-glance" aria-label="Today at a glance">
+      <ProgressRing percent={completion} size={56} stroke={6}><b className="ring-number"><CountUp value={completion}/><small>%</small></b></ProgressRing>
+      <div className="glance-copy"><b>{done} of {total} done today</b><span>{total === 0 ? "Nothing planned yet." : completion === 100 ? "Everything finished." : `${remainingTasks} left to go.`}</span></div>
+      {streak && (streak.current > 0 || streak.best > 0 || streak.todayTotal > 0) && <StreakLine streak={streak}/>}
+    </section>
     <div className="home-grid">
-      <section className="home-tasks"><div className="section-title-row"><div><p className="eyebrow">YOUR DAY</p><h2>Tasks for today</h2></div><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
-        {!loaded ? <SkeletonList/> : tasks.length ? <div className="task-list">{tasks.slice(0, 7).map(task => <TaskRow key={task.id} task={task} tick={tick} justDone={justDoneId === task.id} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={null}/>)}</div> : <EmptyTasks onCreate={onCreate} compact/>}
+      <section className="home-tasks"><div className="section-title-row"><h2>Today</h2><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
+        {earlier.length > 0 && <EarlierDays tasks={earlier} onMove={onMoveToToday} onShowAll={onShowEarlier}/>}
+        {!loaded ? <SkeletonList/> : tasks.length ? <div className="task-list">{tasks.slice(0, 8).map(task => <TaskRow key={task.id} task={task} justDone={justDoneId === task.id} onComplete={onComplete} onTimer={onTimer} onEdit={onEdit} onDelete={null}/>)}</div> : <EmptyTasks onCreate={onCreate} compact/>}
+        {next && <div className="up-next"><span>Up next</span><b>{next.title}</b><button className="text-link" onClick={() => onTimer(next, "start")}><Play size={13}/> Start focus</button></div>}
       </section>
-      <aside className="home-social"><section className="home-feed"><div className="section-title-row"><div><p className="eyebrow">AROUND YOU</p><h2>Friends’ activity</h2></div><button className="icon-quiet" onClick={() => onPage("activity")} aria-label="See all activity"><ArrowRight size={16}/></button></div>
+      <aside className="home-social"><section className="home-feed"><div className="section-title-row"><h2>Friends</h2><button className="icon-quiet" onClick={() => onPage("activity")} aria-label="See all activity"><ArrowRight size={16}/></button></div>
         {activity.length ? <ActivityList items={activity} userId={user.id} onReact={onReact} compact/> : <p className="quiet-empty">Friend activity will appear when your friends share a task or finish one.</p>}</section>
-        <section className="home-friends"><div className="section-title-row"><div><p className="eyebrow">YOUR PEOPLE</p><h2>Circles</h2></div><button className="icon-quiet" onClick={onCreateCircle} aria-label="Create circle"><Plus size={16}/></button></div>
-          {groups.length ? <div className="friend-list">{groups.slice(0, 4).map((group, index) => <button className="friend-card" key={group.id} onClick={() => onCircle(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"}</small></span><ArrowRight size={14}/></button>)}</div> : <p className="quiet-empty">Create a circle to share progress with your people. <button onClick={onCreateCircle}>Create a circle</button></p>}
+        <section className="home-friends"><div className="section-title-row"><h2>Circles</h2><button className="icon-quiet" onClick={onCreateCircle} aria-label="Create circle"><Plus size={16}/></button></div>
+          {groups.length ? <div className="friend-list">{groups.slice(0, 4).map((group, index) => <button className="friend-card" key={group.id} onClick={() => onCircle(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"} today</small></span><ArrowRight size={14}/></button>)}</div> : <p className="quiet-empty">Create a circle to share progress with your people. <button onClick={onCreateCircle}>Create a circle</button></p>}
         </section>
         {activeLeaderboard && <GroupLeaderboard group={activeLeaderboard} userId={user.id} onOpen={() => onCircle(activeLeaderboard)} onSelectGroup={onSelectLeaderboardGroup} groups={groups} compact/>}
       </aside>
@@ -1554,18 +1655,25 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
 }
 
 function TasksPage({ tasks, filter, setFilter, allCount, onCreate, onEdit, onComplete, onTimer, onDelete, loaded = true, justDoneId }) {
-  const tick = useClock();
   return <div className="page-content">
-    <PageHeader eyebrow="MAKE A LITTLE ROOM FOR WHAT MATTERS" title="My Tasks" description={`${allCount} ${allCount === 1 ? "task" : "tasks"} on your list.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> Create task</button>}/>
-    <div className="task-filters"><SlidersHorizontal size={16}/>{["Today", "Earlier", "Upcoming", "Completed", "No date"].map(item => <button className={filter === item ? "filter-active" : ""} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div>
-    {!loaded ? <SkeletonList rows={4}/> : tasks.length ? <section className="task-list task-list-page">{tasks.map(task => <TaskRow key={task.id} task={task} tick={tick} justDone={justDoneId === task.id} onComplete={done => onComplete(task, done)} onTimer={action => onTimer(task, action)} onEdit={() => onEdit(task)} onDelete={() => onDelete(task)}/>)}</section> : <EmptyTasks onCreate={onCreate} title={filter === "Completed" ? "No completed tasks yet." : filter === "Upcoming" ? "Nothing coming up." : "A clear page."}/>}
+    <PageHeader eyebrow="Everything you are working on" title="My Tasks" description={`${allCount} ${allCount === 1 ? "task" : "tasks"} on your list.`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> New task</button>}/>
+    <div className="task-filters" role="tablist" aria-label="Filter tasks">{["Today", "Earlier", "Upcoming", "Completed", "No date"].map(item => <button role="tab" aria-selected={filter === item} className={filter === item ? "filter-active" : ""} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div>
+    {!loaded ? <SkeletonList rows={4}/> : tasks.length ? <section className="task-list task-list-page">{tasks.map(task => <TaskRow key={task.id} task={task} justDone={justDoneId === task.id} onComplete={onComplete} onTimer={onTimer} onEdit={onEdit} onDelete={onDelete}/>)}</section> : <EmptyTasks onCreate={onCreate} title={filter === "Completed" ? "No completed tasks yet." : filter === "Upcoming" ? "Nothing coming up." : filter === "Earlier" ? "Nothing left over." : "A clear page."}/>}
   </div>;
 }
 
-function TaskRow({ task, tick, onComplete, onTimer, onEdit, onDelete, justDone }) {
-  const elapsed = task.elapsedSeconds + (task.timerStartedAt ? Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000)) : 0);
-  const remaining = Math.max(0, task.targetMinutes * 60 - elapsed);
-  const due = dueLabel(task, tick);
+function RunningReadout({ task }) {
+  const tick = useClock();
+  const elapsed = task.elapsedSeconds + Math.max(0, Math.floor((tick - Date.parse(task.timerStartedAt)) / 1000));
+  return <span className="focus-live">{formatTime(Math.max(0, task.targetMinutes * 60 - elapsed))}</span>;
+}
+
+const TaskRow = React.memo(function TaskRow({ task, onComplete, onTimer, onEdit, onDelete, justDone }) {
+  const locked = Boolean(task.assignmentId);
+  const canDelete = Boolean(onDelete) && !locked;
+  const due = dueLabel(task, Date.now());
+  const running = Boolean(task.timerStartedAt);
+  const left = Math.max(0, task.targetMinutes * 60 - task.elapsedSeconds);
   const [dx, setDx] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const drag = useRef(null);
@@ -1583,40 +1691,52 @@ function TaskRow({ task, tick, onComplete, onTimer, onEdit, onDelete, justDone }
       if (Math.abs(moveX) < 8) return;
       current.locked = true;
     }
-    setDx(Math.max(onDelete ? -110 : 0, Math.min(130, (revealed ? -88 : 0) + moveX)));
+    setDx(Math.max(canDelete ? -110 : 0, Math.min(130, (revealed ? -88 : 0) + moveX)));
   }
   function up() {
     const current = drag.current;
     drag.current = null;
     if (!current || !current.locked) return;
-    if (dx > 90) { onComplete(!task.done); setDx(0); setRevealed(false); }
-    else if (onDelete && dx < -60) { setRevealed(true); setDx(-88); }
+    if (dx > 90) { onComplete(task, !task.done); setDx(0); setRevealed(false); }
+    else if (canDelete && dx < -60) { setRevealed(true); setDx(-88); }
     else { setRevealed(false); setDx(0); }
   }
   return <div className="task-swipe">
     <div className="swipe-bg swipe-bg-done" aria-hidden="true"><Check size={16}/> {task.done ? "Reopen" : "Done"}</div>
-    {onDelete && <button className="swipe-bg swipe-bg-delete" onClick={onDelete} tabIndex={revealed ? 0 : -1}><Trash2 size={16}/> Delete</button>}
+    {canDelete && <button className="swipe-bg swipe-bg-delete" onClick={() => onDelete(task)} tabIndex={revealed ? 0 : -1}><Trash2 size={16}/> Delete</button>}
     <article className={`task-row priority-${task.priority} ${task.done ? "task-complete" : ""} ${justDone ? "task-pop" : ""} ${dx ? "dragging" : ""}`}
       style={dx ? { transform: `translateX(${dx}px)`, transition: "none" } : undefined}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-      <button className={`task-check ${task.done ? "checked" : ""}`} aria-label={task.done ? "Reopen task" : "Complete task"} onClick={() => onComplete(!task.done)}>
+      <button className={`task-check ${task.done ? "checked" : ""}`} aria-label={task.done ? `Reopen ${task.title}` : `Complete ${task.title}`} aria-pressed={task.done} onClick={() => onComplete(task, !task.done)}>
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path className="check-path" d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         {justDone && <span className="spark-burst" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ "--a": `${index * 45}deg` }}/>)}</span>}
       </button>
-      <div className="task-main"><div className="task-heading"><h3>{task.title}</h3>{task.priority === "high" && !task.done && <span className="priority-tag">HIGH PRIORITY</span>}{task.groupIds?.length > 0 && <span className="shared-tag">IN A CIRCLE</span>}{task.repeat && task.repeat !== "none" && <span className="shared-tag"><Repeat size={10}/> REPEATS</span>}</div>{task.description && <p className="task-description">{task.description}</p>}
-        <div className="task-meta"><span className="category-chip">{task.category}</span><CalendarDays size={13}/><span className={`due ${due.tone}`}>{due.text}</span>{task.dueDate && <span className="task-date">{task.dueDate}</span>}</div>
-        {!task.done && <div className="task-focus"><span className="focus-readout">{formatTime(remaining)}</span>{onTimer && <button className="timer-control" onClick={() => onTimer(task.timerStartedAt ? "stop" : "start")}>{task.timerStartedAt ? <Pause size={12}/> : <Play size={12}/>} {task.timerStartedAt ? "Pause focus" : elapsed ? "Resume focus" : `${formatMinutes(task.targetMinutes)} focus`}</button>}</div>}
+      <div className="task-main">
+        <h3>{onEdit && !locked ? <button className="task-title" onClick={() => onEdit(task)}>{task.title}</button> : task.title}</h3>
+        <div className="task-meta">
+          <span className="task-cat" data-cat={categorySlug(task.category)}>{task.category}</span>
+          <span className={`due ${due.tone}`}>{due.text}</span>
+          {task.priority === "high" && !task.done && <span className="meta-flag"><Flag size={12}/> High</span>}
+          {task.groupIds?.length > 0 && <span className="meta-icon" title="Shared with a circle"><Users size={12}/><span className="sr-only">Shared with a circle</span></span>}
+          {task.repeat && task.repeat !== "none" && <span className="meta-icon" title="Repeats"><Repeat size={12}/><span className="sr-only">Repeats</span></span>}
+          {locked && <span className="meta-assigned">Assigned by {task.assignedByName || "your circle owner"}</span>}
+        </div>
       </div>
-      <div className="task-actions">{onEdit && <button className="icon-quiet task-action" onClick={onEdit} aria-label="Edit task"><Pencil size={14}/></button>}{onDelete && <button className="icon-quiet task-action" onClick={onDelete} aria-label="Delete task"><Trash2 size={14}/></button>}</div>
+      <div className="task-side">
+        <div className="task-actions">{onEdit && !locked && <button className="icon-quiet task-action" onClick={() => onEdit(task)} aria-label="Edit task"><Pencil size={14}/></button>}{canDelete && <button className="icon-quiet task-action" onClick={() => onDelete(task)} aria-label="Delete task"><Trash2 size={14}/></button>}</div>
+        {!task.done && onTimer && (running
+          ? <button className="focus-chip running" onClick={() => onTimer(task, "stop")} aria-label="Pause focus"><Pause size={13}/><RunningReadout task={task}/></button>
+          : <button className="focus-chip" onClick={() => onTimer(task, "start")} aria-label={`Start focus, ${formatMinutes(task.targetMinutes)}`}><Play size={13}/>{task.elapsedSeconds > 0 ? `${formatMinutes(Math.ceil(left / 60))} left` : formatMinutes(task.targetMinutes)}</button>)}
+      </div>
     </article>
   </div>;
-}
+});
 
 function EmptyTasks({ onCreate, title = "Start with one thing.", compact = false }) {
   return <div className={`empty-tasks ${compact ? "empty-compact" : ""}`}><span className="empty-spark">✳</span><h3>{title}</h3><p>Add a task when you’re ready. You can keep it private or share it with friends.</p><button className="text-link" onClick={onCreate}><Plus size={15}/> Create a task</button></div>;
 }
 
-function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0, onLeave }) {
+function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0, onLeave, assignments = [], onAssign, onDeleteAssignment }) {
   const memberTaskGroups = (activeGroup?.members || []).map(member => {
     const memberTasks = sharedTasks.filter(task => task.ownerId === member.id);
     const done = memberTasks.filter(task => task.done).length;
@@ -1639,6 +1759,7 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
         {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button><button className="button button-secondary small-button danger-button" onClick={() => onLeave(activeGroup)}><LogOut size={14}/> Leave</button></div></div>
           <div className="circle-progress">{earlierCount > 0 && <small className="quiet-note">Showing today only · {earlierCount} from earlier days hidden</small>}<div><b>{sharedTasks.filter(task => task.done).length} of {sharedTasks.length} tasks done</b><span>{sharedTasks.length ? Math.round(sharedTasks.filter(task => task.done).length / sharedTasks.length * 100) : 0}%</span></div><div className="summary-progress"><span style={{ width: `${sharedTasks.length ? sharedTasks.filter(task => task.done).length / sharedTasks.length * 100 : 0}%` }}/></div></div>
           {recap && <div className="circle-recap"><p className="eyebrow">THIS WEEK</p><b>{recap.total} {recap.total === 1 ? "task" : "tasks"} finished together</b>{recap.top && <span><Flame size={13}/> {recap.top.name} led with {recap.top.completed}</span>}<div className="recap-members">{recap.members.map(member => <span key={member.id}><Avatar name={member.name} avatar={member.avatar}/>{member.completed}</span>)}</div></div>}
+          <AssignmentsSection assignments={assignments} isOwner={activeGroup.ownerId === user.id} onAssign={onAssign} onDelete={onDeleteAssignment}/>
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
           <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <span className="circle-member" key={member.id}><Avatar name={member.name} index={index} avatar={member.avatar}/>{member.name}{member.id === activeGroup.ownerId && <small>Owner</small>}</span>)}</div>
             {activeGroup.ownerId === user.id && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
@@ -1648,6 +1769,40 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
       </div> : <p className="quiet-empty">Create a circle to share tasks and progress with your people.</p>}
     </section>
   </div>;
+}
+
+function AssignmentsSection({ assignments, isOwner, onAssign, onDelete }) {
+  return <section className="assignments" aria-label="Tasks assigned to the whole circle">
+    <div className="section-title-row"><div><p className="eyebrow">For everyone</p><h3>Circle tasks</h3></div>{isOwner && <button className="button button-secondary small-button" onClick={onAssign}><Plus size={14}/> Assign a task</button>}</div>
+    {assignments.length ? <div className="assignment-list">{assignments.map(item => {
+      const percent = item.total ? Math.round(item.doneCount / item.total * 100) : 0;
+      return <article className="assignment" key={item.id}>
+        <div className="assignment-head"><div><h4>{item.title}</h4><p>{item.category} · {dayLabel(item.dueDate)} · Assigned by {item.createdByName}</p></div>
+          {isOwner ? <button className="icon-quiet" onClick={() => onDelete(item)} aria-label={`Remove ${item.title}`}><Trash2 size={15}/></button>
+            : item.mineDone !== null && <span className={`assignment-state ${item.mineDone ? "done" : ""}`}>{item.mineDone ? "You finished this" : "On your list"}</span>}</div>
+        {item.description && <p className="assignment-note">{item.description}</p>}
+        <div className="assignment-progress"><span>{item.doneCount} of {item.total} done</span><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div></div>
+        {isOwner && item.members.length > 0 && <ul className="assignment-members">{item.members.map(member => <li key={member.id} className={member.done ? "done" : ""}><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}</span><b>{member.done ? "Done" : "Not yet"}</b></li>)}</ul>}
+      </article>;
+    })}</div> : <p className="quiet-empty">{isOwner ? "Assign one task to everyone in this circle, then see who has finished it." : "Your circle owner has not assigned any tasks yet."}</p>}
+  </section>;
+}
+
+function AssignDialog({ group, onClose, onSubmit }) {
+  const others = Math.max(0, group.memberCount - 1);
+  const [more, setMore] = useState(false);
+  return <Modal title="Assign a task" subtitle={`It will appear on every member's list in ${group.name}, and you can track who finishes it.`} onClose={onClose}><form className="modal-form" onSubmit={onSubmit}>
+    <label>Task<input name="title" autoFocus placeholder="What should everyone do?" required maxLength="120"/></label>
+    <div className="form-grid"><label>Due date<input name="dueDate" type="date" defaultValue={localDate()}/></label><label>Priority<select name="priority" defaultValue="normal"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
+    <button type="button" className="more-toggle" aria-expanded={more} onClick={() => setMore(value => !value)}><ChevronDown size={15} className={more ? "open" : ""}/> {more ? "Fewer options" : "More options"}<small>Details, category, focus time</small></button>
+    <div className="more-fields" hidden={!more}>
+      <label>Details <span className="optional-label">Optional</span><textarea name="description" rows="2" maxLength="500" placeholder="Anything they need to know"/></label>
+      <div className="form-grid"><label>Category<select name="category" defaultValue="Personal">{categories.map(category => <option key={category}>{category}</option>)}</select></label></div>
+      <FocusTimeField defaultValue={25}/>
+    </div>
+    <label className="check-line"><input type="checkbox" name="includeSelf"/> <span>Add it to my list too</span></label>
+    <button className="button button-primary full-button" type="submit">Assign to {others} {others === 1 ? "member" : "members"} <ArrowRight size={15}/></button>
+  </form></Modal>;
 }
 
 function ActivityPage({ activity, nudges = [], userId, onReact }) {
@@ -1673,9 +1828,46 @@ function ActivityList({ items, userId, onReact, compact = false }) {
     <div className="reaction-bar">{(item.reactions || []).map(reaction => <button key={reaction.emoji} className={`reaction-chip ${reaction.mine ? "reacted" : ""}`} onClick={() => onReact(item, reaction.emoji)} aria-label={`${reaction.emoji} ${reaction.count}`}>{reaction.emoji}<span>{reaction.count}</span></button>)}<ReactionPicker onPick={emoji => onReact(item, emoji)}/></div></div></article>)}</div>;
 }
 
+function EmojiPicker({ onPick }) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState(0);
+  const [recent, setRecent] = useState(() => { try { return JSON.parse(localStorage.getItem("kinda:recent-emoji") || "[]"); } catch { return []; } });
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = event => { if (box.current && !box.current.contains(event.target)) setOpen(false); };
+    const escape = event => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const groups = recent.length ? [{ name: "Recent", icon: "🕘", emojis: recent }, ...emojiGroups] : emojiGroups;
+  function pick(emoji) {
+    onPick(emoji);
+    const next = [emoji, ...recent.filter(item => item !== emoji)].slice(0, 16);
+    setRecent(next);
+    try { localStorage.setItem("kinda:recent-emoji", JSON.stringify(next)); } catch { /* ignore */ }
+  }
+  return <div className="emoji-picker" ref={box}>
+    <button type="button" className="icon-quiet emoji-toggle" aria-label="Add emoji" aria-expanded={open} onClick={() => { setOpen(value => !value); setTab(0); }}><Smile size={19}/></button>
+    {open && <div className="emoji-popover" role="dialog" aria-label="Emoji picker">
+      <div className="emoji-tabs" role="tablist">{groups.map((group, index) => <button type="button" role="tab" aria-selected={index === tab} aria-label={group.name} title={group.name} key={group.name} className={index === tab ? "active" : ""} onClick={() => setTab(index)}>{group.icon}</button>)}</div>
+      <div className="emoji-grid">{(groups[tab] || groups[0]).emojis.map(emoji => <button type="button" key={emoji} onClick={() => pick(emoji)}>{emoji}</button>)}</div>
+    </div>}
+  </div>;
+}
+
 function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, user, value, setValue, onSend, sending, mobileOpen, onMobileBack, onInvite, typingNames = [], replyTo, onReply, onCancelReply, onEdit, onDelete, onTyping, dividerTime }) {
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const composeRef = useRef(null);
+  function insertEmoji(emoji) {
+    const input = composeRef.current;
+    const start = input?.selectionStart ?? value.length;
+    const end = input?.selectionEnd ?? value.length;
+    setValue(value.slice(0, start) + emoji + value.slice(end));
+    window.requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + emoji.length, start + emoji.length); });
+  }
   const dividerIndex = dividerTime === null || dividerTime === undefined ? -1 : messages.findIndex(message => message.senderId !== user.id && message.createdAt > dividerTime);
   const members = activeGroup?.members || [];
   const mentionMatch = value.match(/(^|\s)@([^\s@]*)$/);
@@ -1711,7 +1903,7 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
           <div className="typing-indicator" aria-live="polite">{typingNames.length > 0 && `${typingNames.join(", ")} ${typingNames.length > 1 ? "are" : "is"} typing…`}</div>
           {replyTo && <div className="reply-bar"><span>Replying to <b>{replyTo.senderName}</b>: {replyTo.content.slice(0, 70)}</span><button type="button" onClick={onCancelReply} aria-label="Cancel reply"><X size={14}/></button></div>}
           {suggestions.length > 0 && <div className="mention-list" role="listbox" aria-label="Mention someone">{suggestions.map(member => <button type="button" role="option" key={member.id} onClick={() => setValue(value.replace(/(^|\s)@([^\s@]*)$/, `$1@${member.name} `))}><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}</span></button>)}</div>}
-          <form className="chat-compose" onSubmit={onSend}><input value={value} onChange={event => { setValue(event.target.value); if (event.target.value) onTyping(); }} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
+          <form className="chat-compose" onSubmit={onSend}><EmojiPicker onPick={insertEmoji}/><input ref={composeRef} value={value} onChange={event => { setValue(event.target.value); if (event.target.value) onTyping(); }} placeholder="Write a message…" aria-label="Write a message" maxLength={1000} disabled={sending}/><button className="button button-primary" type="submit" disabled={!value.trim() || sending}><Send size={15}/><span>{sending ? "Sending…" : "Send"}</span></button></form>
         </> : <div className="chat-empty chat-no-selection"><MessageCircle size={24}/><h3>Your people are one hello away.</h3><p>Create a circle to give everyone in it one shared conversation.</p><button className="button button-primary" onClick={onInvite}><Plus size={15}/> Create circle</button></div>}
       </section>
     </div>
@@ -1752,15 +1944,19 @@ function SettingsPage({ user, onSignOut, theme, setTheme, notifPermission, onEna
 
 function TaskDialog({ task, groups, initialGroupIds = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
-  return <Modal title={task ? "Edit task" : "Create a task"} subtitle={task ? "Make a quick update." : "Keep it simple. You can add details later."} onClose={onClose}><form className="modal-form" onSubmit={onSave}>
+  const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0);
+  return <Modal title={task ? "Edit task" : "New task"} subtitle={task ? "Make a quick update." : "Just the essentials. Everything else is optional."} onClose={onClose}><form className="modal-form" onSubmit={onSave}>
     <label>Task<input name="title" autoFocus defaultValue={task?.title || ""} placeholder="What would you like to do?" required maxLength="120"/></label>
-    <label>Description <span className="optional-label">Optional</span><textarea name="description" defaultValue={task?.description || task?.note || ""} rows="2" maxLength="500" placeholder="Add a little detail"/></label>
-    <div className="form-grid">    <label>Due date<input name="dueDate" type="date" defaultValue={task ? (task.dueDate || "") : localDate()} /></label><label>Priority<select name="priority" defaultValue={task?.priority || "normal"}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
-    <div className="form-grid"><label>Category<select name="category" defaultValue={task?.category || "Personal"}>{categories.map(category => <option key={category}>{category}</option>)}</select></label></div>
-    <FocusTimeField defaultValue={task?.targetMinutes || 25}/>
-    <div className="form-grid"><label>Repeat <span className="optional-label">needs a due date</span><select name="repeat" defaultValue={task?.repeat || "none"}><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option></select></label><label>Reminder <span className="optional-label">Optional</span><input name="reminderTime" type="time" defaultValue={task?.reminderTime || ""}/></label></div>
-    {groups.length > 0 && <fieldset className="circle-share-field"><legend>Share with circles <span className="optional-label">Optional</span></legend><p>Only members of selected circles can see this task and its progress.</p>{groups.map(group => <label className="circle-share-option" key={group.id}><input type="checkbox" name="groupIds" value={group.id} defaultChecked={selectedGroupIds.includes(group.id)}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"}</small></span></label>)}</fieldset>}
-    <button className="button button-primary full-button" type="submit">{task ? "Save changes" : "Create task"} <ArrowRight size={15}/></button>
+    <div className="form-grid"><label>Due date<input name="dueDate" type="date" defaultValue={task ? (task.dueDate || "") : localDate()} /></label><label>Priority<select name="priority" defaultValue={task?.priority || "normal"}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
+    <button type="button" className="more-toggle" aria-expanded={more} onClick={() => setMore(value => !value)}><ChevronDown size={15} className={more ? "open" : ""}/> {more ? "Fewer options" : "More options"}<small>Details, category, focus time, repeat, reminder, circles</small></button>
+    <div className="more-fields" hidden={!more}>
+      <label>Description <span className="optional-label">Optional</span><textarea name="description" defaultValue={task?.description || task?.note || ""} rows="2" maxLength="500" placeholder="Add a little detail"/></label>
+      <div className="form-grid"><label>Category<select name="category" defaultValue={task?.category || "Personal"}>{[...new Set([...(task?.category ? [task.category] : []), ...categories])].map(category => <option key={category}>{category}</option>)}</select></label></div>
+      <FocusTimeField defaultValue={task?.targetMinutes || 25}/>
+      <div className="form-grid"><label>Repeat <span className="optional-label">needs a due date</span><select name="repeat" defaultValue={task?.repeat || "none"}><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option></select></label><label>Reminder <span className="optional-label">Optional</span><input name="reminderTime" type="time" defaultValue={task?.reminderTime || ""}/></label></div>
+      {groups.length > 0 && <fieldset className="circle-share-field"><legend>Share with circles <span className="optional-label">Optional</span></legend><p>Only members of selected circles can see this task and its progress.</p>{groups.map(group => <label className="circle-share-option" key={group.id}><input type="checkbox" name="groupIds" value={group.id} defaultChecked={selectedGroupIds.includes(group.id)}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"}</small></span></label>)}</fieldset>}
+    </div>
+    <button className="button button-primary full-button" type="submit">{task ? "Save changes" : "Add task"} <ArrowRight size={15}/></button>
   </form></Modal>;
 }
 
@@ -1800,7 +1996,7 @@ function FriendDialog({ onClose, onSubmit }) {
 }
 
 function Modal({ title, subtitle, onClose, children }) {
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal-card" role="dialog" aria-modal="true" aria-label={title}><button className="modal-close icon-quiet" onClick={onClose} aria-label="Close"><X size={18}/></button><p className="eyebrow">KINDA, TOGETHER</p><h2>{title}</h2><p className="modal-subtitle">{subtitle}</p>{children}</section></div>;
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal-card" role="dialog" aria-modal="true" aria-label={title}><button className="modal-close icon-quiet" onClick={onClose} aria-label="Close"><X size={18}/></button><h2>{title}</h2><p className="modal-subtitle">{subtitle}</p>{children}</section></div>;
 }
 
 function InviteScreen({ invitation, error, onSignup, onLogin, onHome }) {

@@ -45,8 +45,21 @@ export default defineSchema({
     reminderTime: v.optional(v.string()),
     reminderAt: v.optional(v.number()),
     tzOffset: v.optional(v.number()),
+    assignmentId: v.optional(v.id("assignments")),
+    assignedByName: v.optional(v.string()),
     createdAt: v.number()
-  }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]),
+  }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]).index("by_assignment", ["assignmentId"]),
+  assignments: defineTable({
+    circleId: v.id("circles"),
+    createdBy: v.string(),
+    title: v.string(),
+    description: v.string(),
+    category: v.string(),
+    dueDate: v.union(v.string(), v.null()),
+    priority: v.string(),
+    targetMinutes: v.number(),
+    createdAt: v.number()
+  }).index("by_circle", ["circleId", "createdAt"]),
   circleTasks: defineTable({
     circleId: v.id("circles"),
     taskId: v.id("tasks"),
@@ -86,7 +99,7 @@ export default defineSchema({
     taskId: v.id("tasks"),
     type: v.union(v.literal("created"), v.literal("completed")),
     createdAt: v.number()
-  }).index("by_created", ["createdAt"]).index("by_user", ["userId"]),
+  }).index("by_created", ["createdAt"]).index("by_user", ["userId"]).index("by_task", ["taskId"]),
   reactions: defineTable({
     activityId: v.id("activities"),
     userId: v.string(),
