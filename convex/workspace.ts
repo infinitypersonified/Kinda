@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { authComponent } from "./auth";
 import { components } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
@@ -817,6 +817,201 @@ export const myStreak = query({
   }
 });
 
+export const getCalendarFeed = query({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const feed = await ctx.db.query("calendarFeeds").withIndex("by_user", q => q.eq("userId", id)).first();
+    return feed ? { token: feed.token, createdAt: feed.createdAt } : null;
+  }
+});
+
+export const getGoogleCalendarStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const credentials = await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", id)).first();
+    const sync = await ctx.db.query("googleCalendarSyncStates").withIndex("by_user", q => q.eq("userId", id)).first();
+    return { connected: Boolean(credentials), syncing: sync?.syncing ?? false, lastSyncAt: sync?.lastSyncAt ?? null, lastError: sync?.lastError ?? null };
+  }
+});
+
+export const beginGoogleCalendarLink = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const siteUrl = process.env.CONVEX_SITE_URL;
+    if (!clientId || !process.env.GOOGLE_CLIENT_SECRET || !siteUrl) throw new ConvexError("Google Calendar is not configured yet.");
+    const state = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+    const pending = await ctx.db.query("googleCalendarOAuthStates").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const row of pending) await ctx.db.delete(row._id);
+    await ctx.db.insert("googleCalendarOAuthStates", { userId: id, state, expiresAt: Date.now() + 10 * 60 * 1000 });
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.search = new URLSearchParams({ client_id: clientId, redirect_uri: `${siteUrl.replace(/\/$/, "")}/google-calendar/callback`, response_type: "code", access_type: "offline", prompt: "consent", scope: "https://www.googleapis.com/auth/calendar.events", state }).toString();
+    return { url: url.toString() };
+  }
+});
+
+export const consumeGoogleCalendarState = internalMutation({
+  args: { state: v.string(), accessToken: v.string(), refreshToken: v.string(), expiresIn: v.number() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("googleCalendarOAuthStates").withIndex("by_state", q => q.eq("state", args.state)).first();
+    if (!row || row.expiresAt <= Date.now()) { if (row) await ctx.db.delete(row._id); return false; }
+    for (const existing of await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", row.userId)).collect()) await ctx.db.delete(existing._id);
+    await ctx.db.insert("googleCalendarCredentials", { userId: row.userId, accessToken: args.accessToken, refreshToken: args.refreshToken, accessTokenExpiresAt: Date.now() + args.expiresIn * 1000, updatedAt: Date.now() });
+    await ctx.db.delete(row._id);
+    return true;
+  }
+});
+
+export const googleCalendarSyncData = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => ({
+    credentials: await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", args.userId)).first(),
+    tasks: await ctx.db.query("tasks").withIndex("by_user", q => q.eq("userId", args.userId)).collect(),
+    links: await ctx.db.query("googleCalendarTaskLinks").withIndex("by_user", q => q.eq("userId", args.userId)).collect()
+  })
+});
+
+export const saveGoogleCalendarSync = internalMutation({
+  args: { userId: v.string(), links: v.array(v.object({ taskId: v.id("tasks"), eventId: v.string(), title: v.string(), description: v.string(), dueDate: v.string() })), accessToken: v.optional(v.string()), expiresIn: v.optional(v.number()), error: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    for (const old of await ctx.db.query("googleCalendarTaskLinks").withIndex("by_user", q => q.eq("userId", args.userId)).collect()) await ctx.db.delete(old._id);
+    for (const link of args.links) await ctx.db.insert("googleCalendarTaskLinks", { userId: args.userId, taskId: link.taskId, eventId: link.eventId, lastTitle: link.title, lastDescription: link.description, lastDueDate: link.dueDate, updatedAt: Date.now() });
+    const credential = await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", args.userId)).first();
+    if (credential && args.accessToken && args.expiresIn) await ctx.db.patch(credential._id, { accessToken: args.accessToken, accessTokenExpiresAt: Date.now() + args.expiresIn * 1000, updatedAt: Date.now() });
+    const state = await ctx.db.query("googleCalendarSyncStates").withIndex("by_user", q => q.eq("userId", args.userId)).first();
+    const values = { syncing: false, lastSyncAt: args.error ? state?.lastSyncAt : Date.now(), lastError: args.error };
+    if (state) await ctx.db.patch(state._id, values); else await ctx.db.insert("googleCalendarSyncStates", { userId: args.userId, ...values });
+  }
+});
+
+export const applyGoogleCalendarTask = internalMutation({
+  args: { taskId: v.id("tasks"), title: v.string(), description: v.string(), dueDate: v.string() },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (task) await ctx.db.patch(args.taskId, { title: args.title, description: args.description, dueDate: args.dueDate });
+  }
+});
+
+export const startGoogleCalendarSync = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    if (!await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", id)).first()) throw new ConvexError("Connect Google Calendar first.");
+    const state = await ctx.db.query("googleCalendarSyncStates").withIndex("by_user", q => q.eq("userId", id)).first();
+    if (state?.syncing) return { ok: true };
+    if (state) await ctx.db.patch(state._id, { syncing: true, lastError: undefined });
+    else await ctx.db.insert("googleCalendarSyncStates", { userId: id, syncing: true });
+    await ctx.scheduler.runAfter(0, internal.googleCalendar.sync, { userId: id });
+    return { ok: true };
+  }
+});
+
+export const disconnectGoogleCalendar = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    for (const row of await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    for (const row of await ctx.db.query("googleCalendarTaskLinks").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    for (const row of await ctx.db.query("googleCalendarSyncStates").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    return { ok: true };
+  }
+});
+
+export const createCalendarFeed = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const existing = await ctx.db.query("calendarFeeds").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const feed of existing) await ctx.db.delete(feed._id);
+    const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+    await ctx.db.insert("calendarFeeds", { userId: id, token, createdAt: Date.now() });
+    return { token };
+  }
+});
+
+export const revokeCalendarFeed = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const feeds = await ctx.db.query("calendarFeeds").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const feed of feeds) await ctx.db.delete(feed._id);
+    return { ok: true };
+  }
+});
+
+export const calendarFeedData = internalQuery({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const feed = await ctx.db.query("calendarFeeds").withIndex("by_token", q => q.eq("token", args.token)).first();
+    if (!feed) return null;
+    const tasks = await ctx.db.query("tasks").withIndex("by_user", q => q.eq("userId", feed.userId)).collect();
+    return tasks.filter(task => task.dueDate).map(task => ({
+      id: String(task._id), title: task.title, description: task.description,
+      dueDate: task.dueDate as string, done: task.done, createdAt: task.createdAt
+    }));
+  }
+});
+
+export const getTelegramStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    return Boolean(await ctx.db.query("telegramLinks").withIndex("by_user", q => q.eq("userId", id)).first());
+  }
+});
+
+export const createTelegramLink = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "");
+    if (!botUsername || !/^[A-Za-z0-9_]{5,32}$/.test(botUsername)) {
+      throw new ConvexError("Telegram reminders are not configured yet.");
+    }
+    const pending = await ctx.db.query("telegramLinkTokens").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const row of pending) await ctx.db.delete(row._id);
+    const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+    await ctx.db.insert("telegramLinkTokens", { userId: id, token, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return { url: `https://t.me/${botUsername}?start=${token}` };
+  }
+});
+
+export const unlinkTelegram = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { id } = await requireUser(ctx);
+    const links = await ctx.db.query("telegramLinks").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const link of links) await ctx.db.delete(link._id);
+    const pending = await ctx.db.query("telegramLinkTokens").withIndex("by_user", q => q.eq("userId", id)).collect();
+    for (const row of pending) await ctx.db.delete(row._id);
+    return { ok: true };
+  }
+});
+
+export const completeTelegramLink = internalMutation({
+  args: { token: v.string(), chatId: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("telegramLinkTokens").withIndex("by_token", q => q.eq("token", args.token)).first();
+    if (!row || row.expiresAt <= Date.now()) {
+      if (row) await ctx.db.delete(row._id);
+      return false;
+    }
+    const existing = await ctx.db.query("telegramLinks").withIndex("by_user", q => q.eq("userId", row.userId)).collect();
+    for (const link of existing) await ctx.db.delete(link._id);
+    await ctx.db.insert("telegramLinks", { userId: row.userId, chatId: args.chatId, createdAt: Date.now() });
+    await ctx.db.delete(row._id);
+    return true;
+  }
+});
+
+export const telegramChatId = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => (await ctx.db.query("telegramLinks").withIndex("by_user", q => q.eq("userId", args.userId)).first())?.chatId ?? null
+});
+
 export const circleRecap = query({
   args: { circleId: v.id("circles") },
   handler: async (ctx, args) => {
@@ -958,6 +1153,13 @@ export const deleteAccount = mutation({
     const profile = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", id)).first();
     if (profile) await ctx.db.delete(profile._id);
     for (const subscription of await ctx.db.query("pushSubscriptions").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(subscription._id);
+    for (const feed of await ctx.db.query("calendarFeeds").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(feed._id);
+    for (const link of await ctx.db.query("telegramLinks").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(link._id);
+    for (const token of await ctx.db.query("telegramLinkTokens").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(token._id);
+    for (const row of await ctx.db.query("googleCalendarCredentials").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    for (const row of await ctx.db.query("googleCalendarOAuthStates").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    for (const row of await ctx.db.query("googleCalendarTaskLinks").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    for (const row of await ctx.db.query("googleCalendarSyncStates").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(row._id);
 
     const deletionPagination = { numItems: 1000, cursor: null };
     await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "session", where: [{ field: "userId", value: id }] }, paginationOpts: deletionPagination });

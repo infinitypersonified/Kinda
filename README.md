@@ -40,6 +40,16 @@ Requirements: Node.js 22.13 or newer and npm.
 
 The frontend displays an explicit setup message if its two Convex URLs are missing. It does not silently fall back to local SQLite.
 
+## Optional integrations
+
+- **Google sign-in:** Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the Convex deployment environment, then set `VITE_GOOGLE_SIGN_IN_ENABLED=true` in the frontend build environment. Add the Convex site URL followed by `/api/auth/callback/google` to the Google OAuth client's authorized redirect URIs.
+- **Private calendar feed:** Create the feed in Kinda Settings and subscribe to its `.ics` URL in Google Calendar, Apple Calendar, or Outlook. The URL grants access to your dated tasks; regenerate or revoke it in Settings to invalidate old links.
+- **Google Calendar sync:** Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CONVEX_SITE_URL`, and `SITE_URL` in Convex. Add `<CONVEX_SITE_URL>/google-calendar/callback` as an authorized redirect URI in Google Cloud, enable the Google Calendar API, then connect and sync from Settings. This is opt-in, syncs only Kinda tasks with due dates, and does not import unrelated calendar events. Calendar edits to linked tasks sync back when you choose Sync now.
+- **Telegram reminders:** Create a Telegram bot, then set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and a random `TELEGRAM_WEBHOOK_SECRET` in the Convex deployment environment. Register the webhook at `<CONVEX_SITE_URL>/telegram/webhook` with that secret using Telegram's `setWebhook` API. Users can then connect Telegram in Kinda Settings; scheduled task reminders are sent to the linked chat.
+- **Share cards and circle invites:** Weekly and streak cards use the device share sheet when image sharing is supported, with a PNG download fallback. Circle invite links can be shared directly to WhatsApp or X.
+
+The `.ics` calendar feed is a one-way, read-only subscription; Google Calendar sync is a separate, opt-in connection.
+
 ## Cloudflare Pages deployment
 
 ### GitHub-connected deployment (recommended)

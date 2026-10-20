@@ -1920,10 +1920,14 @@ a {
   gap: 6px;
 }
 .circle-invite-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-top: 9px;
 }
 .circle-invite-link input {
   min-width: 0;
+  width: 100%;
   flex: 1;
   border: 1px solid var(--border);
   padding: 8px;
@@ -2286,6 +2290,15 @@ a {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.7;
+}
+.calendar-feed-row input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border);
+  padding: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
 }
 .logout-button {
   margin-top: 25px;
@@ -4850,6 +4863,20 @@ html body .streak-line b {
 html body .streak-line span {
   color: var(--muted);
   font-size: 14px;
+}
+.streak-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.streak-share:hover {
+  background: var(--tint);
 }
 html body .ring-number {
   font: 600 15px var(--serif);

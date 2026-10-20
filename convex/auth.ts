@@ -14,6 +14,9 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     database: authComponent.adapter(ctx),
     baseURL: process.env.CONVEX_SITE_URL,
     secret: process.env.BETTER_AUTH_SECRET,
+    socialProviders: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? {
+      google: { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET }
+    } : undefined,
     emailAndPassword: {
       enabled: true,
       sendResetPassword: async ({ user, token }) => {

@@ -15,5 +15,6 @@ export const fireReminder = internalMutation({
       body: task.title,
       tag: `reminder-${task._id}`
     });
+    await ctx.scheduler.runAfter(0, internal.telegram.notifyReminder, { userId: task.userId, title: task.title });
   }
 });

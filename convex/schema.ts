@@ -84,6 +84,48 @@ export default defineSchema({
     auth: v.string(),
     createdAt: v.number()
   }).index("by_user", ["userId"]).index("by_endpoint", ["endpoint"]),
+  calendarFeeds: defineTable({
+    userId: v.string(),
+    token: v.string(),
+    createdAt: v.number()
+  }).index("by_user", ["userId"]).index("by_token", ["token"]),
+  telegramLinks: defineTable({
+    userId: v.string(),
+    chatId: v.string(),
+    createdAt: v.number()
+  }).index("by_user", ["userId"]),
+  telegramLinkTokens: defineTable({
+    userId: v.string(),
+    token: v.string(),
+    expiresAt: v.number()
+  }).index("by_token", ["token"]).index("by_user", ["userId"]),
+  googleCalendarCredentials: defineTable({
+    userId: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    accessTokenExpiresAt: v.number(),
+    updatedAt: v.number()
+  }).index("by_user", ["userId"]),
+  googleCalendarOAuthStates: defineTable({
+    userId: v.string(),
+    state: v.string(),
+    expiresAt: v.number()
+  }).index("by_state", ["state"]).index("by_user", ["userId"]),
+  googleCalendarTaskLinks: defineTable({
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    eventId: v.string(),
+    lastTitle: v.string(),
+    lastDescription: v.string(),
+    lastDueDate: v.string(),
+    updatedAt: v.number()
+  }).index("by_user", ["userId"]).index("by_task", ["taskId"]),
+  googleCalendarSyncStates: defineTable({
+    userId: v.string(),
+    syncing: v.boolean(),
+    lastSyncAt: v.optional(v.number()),
+    lastError: v.optional(v.string())
+  }).index("by_user", ["userId"]),
   typing: defineTable({
     circleId: v.id("circles"),
     userId: v.string(),

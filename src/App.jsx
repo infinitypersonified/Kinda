@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
 import { WeeklyPage, CircleWeeklyPanel } from "./weekly.jsx";
+import { shareProgressCard, socialShareUrl } from "./share.js";
 import { emojiGroups } from "./emoji.js";
 
 const ClockContext = createContext(Date.now());
@@ -153,6 +154,7 @@ const whatsNew = [
 ];
 
 const pushSupported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && Boolean(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+const googleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGN_IN_ENABLED === "true";
 
 function urlBase64ToUint8Array(base64) {
   const padded = `${base64}${"=".repeat((4 - base64.length % 4) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
@@ -520,7 +522,7 @@ function App({ authClient }) {
   const sendingMessageRef = useRef(false);
   const [filter, setFilter] = useState("Today");
   const [toast, setToast] = useState("");
-  const [celebrationOpen, setCelebrationOpen] = useState(false);
+  const [celebrationType, setCelebrationType] = useState(null);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [seen, setSeen] = useState({ chat: {}, activity: null, shared: null });
@@ -1077,6 +1079,18 @@ function App({ authClient }) {
     }
   }
 
+  async function submitGoogleAuth() {
+    setAuthError("");
+    setAuthBusy(true);
+    try {
+      const response = await authClient.signIn.social({ provider: "google", callbackURL: window.location.href });
+      if (response.error) throw new Error(response.error.message || "Could not sign in with Google.");
+    } catch (error) {
+      setAuthError(error.message || "Could not sign in with Google.");
+      setAuthBusy(false);
+    }
+  }
+
   async function saveTask(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1124,6 +1138,14 @@ function App({ authClient }) {
 
   async function updateTask(task, action, body = {}) {
     const now = Date.now();
+    const previousStreak = Number(streak?.current) || 0;
+    const sharedGroupIds = task.groupIds || [];
+    const leadsGroup = group => {
+      const members = group?.members || [];
+      const me = members.find(member => member.id === user.id);
+      return Boolean(me && me.doneCount > 0 && members.every(member => member.id === user.id || me.doneCount > member.doneCount));
+    };
+    const wasLeading = sharedGroupIds.some(groupId => leadsGroup(groups.find(group => group.id === groupId)));
     const elapsedNow = task.timerStartedAt
       ? Math.max(0, Math.floor((now - Date.parse(task.timerStartedAt)) / 1000))
       : 0;
@@ -1171,8 +1193,22 @@ function App({ authClient }) {
       settleOps(opIds, updated);
       if (action === "complete" && updated.done) {
         loadActivity().catch(error => notify(error.message));
+        let nextCelebration = willFinishAllTasks ? "tasks" : null;
+        try {
+          const nextStreak = await api(`/streak?tz=${new Date().getTimezoneOffset()}`);
+          setStreak(nextStreak);
+          if (!nextCelebration && nextStreak.doneToday && nextStreak.current > previousStreak) nextCelebration = "streak";
+        } catch (error) { notify(error.message); }
+        if (sharedGroupIds.length) {
+          try {
+            const nextGroups = await api("/groups");
+            setGroups(nextGroups);
+            const isLeading = sharedGroupIds.some(groupId => leadsGroup(nextGroups.find(group => group.id === groupId)));
+            if (!nextCelebration && !wasLeading && isLeading) nextCelebration = "leaderboard";
+          } catch (error) { notify(error.message); }
+        }
+        if (nextCelebration) setCelebrationType(nextCelebration);
         if (willFinishAllTasks) {
-          setCelebrationOpen(true);
           if (soundReady) {
             soundReady.then(playCelebrationSound).catch(error => notify(`The celebration sound couldn't play: ${error.message}`));
           }
@@ -1481,6 +1517,22 @@ function App({ authClient }) {
     }
   }
 
+  async function shareStreakCard() {
+    if (!streak) return;
+    try {
+      await shareProgressCard({
+        title: `${streak.current} day streak`,
+        subtitle: `${user.name} is building a little momentum.`,
+        filename: `kinda-streak-${streak.current}.png`,
+        stats: [
+          { value: `${streak.current} days`, label: "current streak" },
+          { value: `${streak.best} days`, label: "personal best" },
+          { value: streak.doneToday ? "Saved" : `${streak.needed} to go`, label: "today's progress" }
+        ]
+      });
+    } catch (error) { notify(error.message || "Couldn't share the streak card."); }
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     const content = newMessage.trim();
@@ -1509,7 +1561,7 @@ function App({ authClient }) {
   if (screen === "invite" && !user) return <InviteScreen invitation={invitePreview} error={inviteError} onSignup={() => setScreen("signup")} onLogin={() => setScreen("login")} onHome={() => { setInviteToken(""); setScreen("landing"); window.history.replaceState(null, "", "/"); }} />;
   if (screen === "landing" && !user) return <Landing onStart={() => setScreen("signup")} onLogin={() => setScreen("login")} />;
   if (["signup", "login", "forgot", "reset"].includes(screen) && !user) {
-    return <AuthScreen mode={screen} setMode={next => { setAuthError(""); setAuthNotice(""); setScreen(next); }} onSubmit={submitAuth} error={authError} notice={authNotice} busy={authBusy} inviteName={invitePreview?.name} />;
+    return <AuthScreen mode={screen} setMode={next => { setAuthError(""); setAuthNotice(""); setScreen(next); }} onSubmit={submitAuth} onGoogle={submitGoogleAuth} googleEnabled={googleSignInEnabled} error={authError} notice={authNotice} busy={authBusy} inviteName={invitePreview?.name} />;
   }
 
   const activeTimer = tasks.find(task => task.timerStartedAt && !task.done);
@@ -1559,6 +1611,7 @@ function App({ authClient }) {
           onPage={navigate} onCircle={group => { setActiveGroup(group); navigate("circles"); }} onCreateCircle={() => setCircleDialog(true)}
           streak={streak} loaded={tasksLoaded} justDoneId={justDoneId}
           onboarding={onboardingHidden || !(tasksLoaded && groupsLoaded && friendsLoaded) || onboardingSteps.every(step => step.done) ? null : onboardingSteps}
+          onShareStreak={shareStreakCard}
           onDismissOnboarding={() => { setOnboardingHidden(true); try { localStorage.setItem("kinda:onboarding-dismissed", "1"); } catch { /* ignore */ } }}
         />}
         {page === "tasks" && <TasksPage loaded={tasksLoaded} justDoneId={justDoneId}
@@ -1603,7 +1656,7 @@ function App({ authClient }) {
           user={profile || user} tasks={tasks} friends={friends} editing={profileEditing}
           setEditing={setProfileEditing} onSave={saveProfile} onFriend={openFriend}
         />}
-        {page === "settings" && <SettingsPage user={user} onSignOut={signOut} theme={theme} setTheme={setTheme}
+        {page === "settings" && <SettingsPage user={user} api={api} onError={notify} onSignOut={signOut} theme={theme} setTheme={setTheme}
           notifPermission={notifPermission} onEnableNotifications={() => Notification.requestPermission().then(setNotifPermission)}
           onExport={exportMyData} onDelete={deleteAccount}
           pushOn={pushOn} onTogglePush={() => pushOn ? disablePush() : enablePush()} onWhatsNew={() => setShowWhatsNew(true)} accent={accent} setAccent={setAccent}/>}
@@ -1636,7 +1689,7 @@ function App({ authClient }) {
       {reminderQueue[0] && <ReminderDialog reminder={reminderQueue[0]} onDismiss={() => setReminderQueue(queue => queue.slice(1))}
         onDone={() => { const task = reminderQueue[0]; setReminderQueue(queue => queue.slice(1)); updateTask(task, "complete", { done: true }); }}/>}
       {showWhatsNew && !reminderQueue[0] && <WhatsNewDialog onClose={closeWhatsNew}/>}
-      {celebrationOpen && <CelebrationDialog onClose={() => setCelebrationOpen(false)}/>}
+      {celebrationType && <CelebrationDialog type={celebrationType} onClose={() => setCelebrationType(null)}/>}
       {toast && <div className="toast" role="status"><span className="toast-mark"><Check size={15}/></span>{toast}</div>}
       {activeTimer && <RunningTimer task={activeTimer} onOpen={() => setFocusTaskId(activeTimer.id)}/>}
     </main>
@@ -1703,14 +1756,19 @@ function GroupLeaderboard({ group, userId, compact = false, onOpen, onSelectGrou
   </section>;
 }
 
-function CelebrationDialog({ onClose }) {
+function CelebrationDialog({ type, onClose }) {
+  const celebration = type === "streak"
+    ? { eyebrow: "STREAK CONTINUED", title: "You kept the rhythm.", body: "Today counts toward your streak. Small, steady progress adds up." }
+    : type === "leaderboard"
+      ? { eyebrow: "TOP OF YOUR CIRCLE", title: "You’re leading today.", body: "Your circle can see the progress you’ve made. Keep cheering each other on." }
+      : { eyebrow: "YOU DID IT", title: "Every task, done.", body: "You showed up and finished what you set out to do. Take a moment to celebrate—you earned it." };
   return <div className="celebration-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebration-title">
       <div className="celebration-confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <span key={index} style={{ "--confetti-index": index }}/>)}</div>
       <span className="celebration-icon"><Sparkles size={28}/></span>
-      <p className="eyebrow">YOU DID IT</p>
-      <h2 id="celebration-title">Every task, done.</h2>
-      <p>You showed up and finished what you set out to do. Take a moment to celebrate—you earned it.</p>
+      <p className="eyebrow">{celebration.eyebrow}</p>
+      <h2 id="celebration-title">{celebration.title}</h2>
+      <p>{celebration.body}</p>
       <button className="button button-primary" onClick={onClose}>Keep going <ArrowRight size={15}/></button>
     </section>
   </div>;
@@ -1721,7 +1779,7 @@ function PageHeader({ eyebrow, title, description, action }) {
   return <header className="page-header"><div><p className="eyebrow">{label}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
 }
 
-function StreakLine({ streak, done, total }) {
+function StreakLine({ streak, done, total, onShare }) {
   const threshold = Number(streak.percent) || 80;
   const current = Number(streak.current) || 0;
   const percentDone = total ? Math.round((done / total) * 100) : 0;
@@ -1733,7 +1791,7 @@ function StreakLine({ streak, done, total }) {
   else if (done === 0) message = "Start with one small task. Your streak is counting on today.";
   else if (needed === 1) message = "One more task and your streak is safe. You’re so close.";
   else message = `${needed} more tasks to reach ${threshold}%. Keep going, you’re building something.`;
-  return <p className="streak-line" role="status"><Flame size={15}/><b>{current > 0 ? `${current}-day streak` : "Start a streak"}</b><span>{message}</span></p>;
+  return <p className="streak-line" role="status"><Flame size={15}/><b>{current > 0 ? `${current}-day streak` : "Start a streak"}</b><span>{message}</span>{current > 0 && <button type="button" className="streak-share" onClick={onShare}><Share size={13}/> Share</button>}</p>;
 }
 
 function EarlierDays({ tasks, onMove, onShowAll }) {
@@ -1748,7 +1806,7 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
   </section>;
 }
 
-function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier, loaded = true, justDoneId, onboarding, onDismissOnboarding }) {
+function HomePage({ user, tasks, done, total, completion, remainingTasks, activity, groups, leaderboardGroupId, onSelectLeaderboardGroup, onCreate, onEdit, onComplete, onTimer, onReact, onPage, onCircle, onCreateCircle, streak, earlier = [], onMoveToToday, onShowEarlier, loaded = true, justDoneId, onboarding, onDismissOnboarding, onShareStreak }) {
   const activeLeaderboard = groups.find(group => group.id === leaderboardGroupId) || groups[0] || null;
   const next = tasks.find(task => !task.done && !task.timerStartedAt);
   return <div className="page-content home-page">
@@ -1758,7 +1816,7 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
     {!loaded ? <section className="day-glance" aria-hidden="true"><span className="skeleton skeleton-ring"/><div className="glance-copy"><span className="skeleton skeleton-line"/><span className="skeleton skeleton-line short"/></div></section> : <section className="day-glance" aria-label="Today at a glance">
       <ProgressRing percent={completion} size={56} stroke={6}><b className="ring-number"><CountUp value={completion}/><small>%</small></b></ProgressRing>
       <div className="glance-copy"><b>{done} of {total} done today</b><span>{total === 0 ? "Nothing planned yet." : completion === 100 ? "Everything finished." : `${remainingTasks} left to go.`}</span></div>
-      {streak && (Number(streak.current) > 0 || Number(streak.best) > 0 || total > 0) && <StreakLine streak={streak} done={done} total={total}/>}
+      {streak && (Number(streak.current) > 0 || Number(streak.best) > 0 || total > 0) && <StreakLine streak={streak} done={done} total={total} onShare={onShareStreak}/>}
     </section>}
     <div className="home-grid">
       <section className="home-tasks"><div className="section-title-row"><h2>Today</h2><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
@@ -1887,7 +1945,7 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
           <AssignmentsSection assignments={assignments} canManage={canManage} onAssign={onAssign} onDelete={onDeleteAssignment}/>
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
           <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <MemberRow key={member.id} member={member} index={index} you={member.id === user.id} myRole={myRole} onSetAdmin={admin => onSetAdmin(activeGroup, member, admin)} onRemove={() => onRemoveMember(activeGroup, member)}/>)}</div>
-            {canManage && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
+            {canManage && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><a className="button button-secondary small-button" href={socialShareUrl("whatsapp", `Join ${activeGroup.name} on Kinda`, inviteLink)} target="_blank" rel="noreferrer">WhatsApp</a><a className="button button-secondary small-button" href={socialShareUrl("x", `Join my Kinda circle: ${activeGroup.name}`, inviteLink)} target="_blank" rel="noreferrer">X</a><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
           </div>
           <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name} avatar={member.avatar}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div>{task.ownerId !== user.id && !task.done && task.dueDate && task.dueDate < localDate() && <button className="nudge-button" onClick={() => onNudge(task)}><Bell size={13}/> Nudge</button>}</article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
         </section>}
@@ -2110,15 +2168,82 @@ function ProfilePage({ user, tasks, friends, editing, setEditing, onSave, onFrie
   </div>;
 }
 
-function SettingsPage({ user, onSignOut, theme, setTheme, notifPermission, onEnableNotifications, onExport, onDelete, pushOn, onTogglePush, onWhatsNew, accent, setAccent }) {
+function SettingsPage({ user, api, onError, onSignOut, theme, setTheme, notifPermission, onEnableNotifications, onExport, onDelete, pushOn, onTogglePush, onWhatsNew, accent, setAccent }) {
   const { isIOS, standalone } = useInstall();
   const [confirmText, setConfirmText] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [calendarToken, setCalendarToken] = useState("");
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [googleCalendar, setGoogleCalendar] = useState({ connected: false, syncing: false, lastSyncAt: null, lastError: null });
+  const [integrationBusy, setIntegrationBusy] = useState(false);
+  const calendarSite = import.meta.env.VITE_CONVEX_SITE_URL?.trim().replace(/\/+$/, "");
+  const calendarUrl = calendarToken && calendarSite ? `${calendarSite}/calendar/${calendarToken}.ics` : "";
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api("/calendar/feed"), api("/telegram/status"), api("/google-calendar/status")]).then(([feed, linked, google]) => {
+      if (!cancelled) { setCalendarToken(feed?.token || ""); setTelegramLinked(linked); setGoogleCalendar(google); }
+    }).catch(error => { if (!cancelled) onError(error.message); });
+    return () => { cancelled = true; };
+  }, [api]);
+
+  async function connectGoogleCalendar() {
+    setIntegrationBusy(true);
+    try { const result = await api("/google-calendar/connect", { method: "POST", body: "{}" }); window.location.assign(result.url); }
+    catch (error) { onError(error.message); setIntegrationBusy(false); }
+  }
+
+  async function syncGoogleCalendar() {
+    setIntegrationBusy(true);
+    try { await api("/google-calendar/sync", { method: "POST", body: "{}" }); setGoogleCalendar(await api("/google-calendar/status")); }
+    catch (error) { onError(error.message); }
+    finally { setIntegrationBusy(false); }
+  }
+
+  async function disconnectGoogleCalendar() {
+    setIntegrationBusy(true);
+    try { await api("/google-calendar", { method: "DELETE" }); setGoogleCalendar({ connected: false, syncing: false, lastSyncAt: null, lastError: null }); }
+    catch (error) { onError(error.message); }
+    finally { setIntegrationBusy(false); }
+  }
+
+  async function updateCalendarFeed(revoke = false) {
+    setIntegrationBusy(true);
+    try {
+      if (revoke) { await api("/calendar/feed", { method: "DELETE" }); setCalendarToken(""); }
+      else { const result = await api("/calendar/feed", { method: "POST", body: "{}" }); setCalendarToken(result.token); }
+    } catch (error) { onError(error.message); }
+    finally { setIntegrationBusy(false); }
+  }
+
+  async function connectTelegram() {
+    setIntegrationBusy(true);
+    try {
+      const result = await api("/telegram/link", { method: "POST", body: "{}" });
+      window.location.assign(result.url);
+    } catch (error) { onError(error.message); setIntegrationBusy(false); }
+  }
+
+  async function disconnectTelegram() {
+    setIntegrationBusy(true);
+    try { await api("/telegram/link", { method: "DELETE" }); setTelegramLinked(false); }
+    catch (error) { onError(error.message); }
+    finally { setIntegrationBusy(false); }
+  }
+
+  async function refreshTelegramStatus() {
+    try { setTelegramLinked(await api("/telegram/status")); }
+    catch (error) { onError(error.message); }
+  }
+
   return <div className="page-content">
     <PageHeader eyebrow="YOUR SPACE" title="Settings" description="A few useful things about your account."/>
     <section className="settings-section"><p className="eyebrow">ACCOUNT</p><div className="settings-row"><span><b>{user.name}</b><small>{user.email}</small></span><span>Signed in</span></div><div className="settings-row"><span><b>Private tasks</b><small>Only you can see them. Circle-shared tasks are visible to that circle’s members.</small></span><span><Heart size={16}/></span></div></section>
     <section className="settings-section"><p className="eyebrow">APPEARANCE</p><div className="settings-row"><span><b>Accent color</b><small>Changes buttons, badges and highlights.</small></span><span className="accent-options" role="radiogroup" aria-label="Accent color">{accents.map(([key, label, color]) => <button key={key} role="radio" aria-checked={accent === key} aria-label={label} className={`accent-swatch ${accent === key ? "selected" : ""}`} style={{ background: color }} onClick={() => setAccent(key)}/>)}</span></div><div className="settings-row"><span><b>Theme</b><small>Follow your device, or pick one.</small></span><span className="theme-options" role="radiogroup" aria-label="Theme">{[["system", "Auto", null], ["light", "Light", Sun], ["dark", "Dark", Moon]].map(([value, label, Icon]) => <button key={value} role="radio" aria-checked={theme === value} className={`theme-option ${theme === value ? "selected" : ""}`} onClick={() => setTheme(value)}>{Icon && <Icon size={13}/>}{label}</button>)}</span></div></section>
     <section className="settings-section"><p className="eyebrow">APP</p><InstallCard variant="row"/><div className="settings-row"><span><b>What’s new</b><small>See the latest things we’ve added.</small></span><button className="button button-secondary small-button" onClick={onWhatsNew}><Sparkles size={13}/> See</button></div></section>
+    <section className="settings-section"><p className="eyebrow">CALENDAR</p><div className="settings-row"><span><b>Private task calendar</b><small>Subscribe in Google Calendar, Apple Calendar, or Outlook. Anyone with this link can see your dated tasks.</small></span>{calendarToken ? <button className="button button-secondary small-button" disabled={integrationBusy} onClick={() => updateCalendarFeed(true)}>Revoke link</button> : <button className="button button-secondary small-button" disabled={integrationBusy} onClick={() => updateCalendarFeed()}><CalendarDays size={13}/> Create link</button>}</div>{calendarUrl && <div className="settings-row calendar-feed-row"><input aria-label="Private calendar feed URL" readOnly value={calendarUrl}/><button className="button button-primary small-button" onClick={() => navigator.clipboard.writeText(calendarUrl).then(() => onError("Calendar link copied." )).catch(() => onError("Couldn't copy the calendar link."))}>Copy</button><button className="button button-secondary small-button" disabled={integrationBusy} onClick={() => updateCalendarFeed()}>Regenerate</button></div>}{calendarToken && !calendarUrl && <p className="settings-copy">Set VITE_CONVEX_SITE_URL in the frontend environment to display the subscription link.</p>}</section>
+    <section className="settings-section"><p className="eyebrow">GOOGLE CALENDAR SYNC</p><div className="settings-row"><span><b>{googleCalendar.connected ? "Kinda tasks only" : "Connect Google Calendar"}</b><small>{googleCalendar.lastError || (googleCalendar.syncing ? "Syncing your Kinda tasks…" : googleCalendar.lastSyncAt ? `Last synced ${new Date(googleCalendar.lastSyncAt).toLocaleString()}. Only tasks created in Kinda are synced.` : "Two-way sync for tasks created in Kinda. Other Google Calendar events are never imported.")}</small></span>{googleCalendar.connected ? <><button className="button button-secondary small-button" disabled={integrationBusy || googleCalendar.syncing} onClick={syncGoogleCalendar}>Sync now</button><button className="button button-secondary small-button" disabled={integrationBusy} onClick={disconnectGoogleCalendar}>Disconnect</button></> : <button className="button button-secondary small-button" disabled={integrationBusy} onClick={connectGoogleCalendar}>Connect</button>}</div></section>
+    <section className="settings-section"><p className="eyebrow">TELEGRAM</p><div className="settings-row"><span><b>Task reminders in Telegram</b><small>{telegramLinked ? "Your Kinda reminders are connected to Telegram." : "Connect your Telegram account to receive scheduled task reminders."}</small></span>{telegramLinked ? <><button className="button button-secondary small-button" onClick={refreshTelegramStatus}>Refresh</button><button className="button button-secondary small-button" disabled={integrationBusy} onClick={disconnectTelegram}>Disconnect</button></> : <button className="button button-secondary small-button" disabled={integrationBusy} onClick={connectTelegram}><Send size={13}/> Connect</button>}</div></section>
     {!pushSupported && <section className="settings-section"><p className="eyebrow">PUSH NOTIFICATIONS</p><div className="settings-row"><span><b>Push notifications</b><small>{typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window ? "Not set up on this site yet." : isIOS && !standalone ? "On iPhone, add Kinda to your Home Screen first, then reopen it from there." : "This browser doesn’t support push notifications."}</small></span><span>Unavailable</span></div></section>}
     {pushSupported && <section className="settings-section"><p className="eyebrow">PUSH NOTIFICATIONS</p><div className="settings-row"><span><b>Notify me, even when Kinda is closed</b><small>{isIOS && !standalone ? "On iPhone, add Kinda to your Home Screen first, then turn this on." : "Messages in your circles and nudges from friends."}</small></span>{notifPermission === "denied" ? <span>Blocked in browser</span> : <button className="button button-secondary small-button" onClick={onTogglePush}><Bell size={13}/> {pushOn ? "Turn off" : "Turn on"}</button>}</div></section>}
     <section className="settings-section"><p className="eyebrow">NOTIFICATIONS</p><div className="settings-row"><span><b>Browser alerts</b><small>Get a ping for new messages, nudges and task reminders while Kinda is open in a tab.</small></span>{notifPermission === "granted" ? <span>On</span> : notifPermission === "denied" ? <span>Blocked in browser</span> : notifPermission === "unsupported" ? <span>Not supported</span> : <button className="button button-secondary small-button" onClick={onEnableNotifications}><Bell size={13}/> Turn on</button>}</div></section>
@@ -2212,7 +2337,7 @@ function Landing({ onStart, onLogin }) {
   </main>;
 }
 
-function AuthScreen({ mode, setMode, onSubmit, error, notice, busy, inviteName }) {
+function AuthScreen({ mode, setMode, onSubmit, onGoogle, googleEnabled, error, notice, busy, inviteName }) {
   const signup = mode === "signup";
   const forgot = mode === "forgot";
   const reset = mode === "reset";
@@ -2236,6 +2361,7 @@ function AuthScreen({ mode, setMode, onSubmit, error, notice, busy, inviteName }
     {error && <p className="auth-error" role="alert">{error}</p>}
     {notice && <p className="auth-notice" role="status">{notice}</p>}
     <button className="button button-primary full-button" type="submit" disabled={busy}>{busy ? "One moment…" : signup ? "Create account" : forgot ? "Send reset link" : reset ? "Reset password" : "Log in"} <ArrowRight size={16}/></button>
+    {googleEnabled && !forgot && !reset && <button className="button button-secondary full-button google-sign-in" type="button" disabled={busy} onClick={onGoogle}><span aria-hidden="true">G</span> Continue with Google</button>}
     {mode === "login" && <p className="auth-switch"><button type="button" onClick={() => setMode("forgot")}>Forgot password?</button></p>}
     <p className="auth-switch">{signup ? "Already have an account?" : reset || forgot ? "Remembered your password?" : "New around here?"} <button type="button" onClick={() => setMode(signup || reset || forgot ? "login" : "signup")}>{signup ? "Log in" : reset || forgot ? "Log in" : "Create an account"}</button></p>
     <p className="auth-privacy"><Heart size={14}/> Your tasks are private unless you choose to share.</p></form></div></main>;

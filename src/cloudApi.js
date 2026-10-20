@@ -17,6 +17,16 @@ const routes = [
   { method: "GET", pattern: /^\/export$/, type: "query", name: "workspace:exportData", args: () => ({}) },
   { method: "POST", pattern: /^\/push\/subscribe$/, type: "mutation", name: "workspace:savePushSubscription", args: body => body },
   { method: "POST", pattern: /^\/push\/unsubscribe$/, type: "mutation", name: "workspace:removePushSubscription", args: body => body },
+  { method: "GET", pattern: /^\/calendar\/feed$/, type: "query", name: "workspace:getCalendarFeed", args: () => ({}) },
+  { method: "GET", pattern: /^\/google-calendar\/status$/, type: "query", name: "workspace:getGoogleCalendarStatus", args: () => ({}) },
+  { method: "POST", pattern: /^\/google-calendar\/connect$/, type: "mutation", name: "workspace:beginGoogleCalendarLink", args: () => ({}) },
+  { method: "POST", pattern: /^\/google-calendar\/sync$/, type: "mutation", name: "workspace:startGoogleCalendarSync", args: () => ({}) },
+  { method: "DELETE", pattern: /^\/google-calendar$/, type: "mutation", name: "workspace:disconnectGoogleCalendar", args: () => ({}) },
+  { method: "POST", pattern: /^\/calendar\/feed$/, type: "mutation", name: "workspace:createCalendarFeed", args: () => ({}) },
+  { method: "DELETE", pattern: /^\/calendar\/feed$/, type: "mutation", name: "workspace:revokeCalendarFeed", args: () => ({}) },
+  { method: "GET", pattern: /^\/telegram\/status$/, type: "query", name: "workspace:getTelegramStatus", args: () => ({}) },
+  { method: "POST", pattern: /^\/telegram\/link$/, type: "mutation", name: "workspace:createTelegramLink", args: () => ({}) },
+  { method: "DELETE", pattern: /^\/telegram\/link$/, type: "mutation", name: "workspace:unlinkTelegram", args: () => ({}) },
   { method: "POST", pattern: /^\/account\/delete$/, type: "mutation", name: "workspace:deleteAccount", args: body => body }
 ];
 

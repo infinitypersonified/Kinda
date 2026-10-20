@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, FileSpreadsheet, FileText, Share } from "lucide-react";
+import { shareProgressCard } from "./share.js";
 
 // ---- date helpers (all local time, week runs Monday to Sunday) ----
 function ymd(date) {
@@ -408,9 +409,25 @@ export function WeeklyPage({ tasks, userName, onError = () => {} }) {
     setBusy(false);
   }
 
+  async function shareCard() {
+    try {
+      await shareProgressCard({
+        title: "My week, in progress",
+        subtitle: rangeLabel(startKey),
+        filename: `kinda-week-${startKey}.png`,
+        stats: [
+          { value: `${summary.completion}%`, label: "weekly completion" },
+          { value: summary.done.length, label: "tasks completed" },
+          { value: summary.open.length, label: "still in progress" },
+          { value: formatMinutes(Math.round(summary.focusSeconds / 60)), label: "focus time" }
+        ]
+      });
+    } catch (error) { onError(error.message || "Couldn't share the weekly card."); }
+  }
+
   return <div className="page-content weekly-page">
     <header className="page-header"><div><p className="eyebrow">Your week at a glance</p><h1>Weekly summary</h1><p className="page-description">What got done, and what is still waiting.</p></div>
-      <div className="weekly-actions"><button className="button button-secondary" onClick={() => downloadWeeklyCsv(summary, startKey)} disabled={!summary.total}><FileSpreadsheet size={15}/> CSV</button><button className="button button-primary" onClick={pdf} disabled={busy || !summary.total}><Download size={15}/> {busy ? "Preparing…" : "Download PDF"}</button></div></header>
+      <div className="weekly-actions"><button className="button button-secondary" onClick={shareCard} disabled={!summary.total}><Share size={15}/> Share card</button><button className="button button-secondary" onClick={() => downloadWeeklyCsv(summary, startKey)} disabled={!summary.total}><FileSpreadsheet size={15}/> CSV</button><button className="button button-primary" onClick={pdf} disabled={busy || !summary.total}><Download size={15}/> {busy ? "Preparing…" : "Download PDF"}</button></div></header>
     <div className="week-nav"><button className="icon-quiet" aria-label="Previous week" onClick={() => setOffset(value => value - 1)}><ArrowLeft size={17}/></button><div><b>{rangeLabel(startKey)}</b><small>{offset === 0 ? "This week" : offset === -1 ? "Last week" : `${-offset} weeks ago`}</small></div><button className="icon-quiet" aria-label="Next week" disabled={offset >= 0} onClick={() => setOffset(value => Math.min(0, value + 1))}><ArrowRight size={17}/></button></div>
     {summary.total === 0
       ? <div className="page-empty"><FileText size={22}/><h2>No tasks this week.</h2><p>Tasks you plan for this week will be summarised here, ready to download.</p></div>
