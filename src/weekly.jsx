@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, FileSpreadsheet, FileText } from "lucide-react";
 
 // ---- date helpers (all local time, week runs Monday to Sunday) ----
@@ -33,23 +33,44 @@ export function rangeLabel(startKey) {
   const format = date => date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return `${format(start)} – ${format(end)}, ${end.getFullYear()}`;
 }
+const weekdayShort = key => parseYmd(key).toLocaleDateString("en-US", { weekday: "short" });
+const weekdayLong = key => parseYmd(key).toLocaleDateString("en-US", { weekday: "long" });
 
 // ---- summary ----
+// A task that was moved to another day without being finished still counts as "not done" on the day it was
+// first planned, so a past week never looks better than it was.
+export function taskEntries(task) {
+  const day = dayOfTask(task);
+  const entries = [];
+  for (const from of task.movedFrom || []) {
+    if (from !== day) entries.push({ task, day: from, status: "moved", movedTo: day });
+  }
+  entries.push({ task, day, status: task.done ? "done" : "open", movedTo: null });
+  return entries;
+}
+
 export function summarizeWeek(tasks, startKey) {
   const keys = Array.from({ length: 7 }, (_, index) => addDays(startKey, index));
-  const days = keys.map(key => ({ key, label: parseYmd(key).toLocaleDateString("en-US", { weekday: "short" }), done: 0, open: 0 }));
-  const inWeek = tasks.filter(task => keys.includes(dayOfTask(task)));
-  inWeek.forEach(task => {
-    const day = days[keys.indexOf(dayOfTask(task))];
-    if (task.done) day.done += 1; else day.open += 1;
+  const days = keys.map(key => ({ key, label: weekdayShort(key), done: 0, open: 0 }));
+  const inWeek = tasks.flatMap(taskEntries).filter(entry => keys.includes(entry.day));
+  inWeek.forEach(entry => {
+    const day = days[keys.indexOf(entry.day)];
+    if (entry.status === "done") day.done += 1; else day.open += 1;
   });
-  const done = inWeek.filter(task => task.done);
-  const open = inWeek.filter(task => !task.done);
-  const byDay = (a, b) => dayOfTask(a).localeCompare(dayOfTask(b));
-  const focusSeconds = inWeek.reduce((sum, task) => sum + (task.elapsedSeconds || 0), 0);
+  const byDay = (a, b) => a.day.localeCompare(b.day);
+  const done = inWeek.filter(entry => entry.status === "done").sort(byDay);
+  const open = inWeek.filter(entry => entry.status !== "done").sort(byDay);
+  const seenTasks = new Set();
+  let focusSeconds = 0;
+  inWeek.forEach(entry => {
+    if (entry.status === "moved" || seenTasks.has(entry.task.id)) return;
+    seenTasks.add(entry.task.id);
+    focusSeconds += entry.task.elapsedSeconds || 0;
+  });
   const best = days.reduce((top, day) => (day.done > (top ? top.done : 0) ? day : top), null);
   return {
-    days, total: inWeek.length, done: done.sort(byDay), open: open.sort(byDay), focusSeconds,
+    days, total: inWeek.length, done, open, focusSeconds,
+    moved: inWeek.filter(entry => entry.status === "moved").length,
     completion: inWeek.length ? Math.round((done.length / inWeek.length) * 100) : 0,
     bestDay: best && best.done > 0 ? best : null
   };
@@ -60,10 +81,19 @@ function csvCell(value) {
   const text = String(value ?? "");
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
+const statusText = entry => (entry.status === "done" ? "Done" : entry.status === "moved" ? `Not done (moved to ${entry.movedTo})` : "Not done");
+
 export function weeklyCsv(summary) {
   const rows = [["Date", "Task", "Category", "Priority", "Status", "Focus minutes"]];
-  [...summary.done, ...summary.open].sort((a, b) => dayOfTask(a).localeCompare(dayOfTask(b))).forEach(task => {
-    rows.push([dayOfTask(task), task.title, task.category || "", task.priority || "", task.done ? "Done" : "Not done", Math.round((task.elapsedSeconds || 0) / 60)]);
+  [...summary.done, ...summary.open].sort((a, b) => a.day.localeCompare(b.day)).forEach(entry => {
+    rows.push([entry.day, entry.task.title, entry.task.category || "", entry.task.priority || "", statusText(entry), entry.status === "moved" ? 0 : Math.round((entry.task.elapsedSeconds || 0) / 60)]);
+  });
+  return rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+}
+export function circleWeeklyCsv(data) {
+  const rows = [["Member", "Date", "Task", "Category", "Status"]];
+  [...data.rows].sort((a, b) => a.member.localeCompare(b.member) || a.day.localeCompare(b.day)).forEach(row => {
+    rows.push([row.member, row.day, row.title, row.category || "", statusText(row)]);
   });
   return rows.map(row => row.map(csvCell).join(",")).join("\r\n");
 }
@@ -83,6 +113,77 @@ export function downloadWeeklyCsv(summary, startKey) {
 
 // ---- PDF ----
 const safe = text => String(text ?? "").replace(/[^\u0020-\u007E\u00A0-\u00FF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]/g, "").trim();
+const INK = [36, 36, 36];
+const MUTED = [128, 120, 112];
+const ACCENT = [194, 90, 44];
+const RULE = [228, 222, 214];
+
+function pdfFrame(doc, subtitle, rangeText) {
+  const width = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  let y = margin;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(28);
+  doc.setTextColor(...INK);
+  doc.text("kinda", margin, y + 20);
+  doc.setTextColor(...ACCENT);
+  doc.text(".", margin + doc.getTextWidth("kinda"), y + 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text(subtitle, width - margin, y + 8, { align: "right" });
+  doc.setFontSize(11);
+  doc.setTextColor(...INK);
+  doc.text(rangeText, width - margin, y + 24, { align: "right" });
+  y += 44;
+  doc.setDrawColor(...RULE);
+  doc.line(margin, y, width - margin, y);
+  return y + 26;
+}
+function pdfStats(doc, y, stats) {
+  const width = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  const gap = 10;
+  const boxWidth = (width - margin * 2 - gap * (stats.length - 1)) / stats.length;
+  stats.forEach(([label, value], index) => {
+    const x = margin + index * (boxWidth + gap);
+    doc.setDrawColor(...RULE);
+    doc.setFillColor(251, 249, 246);
+    doc.roundedRect(x, y, boxWidth, 62, 6, 6, "FD");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text(label.toUpperCase(), x + 12, y + 20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(...(index === 0 ? ACCENT : INK));
+    doc.text(value, x + 12, y + 46);
+  });
+  return y + 86;
+}
+function pdfFooter(doc) {
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  const pages = doc.getNumberOfPages();
+  for (let page = 1; page <= pages; page += 1) {
+    doc.setPage(page);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text(`Generated by Kinda on ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`, 48, height - 26);
+    doc.text(`${page} / ${pages}`, width - 48, height - 26, { align: "right" });
+  }
+}
+function pdfCheck(doc, x, y, done) {
+  doc.setDrawColor(...(done ? ACCENT : MUTED));
+  doc.setLineWidth(1.1);
+  doc.roundedRect(x, y - 8, 10, 10, 2, 2, "S");
+  if (done) {
+    doc.line(x + 2.2, y - 3, x + 4.4, y - 0.8);
+    doc.line(x + 4.4, y - 0.8, x + 8, y - 6.4);
+  }
+  doc.setLineWidth(0.6);
+}
 
 export async function buildWeeklyPdf({ summary, startKey, userName }) {
   const { jsPDF } = await import("jspdf");
@@ -90,68 +191,25 @@ export async function buildWeeklyPdf({ summary, startKey, userName }) {
   const width = doc.internal.pageSize.getWidth();
   const height = doc.internal.pageSize.getHeight();
   const margin = 48;
-  const ink = [36, 36, 36];
-  const muted = [128, 120, 112];
-  const accent = [217, 108, 59];
-  const line = [228, 222, 214];
-  let y = margin;
-
+  let y = pdfFrame(doc, "WEEKLY SUMMARY", rangeLabel(startKey));
   const ensure = needed => { if (y + needed > height - margin) { doc.addPage(); y = margin; } };
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  doc.setTextColor(...ink);
-  doc.text("kinda", margin, y + 20);
-  doc.setTextColor(...accent);
-  doc.text(".", margin + doc.getTextWidth("kinda"), y + 20);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...muted);
-  doc.text("WEEKLY SUMMARY", width - margin, y + 8, { align: "right" });
-  doc.setFontSize(11);
-  doc.setTextColor(...ink);
-  doc.text(rangeLabel(startKey), width - margin, y + 24, { align: "right" });
-  y += 44;
-  doc.setDrawColor(...line);
-  doc.line(margin, y, width - margin, y);
-  y += 26;
 
   const owner = safe(userName);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.setTextColor(...ink);
+  doc.setTextColor(...INK);
   doc.text(owner ? `${owner}’s week` : "Your week", margin, y);
   y += 24;
-
-  // stat boxes
-  const stats = [
+  y = pdfStats(doc, y, [
     ["Completion", `${summary.completion}%`],
     ["Done", String(summary.done.length)],
     ["Not done", String(summary.open.length)],
     ["Focus time", summary.focusSeconds ? formatMinutes(Math.round(summary.focusSeconds / 60)) : "0 min"]
-  ];
-  const gap = 10;
-  const boxWidth = (width - margin * 2 - gap * 3) / 4;
-  stats.forEach(([label, value], index) => {
-    const x = margin + index * (boxWidth + gap);
-    doc.setDrawColor(...line);
-    doc.setFillColor(251, 249, 246);
-    doc.roundedRect(x, y, boxWidth, 62, 6, 6, "FD");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...muted);
-    doc.text(label.toUpperCase(), x + 12, y + 20);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.setTextColor(...(index === 0 ? accent : ink));
-    doc.text(value, x + 12, y + 46);
-  });
-  y += 86;
+  ]);
 
-  // bar chart
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.setTextColor(...ink);
+  doc.setTextColor(...INK);
   doc.text("Day by day", margin, y);
   y += 14;
   const chartHeight = 96;
@@ -165,70 +223,60 @@ export async function buildWeeklyPdf({ summary, startKey, userName }) {
     const openHeight = (day.open / maxCount) * (chartHeight - 14);
     doc.setFillColor(238, 233, 226);
     doc.rect(x, base - 3, barWidth, 3, "F");
-    if (day.done) { doc.setFillColor(...accent); doc.roundedRect(x, base - doneHeight, barWidth, doneHeight, 2, 2, "F"); }
+    if (day.done) { doc.setFillColor(...ACCENT); doc.roundedRect(x, base - doneHeight, barWidth, doneHeight, 2, 2, "F"); }
     if (day.open) { doc.setFillColor(223, 216, 207); doc.roundedRect(x, base - doneHeight - openHeight, barWidth, openHeight, 2, 2, "F"); }
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
-    doc.setTextColor(...muted);
+    doc.setTextColor(...MUTED);
     doc.text(day.label, x + barWidth / 2, base + 13, { align: "center" });
     if (day.done + day.open) {
-      doc.setTextColor(...ink);
+      doc.setTextColor(...INK);
       doc.text(`${day.done}/${day.done + day.open}`, x + barWidth / 2, base - doneHeight - openHeight - 5, { align: "center" });
     }
   });
   y += chartHeight + 20;
-  doc.setFillColor(...accent);
+  doc.setFillColor(...ACCENT);
   doc.rect(margin, y, 8, 8, "F");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
-  doc.setTextColor(...muted);
+  doc.setTextColor(...MUTED);
   doc.text("Done", margin + 13, y + 7);
   doc.setFillColor(223, 216, 207);
   doc.rect(margin + 56, y, 8, 8, "F");
   doc.text("Not done", margin + 69, y + 7);
   y += 30;
 
-  // task lists
-  const dayName = task => parseYmd(dayOfTask(task)).toLocaleDateString("en-US", { weekday: "short" });
-  const drawList = (title, tasks, done) => {
+  const drawList = (title, entries, done) => {
     ensure(40);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.setTextColor(...ink);
-    doc.text(`${title} (${tasks.length})`, margin, y);
+    doc.setTextColor(...INK);
+    doc.text(`${title} (${entries.length})`, margin, y);
     y += 8;
-    doc.setDrawColor(...line);
+    doc.setDrawColor(...RULE);
     doc.line(margin, y, width - margin, y);
     y += 16;
-    if (!tasks.length) {
+    if (!entries.length) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.setTextColor(...muted);
+      doc.setTextColor(...MUTED);
       doc.text(done ? "Nothing finished yet this week." : "Everything was finished. Nice work!", margin, y);
       y += 24;
       return;
     }
-    tasks.forEach(task => {
+    entries.forEach(entry => {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
-      const lines = doc.splitTextToSize(safe(task.title) || "Untitled task", width - margin * 2 - 20 - 170);
+      const lines = doc.splitTextToSize(safe(entry.task.title) || "Untitled task", width - margin * 2 - 20 - 190);
       ensure(lines.length * 13 + 8);
-      doc.setDrawColor(...(done ? accent : muted));
-      doc.setLineWidth(1.1);
-      doc.roundedRect(margin, y - 8, 10, 10, 2, 2, done ? "S" : "S");
-      if (done) {
-        doc.setDrawColor(...accent);
-        doc.line(margin + 2.2, y - 3, margin + 4.4, y - 0.8);
-        doc.line(margin + 4.4, y - 0.8, margin + 8, y - 6.4);
-      }
-      doc.setLineWidth(0.6);
+      pdfCheck(doc, margin, y, done);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
-      doc.setTextColor(...(done ? muted : ink));
+      doc.setTextColor(...(done ? MUTED : INK));
       doc.text(lines, margin + 20, y);
-      const meta = [safe(task.category), dayName(task), task.elapsedSeconds ? formatMinutes(Math.round(task.elapsedSeconds / 60)) : ""].filter(Boolean).join("  ·  ");
+      const meta = [safe(entry.task.category), weekdayShort(entry.day), entry.status === "moved" ? `moved to ${weekdayShort(entry.movedTo)}` : "", entry.status !== "moved" && entry.task.elapsedSeconds ? formatMinutes(Math.round(entry.task.elapsedSeconds / 60)) : ""].filter(Boolean).join("  ·  ");
       doc.setFontSize(8.5);
-      doc.setTextColor(...muted);
+      doc.setTextColor(...MUTED);
       doc.text(meta, width - margin, y, { align: "right" });
       y += lines.length * 13 + 5;
     });
@@ -236,17 +284,7 @@ export async function buildWeeklyPdf({ summary, startKey, userName }) {
   };
   drawList("Completed", summary.done, true);
   drawList("Not finished", summary.open, false);
-
-  // footer on every page
-  const pages = doc.getNumberOfPages();
-  for (let page = 1; page <= pages; page += 1) {
-    doc.setPage(page);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    doc.text(`Generated by Kinda on ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`, margin, height - 26);
-    doc.text(`${page} / ${pages}`, width - margin, height - 26, { align: "right" });
-  }
+  pdfFooter(doc);
   return doc;
 }
 
@@ -255,7 +293,107 @@ export async function downloadWeeklyPdf(args) {
   doc.save(`kinda-week-${args.startKey}.pdf`);
 }
 
-// ---- page ----
+export async function buildCircleWeeklyPdf({ data, startKey }) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  let y = pdfFrame(doc, "CIRCLE WEEKLY REPORT", rangeLabel(startKey));
+  const ensure = needed => { if (y + needed > height - margin) { doc.addPage(); y = margin; } };
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(...INK);
+  doc.text(safe(data.circleName) || "Circle", margin, y);
+  y += 24;
+  y = pdfStats(doc, y, [
+    ["Completion", `${data.totals.completion}%`],
+    ["Done", String(data.totals.done)],
+    ["Not done", String(data.totals.open)],
+    ["Members", String(data.members.length)]
+  ]);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...INK);
+  doc.text("By member", margin, y);
+  y += 12;
+  const barWidth = 150;
+  data.members.forEach(member => {
+    ensure(26);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...INK);
+    doc.text(safe(member.name) || "Member", margin, y + 12);
+    doc.setFillColor(238, 233, 226);
+    doc.roundedRect(width - margin - barWidth - 120, y + 3, barWidth, 8, 3, 3, "F");
+    if (member.completion > 0) {
+      doc.setFillColor(...ACCENT);
+      doc.roundedRect(width - margin - barWidth - 120, y + 3, Math.max(6, (barWidth * member.completion) / 100), 8, 3, 3, "F");
+    }
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(member.total ? `${member.completion}%  ·  ${member.done} of ${member.total} done` : "No tasks", width - margin, y + 11, { align: "right" });
+    y += 26;
+  });
+  y += 24;
+
+  const notFinished = data.rows.filter(row => row.status !== "done");
+  ensure(40);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...INK);
+  doc.text(`Not finished (${notFinished.length})`, margin, y);
+  y += 8;
+  doc.setDrawColor(...RULE);
+  doc.line(margin, y, width - margin, y);
+  y += 16;
+  if (!notFinished.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...MUTED);
+    doc.text("Everyone finished everything. Nice work!", margin, y);
+    y += 20;
+  }
+  const byMember = new Map();
+  notFinished.forEach(row => { if (!byMember.has(row.memberId)) byMember.set(row.memberId, []); byMember.get(row.memberId).push(row); });
+  byMember.forEach(rows => {
+    ensure(34);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...ACCENT);
+    doc.text(safe(rows[0].member) || "Member", margin, y);
+    y += 14;
+    rows.sort((a, b) => a.day.localeCompare(b.day)).forEach(row => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(safe(row.title) || "Untitled task", width - margin * 2 - 20 - 150);
+      ensure(lines.length * 12 + 6);
+      pdfCheck(doc, margin, y, false);
+      doc.setTextColor(...INK);
+      doc.text(lines, margin + 20, y);
+      const meta = [weekdayShort(row.day), row.status === "moved" ? `moved to ${weekdayShort(row.movedTo)}` : ""].filter(Boolean).join("  ·  ");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text(meta, width - margin, y, { align: "right" });
+      y += lines.length * 12 + 5;
+    });
+    y += 8;
+  });
+  pdfFooter(doc);
+  return doc;
+}
+
+export async function downloadCircleWeeklyPdf(args) {
+  const doc = await buildCircleWeeklyPdf(args);
+  doc.save(`kinda-circle-${safe(args.data.circleName).toLowerCase().replace(/[^a-z0-9]+/g, "-") || "report"}-${args.startKey}.pdf`);
+}
+
+// ---- pages ----
+function entryLabel(entry) {
+  return entry.status === "moved" ? `Moved to ${weekdayShort(entry.movedTo)}` : "";
+}
+
 export function WeeklyPage({ tasks, userName, onError = () => {} }) {
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -271,7 +409,7 @@ export function WeeklyPage({ tasks, userName, onError = () => {} }) {
   }
 
   return <div className="page-content weekly-page">
-    <header className="page-header"><div><p className="eyebrow">YOUR WEEK AT A GLANCE</p><h1>Weekly summary</h1><p className="page-description">What got done, and what is still waiting.</p></div>
+    <header className="page-header"><div><p className="eyebrow">Your week at a glance</p><h1>Weekly summary</h1><p className="page-description">What got done, and what is still waiting.</p></div>
       <div className="weekly-actions"><button className="button button-secondary" onClick={() => downloadWeeklyCsv(summary, startKey)} disabled={!summary.total}><FileSpreadsheet size={15}/> CSV</button><button className="button button-primary" onClick={pdf} disabled={busy || !summary.total}><Download size={15}/> {busy ? "Preparing…" : "Download PDF"}</button></div></header>
     <div className="week-nav"><button className="icon-quiet" aria-label="Previous week" onClick={() => setOffset(value => value - 1)}><ArrowLeft size={17}/></button><div><b>{rangeLabel(startKey)}</b><small>{offset === 0 ? "This week" : offset === -1 ? "Last week" : `${-offset} weeks ago`}</small></div><button className="icon-quiet" aria-label="Next week" disabled={offset >= 0} onClick={() => setOffset(value => Math.min(0, value + 1))}><ArrowRight size={17}/></button></div>
     {summary.total === 0
@@ -283,7 +421,8 @@ export function WeeklyPage({ tasks, userName, onError = () => {} }) {
           <div className="week-stat"><small>Not done</small><b>{summary.open.length}</b></div>
           <div className="week-stat"><small>Focus time</small><b>{summary.focusSeconds ? formatMinutes(Math.round(summary.focusSeconds / 60)) : "0 min"}</b></div>
         </section>
-        {summary.bestDay && <p className="week-note">Your best day was <b>{parseYmd(summary.bestDay.key).toLocaleDateString("en-US", { weekday: "long" })}</b> with {summary.bestDay.done} {summary.bestDay.done === 1 ? "task" : "tasks"} done.</p>}
+        {summary.moved > 0 && <p className="week-note">{summary.moved} {summary.moved === 1 ? "task was" : "tasks were"} moved to another day. They still count as not done on the day you planned them.</p>}
+        {summary.bestDay && <p className="week-note">Your best day was <b>{weekdayLong(summary.bestDay.key)}</b> with {summary.bestDay.done} {summary.bestDay.done === 1 ? "task" : "tasks"} done.</p>}
         <section className="week-chart" aria-label="Tasks by day">
           {summary.days.map(day => <div className={`week-col ${day.key === todayKey ? "today" : ""}`} key={day.key}>
             <span className="week-bar-count">{day.done + day.open ? `${day.done}/${day.done + day.open}` : ""}</span>
@@ -293,9 +432,48 @@ export function WeeklyPage({ tasks, userName, onError = () => {} }) {
         </section>
         <div className="week-legend"><span><i className="dot-done"/> Done</span><span><i className="dot-open"/> Not done</span></div>
         <div className="week-lists">
-          <section><h2>Completed <small>{summary.done.length}</small></h2>{summary.done.length ? <ul>{summary.done.map(task => <li key={task.id}><span className="week-check">✓</span><span><b>{task.title}</b><small>{task.category} · {parseYmd(dayOfTask(task)).toLocaleDateString("en-US", { weekday: "short" })}</small></span></li>)}</ul> : <p className="week-empty">Nothing finished yet.</p>}</section>
-          <section><h2>Not finished <small>{summary.open.length}</small></h2>{summary.open.length ? <ul>{summary.open.map(task => <li key={task.id}><span className="week-check open"/><span><b>{task.title}</b><small>{task.category} · {parseYmd(dayOfTask(task)).toLocaleDateString("en-US", { weekday: "short" })}</small></span></li>)}</ul> : <p className="week-empty">Everything was finished. Nice work!</p>}</section>
+          <section><h2>Completed <small>{summary.done.length}</small></h2>{summary.done.length ? <ul>{summary.done.map(entry => <li key={`${entry.task.id}-${entry.day}-done`}><span className="week-check">✓</span><span><b>{entry.task.title}</b><small>{entry.task.category} · {weekdayShort(entry.day)}</small></span></li>)}</ul> : <p className="week-empty">Nothing finished yet.</p>}</section>
+          <section><h2>Not finished <small>{summary.open.length}</small></h2>{summary.open.length ? <ul>{summary.open.map(entry => <li key={`${entry.task.id}-${entry.day}-${entry.status}`}><span className="week-check open"/><span><b>{entry.task.title}</b><small>{entry.task.category} · {weekdayShort(entry.day)}{entryLabel(entry) ? ` · ${entryLabel(entry)}` : ""}</small></span></li>)}</ul> : <p className="week-empty">Everything was finished. Nice work!</p>}</section>
         </div>
       </>}
+  </div>;
+}
+
+// Weekly report for a whole circle. Only owners and admins can open it; it covers the tasks shared with the circle.
+export function CircleWeeklyPanel({ fetchWeek, onError = () => {} }) {
+  const [offset, setOffset] = useState(0);
+  const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const startKey = weekStartKey(offset);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setFailed(false);
+    fetchWeek(startKey).then(result => { if (!cancelled) setData(result); }).catch(error => { if (!cancelled) { setFailed(true); onError(error.message || "Couldn't load the report."); } });
+    return () => { cancelled = true; };
+  }, [startKey]);
+
+  async function pdf() {
+    setBusy(true);
+    try { await downloadCircleWeeklyPdf({ data, startKey }); } catch (error) { onError(error.message || "Couldn't create the PDF."); }
+    setBusy(false);
+  }
+
+  return <div className="circle-weekly">
+    <div className="week-nav"><button className="icon-quiet" aria-label="Previous week" onClick={() => setOffset(value => value - 1)}><ArrowLeft size={17}/></button><div><b>{rangeLabel(startKey)}</b><small>{offset === 0 ? "This week" : offset === -1 ? "Last week" : `${-offset} weeks ago`}</small></div><button className="icon-quiet" aria-label="Next week" disabled={offset >= 0} onClick={() => setOffset(value => Math.min(0, value + 1))}><ArrowRight size={17}/></button></div>
+    {failed ? <p className="week-empty">The report couldn’t be loaded. Try another week or reopen this window.</p>
+      : !data ? <div className="skeleton-list"><div className="skeleton-row"><div><span className="skeleton skeleton-line"/><span className="skeleton skeleton-line short"/></div></div></div>
+      : data.totals.total === 0 ? <p className="week-empty">No shared tasks were planned this week.</p>
+      : <>
+        <section className="week-stats" aria-label="Circle totals">
+          <div className="week-stat week-stat-main"><small>Completion</small><b>{data.totals.completion}<i>%</i></b><span className="week-meter"><span style={{ width: `${data.totals.completion}%` }}/></span></div>
+          <div className="week-stat"><small>Done</small><b>{data.totals.done}</b></div>
+          <div className="week-stat"><small>Not done</small><b>{data.totals.open}</b></div>
+        </section>
+        <ul className="circle-week-members">{data.members.map(member => <li key={member.id}><span className="cwm-name">{member.name}</span><span className="cwm-bar"><span style={{ width: `${member.completion}%` }}/></span><span className="cwm-count">{member.total ? `${member.done}/${member.total}` : "–"}</span></li>)}</ul>
+      </>}
+    <div className="weekly-actions circle-weekly-actions"><button className="button button-secondary" onClick={() => downloadBlob(new Blob(["\uFEFF", circleWeeklyCsv(data)], { type: "text/csv;charset=utf-8" }), `kinda-circle-${startKey}.csv`)} disabled={!data || !data.totals.total}><FileSpreadsheet size={15}/> CSV</button><button className="button button-primary" onClick={pdf} disabled={!data || !data.totals.total || busy}><Download size={15}/> {busy ? "Preparing…" : "Download PDF"}</button></div>
   </div>;
 }

@@ -15,6 +15,7 @@ export default defineSchema({
   circleMembers: defineTable({
     circleId: v.id("circles"),
     userId: v.string(),
+    role: v.optional(v.string()),
     joinedAt: v.number()
   }).index("by_circle", ["circleId"]).index("by_user", ["userId"]).index("by_circle_user", ["circleId", "userId"]),
   invites: defineTable({
@@ -47,6 +48,7 @@ export default defineSchema({
     tzOffset: v.optional(v.number()),
     assignmentId: v.optional(v.id("assignments")),
     assignedByName: v.optional(v.string()),
+    movedFrom: v.optional(v.array(v.string())),
     createdAt: v.number()
   }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]).index("by_assignment", ["assignmentId"]),
   assignments: defineTable({

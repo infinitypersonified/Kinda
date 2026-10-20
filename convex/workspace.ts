@@ -76,6 +76,40 @@ async function requireCircleMember(ctx: WorkspaceCtx, circleId: Id<"circles">, u
   return membership;
 }
 
+type CircleRole = "owner" | "admin" | "member";
+
+async function circleRoleOf(ctx: WorkspaceCtx, circle: Doc<"circles">, userId: string): Promise<CircleRole | null> {
+  if (circle.ownerId === userId) return "owner";
+  const membership = await ctx.db.query("circleMembers")
+    .withIndex("by_circle_user", q => q.eq("circleId", circle._id).eq("userId", userId)).first();
+  if (!membership) return null;
+  return membership.role === "admin" ? "admin" : "member";
+}
+
+async function requireCircleManager(ctx: WorkspaceCtx, circleId: Id<"circles">, userId: string) {
+  const circle = await ctx.db.get(circleId);
+  if (!circle) throw new ConvexError("That circle could not be found.");
+  const role = await circleRoleOf(ctx, circle, userId);
+  if (role !== "owner" && role !== "admin") throw new ConvexError("Only the circle owner or an admin can do that.");
+  return { circle, role };
+}
+
+// Removes everything a member contributed to a circle (used when they leave or are removed).
+async function removeMemberData(ctx: MutationCtx, circleId: Id<"circles">, userId: string) {
+  const membership = await ctx.db.query("circleMembers")
+    .withIndex("by_circle_user", q => q.eq("circleId", circleId).eq("userId", userId)).first();
+  if (membership) await ctx.db.delete(membership._id);
+  for (const assignment of await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", circleId)).collect()) {
+    for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", assignment._id)).collect()) {
+      if (task.userId === userId) await removeTaskCompletely(ctx, task);
+    }
+  }
+  for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", circleId)).collect()) {
+    if (link.sharedBy === userId) await ctx.db.delete(link._id);
+  }
+  for (const row of await ctx.db.query("typing").withIndex("by_circle_user", q => q.eq("circleId", circleId).eq("userId", userId)).collect()) await ctx.db.delete(row._id);
+}
+
 const STREAK_PERCENT = 80;
 
 async function removeTaskCompletely(ctx: MutationCtx, task: Doc<"tasks">) {
@@ -116,6 +150,7 @@ async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
     createdAt: task.createdAt,
     assignmentId: task.assignmentId ? String(task.assignmentId) : null,
     assignedByName: task.assignedByName ?? null,
+    movedFrom: task.movedFrom ?? [],
     groupIds: links.map(link => String(link.circleId))
   };
 }
@@ -249,8 +284,11 @@ export const updateTask = mutation({
       throw new ConvexError("Focus time must be between 1 and 1,440 minutes.");
     }
     for (const circleId of args.groupIds) await requireCircleMember(ctx, circleId, id);
+    // Remember the day an unfinished task was moved away from, so past weekly reports stay honest.
+    let movedFrom = task.movedFrom ?? [];
+    if (!task.done && task.dueDate && args.dueDate !== task.dueDate && !movedFrom.includes(task.dueDate)) movedFrom = [...movedFrom, task.dueDate];
     await ctx.db.patch(task._id, {
-      title, description: args.description.trim(), category: args.category, dueDate: args.dueDate,
+      title, description: args.description.trim(), category: args.category, dueDate: args.dueDate, movedFrom,
       priority: args.priority, visibility: args.visibility, targetMinutes: args.targetMinutes,
       repeat: args.repeat ?? "none", reminderTime: args.reminderTime ?? "",
       tzOffset: args.tzOffset, reminderAt: reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset)
@@ -357,6 +395,7 @@ export const listCircles = query({
           id: record.userId,
           name: person?.name ?? "Member",
           avatar: await avatarOf(ctx, record.userId),
+          role: record.userId === circle.ownerId ? "owner" : record.role === "admin" ? "admin" : "member",
           taskCount: visibleTasks.length,
           doneCount: visibleTasks.filter(task => task!.done).length
         };
@@ -365,6 +404,7 @@ export const listCircles = query({
         id: String(circle._id),
         name: circle.name,
         ownerId: circle.ownerId,
+        myRole: members.find(member => member.id === id)?.role ?? "member",
         members,
         memberCount: members.length,
         memberNames: members.map(member => member.name).join(", "),
@@ -410,7 +450,8 @@ export const addCircleMember = mutation({
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
     const circle = await ctx.db.get(args.circleId);
-    if (!circle || circle.ownerId !== account.id) throw new ConvexError("Only the circle owner can add members.");
+    if (!circle) throw new ConvexError("That circle could not be found.");
+    await requireCircleManager(ctx, args.circleId, account.id);
     const friend = await authComponent.getAnyUserById(ctx, args.userId);
     if (!friend) throw new ConvexError("That account could not be found.");
     const friendship = await ctx.db.query("friendships").withIndex("by_pair", q => q.eq("userId", account.id).eq("friendId", args.userId)).first();
@@ -443,8 +484,7 @@ export const revokeInvite = mutation({
   args: { circleId: v.id("circles") },
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
-    const circle = await ctx.db.get(args.circleId);
-    if (!circle || circle.ownerId !== account.id) throw new ConvexError("Only the circle owner can revoke invite links.");
+    await requireCircleManager(ctx, args.circleId, account.id);
     const invites = await ctx.db.query("invites").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect();
     for (const invite of invites) await ctx.db.delete(invite._id);
     return { ok: true };
@@ -621,7 +661,7 @@ export const searchFriends = query({
     if (search.length < 2) return [];
     const { page: users } = await ctx.runQuery(components.betterAuth.adapter.findMany, {
       model: "user", limit: 50, paginationOpts: { numItems: 50, cursor: null }
-    });
+    }) as { page: Array<{ _id: string; name: string }> };
     const friendships = await ctx.db.query("friendships").withIndex("by_user", q => q.eq("userId", id)).collect();
     const friendIds = new Set(friendships.map(item => item.friendId));
     const matches = users.filter(person => String(person._id) !== id
@@ -648,7 +688,7 @@ export const addFriend = mutation({
       const { page: people } = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: "user", where: [{ field: "email", value: email }], limit: 2,
         paginationOpts: { numItems: 2, cursor: null }
-      });
+      }) as { page: Array<{ _id: string; name: string; email: string }> };
       friend = people.find(person => String(person._id) !== account.id);
       if (!friend) throw new ConvexError("No Kinda member has that email yet.");
     }
@@ -919,8 +959,9 @@ export const deleteAccount = mutation({
     if (profile) await ctx.db.delete(profile._id);
     for (const subscription of await ctx.db.query("pushSubscriptions").withIndex("by_user", q => q.eq("userId", id)).collect()) await ctx.db.delete(subscription._id);
 
-    await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "session", where: [{ field: "userId", value: id }] } });
-    await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "account", where: [{ field: "userId", value: id }] } });
+    const deletionPagination = { numItems: 1000, cursor: null };
+    await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "session", where: [{ field: "userId", value: id }] }, paginationOpts: deletionPagination });
+    await ctx.runMutation(components.betterAuth.adapter.deleteMany, { input: { model: "account", where: [{ field: "userId", value: id }] }, paginationOpts: deletionPagination });
     await ctx.runMutation(components.betterAuth.adapter.deleteOne, { input: { model: "user", where: [{ field: "_id", value: id }] } });
     return { ok: true };
   }
@@ -955,17 +996,7 @@ export const leaveCircle = mutation({
     await requireCircleMember(ctx, args.circleId, id);
     const circle = await ctx.db.get(args.circleId);
     if (!circle) throw new ConvexError("That circle could not be found.");
-    const membership = await ctx.db.query("circleMembers").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", id)).first();
-    if (membership) await ctx.db.delete(membership._id);
-    for (const assignment of await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) {
-      for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", assignment._id)).collect()) {
-        if (task.userId === id) await removeTaskCompletely(ctx, task);
-      }
-    }
-    for (const link of await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) {
-      if (link.sharedBy === id) await ctx.db.delete(link._id);
-    }
-    for (const row of await ctx.db.query("typing").withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", id)).collect()) await ctx.db.delete(row._id);
+    await removeMemberData(ctx, args.circleId, id);
     const remaining = (await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect())
       .sort((a, b) => a.joinedAt - b.joinedAt);
     if (remaining.length === 0) {
@@ -975,8 +1006,42 @@ export const leaveCircle = mutation({
       for (const invite of await ctx.db.query("invites").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect()) await ctx.db.delete(invite._id);
       await ctx.db.delete(args.circleId);
     } else if (circle.ownerId === id) {
-      await ctx.db.patch(args.circleId, { ownerId: remaining[0].userId });
+      // Ownership passes to an admin first, otherwise to the member who has been here longest.
+      const next = remaining.find(member => member.role === "admin") ?? remaining[0];
+      await ctx.db.patch(args.circleId, { ownerId: next.userId });
+      if (next.role === "admin") await ctx.db.patch(next._id, { role: "member" });
     }
+    return { ok: true };
+  }
+});
+
+export const setCircleAdmin = mutation({
+  args: { circleId: v.id("circles"), userId: v.string(), admin: v.boolean() },
+  handler: async (ctx, args) => {
+    const account = await requireUser(ctx);
+    const circle = await ctx.db.get(args.circleId);
+    if (!circle || circle.ownerId !== account.id) throw new ConvexError("Only the circle owner can change admins.");
+    if (args.userId === circle.ownerId) throw new ConvexError("The owner already has every permission.");
+    const membership = await ctx.db.query("circleMembers")
+      .withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", args.userId)).first();
+    if (!membership) throw new ConvexError("That person is not in this circle.");
+    await ctx.db.patch(membership._id, { role: args.admin ? "admin" : "member" });
+    return { ok: true };
+  }
+});
+
+export const removeCircleMember = mutation({
+  args: { circleId: v.id("circles"), userId: v.string() },
+  handler: async (ctx, args) => {
+    const account = await requireUser(ctx);
+    const { circle, role } = await requireCircleManager(ctx, args.circleId, account.id);
+    if (args.userId === account.id) throw new ConvexError("Use Leave to remove yourself from a circle.");
+    if (args.userId === circle.ownerId) throw new ConvexError("The circle owner can't be removed.");
+    const membership = await ctx.db.query("circleMembers")
+      .withIndex("by_circle_user", q => q.eq("circleId", args.circleId).eq("userId", args.userId)).first();
+    if (!membership) throw new ConvexError("That person is not in this circle.");
+    if (role === "admin" && membership.role === "admin") throw new ConvexError("Only the owner can remove an admin.");
+    await removeMemberData(ctx, args.circleId, args.userId);
     return { ok: true };
   }
 });
@@ -990,12 +1055,12 @@ export const createAssignment = mutation({
     dueDate: v.union(v.string(), v.null()),
     priority: v.string(),
     targetMinutes: v.number(),
-    includeSelf: v.boolean()
+    includeSelf: v.boolean(),
+    assigneeIds: v.optional(v.array(v.string()))
   },
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
-    const circle = await ctx.db.get(args.circleId);
-    if (!circle || circle.ownerId !== account.id) throw new ConvexError("Only the circle owner can assign tasks.");
+    const { circle } = await requireCircleManager(ctx, args.circleId, account.id);
     const title = args.title.trim();
     if (!title || title.length > 120) throw new ConvexError("Task titles must be 1–120 characters.");
     if (args.description.length > 2000) throw new ConvexError("Task descriptions must be 2,000 characters or fewer.");
@@ -1005,8 +1070,14 @@ export const createAssignment = mutation({
       throw new ConvexError("Focus time must be between 1 and 1,440 minutes.");
     }
     const members = await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect();
-    const assignees = members.filter(member => args.includeSelf || member.userId !== account.id);
-    if (!assignees.length) throw new ConvexError("Invite someone to your circle before assigning tasks.");
+    let assignees = members.filter(member => args.includeSelf || member.userId !== account.id);
+    if (args.assigneeIds && args.assigneeIds.length > 0) {
+      const wanted = new Set(args.assigneeIds);
+      assignees = members.filter(member => wanted.has(member.userId));
+      if (assignees.length !== wanted.size) throw new ConvexError("Choose people who are in this circle.");
+    } else if (!assignees.length) {
+      throw new ConvexError("Invite someone to your circle before assigning tasks.");
+    }
     const now = Date.now();
     const assignmentId = await ctx.db.insert("assignments", {
       circleId: args.circleId, createdBy: account.id, title, description: args.description.trim(),
@@ -1036,16 +1107,18 @@ export const listAssignments = query({
     const { id } = await requireUser(ctx);
     await requireCircleMember(ctx, args.circleId, id);
     const circle = await ctx.db.get(args.circleId);
-    const isOwner = circle?.ownerId === id;
+    const role = circle ? await circleRoleOf(ctx, circle, id) : null;
+    const canManage = role === "owner" || role === "admin";
     const rows = await ctx.db.query("assignments").withIndex("by_circle", q => q.eq("circleId", args.circleId)).order("desc").take(30);
-    return await Promise.all(rows.map(async row => {
+    const result = await Promise.all(rows.map(async row => {
       const tasks = await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", row._id)).collect();
+      const mine = tasks.find(task => task.userId === id);
+      if (!canManage && !mine) return null;
       const creator = await authComponent.getAnyUserById(ctx, row.createdBy);
-      const members = isOwner ? await Promise.all(tasks.map(async task => {
+      const members = canManage ? await Promise.all(tasks.map(async task => {
         const person = await authComponent.getAnyUserById(ctx, task.userId);
         return { id: task.userId, name: person?.name ?? "Member", avatar: await avatarOf(ctx, task.userId), done: task.done };
       })) : [];
-      const mine = tasks.find(task => task.userId === id);
       return {
         id: String(row._id), title: row.title, description: row.description, category: row.category,
         dueDate: row.dueDate, priority: row.priority, createdAt: new Date(row.createdAt).toISOString(),
@@ -1053,6 +1126,7 @@ export const listAssignments = query({
         members, mineDone: mine ? mine.done : null
       };
     }));
+    return result.filter(Boolean);
   }
 });
 
@@ -1062,10 +1136,65 @@ export const deleteAssignment = mutation({
     const { id } = await requireUser(ctx);
     const row = await ctx.db.get(args.assignmentId);
     if (!row) throw new ConvexError("That assignment could not be found.");
-    const circle = await ctx.db.get(row.circleId);
-    if (!circle || circle.ownerId !== id) throw new ConvexError("Only the circle owner can remove assigned tasks.");
+    await requireCircleManager(ctx, row.circleId, id);
     for (const task of await ctx.db.query("tasks").withIndex("by_assignment", q => q.eq("assignmentId", row._id)).collect()) await removeTaskCompletely(ctx, task);
     await ctx.db.delete(row._id);
     return { ok: true };
+  }
+});
+
+export const circleWeekly = query({
+  args: { circleId: v.id("circles"), weekStart: v.string(), tzOffset: v.number() },
+  handler: async (ctx, args) => {
+    const { id } = await requireUser(ctx);
+    await requireCircleManager(ctx, args.circleId, id);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.weekStart)) throw new ConvexError("Choose a valid week.");
+    const addDays = (key: string, amount: number) => {
+      const date = new Date(`${key}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + amount);
+      return date.toISOString().slice(0, 10);
+    };
+    const keys = Array.from({ length: 7 }, (_, index) => addDays(args.weekStart, index));
+    const links = await ctx.db.query("circleTasks").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect();
+    const memberRecords = await ctx.db.query("circleMembers").withIndex("by_circle", q => q.eq("circleId", args.circleId)).collect();
+    const people = new Map<string, { id: string; name: string; avatar: string; done: number; open: number; moved: number; days: { key: string; done: number; open: number }[] }>();
+    for (const record of memberRecords) {
+      const person = await authComponent.getAnyUserById(ctx, record.userId);
+      people.set(record.userId, {
+        id: record.userId, name: person?.name ?? "Member", avatar: await avatarOf(ctx, record.userId), done: 0, open: 0, moved: 0,
+        days: keys.map(key => ({ key, done: 0, open: 0 }))
+      });
+    }
+    const rows: { member: string; memberId: string; title: string; category: string; day: string; status: "done" | "open" | "moved"; movedTo: string | null }[] = [];
+    const seen = new Set<string>();
+    for (const link of links) {
+      if (seen.has(String(link.taskId))) continue;
+      seen.add(String(link.taskId));
+      const task = await ctx.db.get(link.taskId);
+      const person = task ? people.get(task.userId) : undefined;
+      if (!task || !person) continue;
+      const day = task.dueDate ?? localDayKey(task.createdAt, args.tzOffset);
+      const entries: { day: string; status: "done" | "open" | "moved"; movedTo: string | null }[] = [];
+      for (const from of task.movedFrom ?? []) if (from !== day) entries.push({ day: from, status: "moved", movedTo: day });
+      entries.push({ day, status: task.done ? "done" : "open", movedTo: null });
+      for (const entry of entries) {
+        const index = keys.indexOf(entry.day);
+        if (index < 0) continue;
+        if (entry.status === "done") { person.done += 1; person.days[index].done += 1; }
+        else { person.open += 1; person.days[index].open += 1; if (entry.status === "moved") person.moved += 1; }
+        if (rows.length < 600) rows.push({ member: person.name, memberId: person.id, title: task.title, category: task.category, day: entry.day, status: entry.status, movedTo: entry.movedTo });
+      }
+    }
+    const members = [...people.values()].map(person => {
+      const total = person.done + person.open;
+      return { ...person, total, completion: total ? Math.round((person.done / total) * 100) : 0 };
+    }).sort((a, b) => b.completion - a.completion || b.done - a.done || a.name.localeCompare(b.name));
+    const done = members.reduce((sum, person) => sum + person.done, 0);
+    const open = members.reduce((sum, person) => sum + person.open, 0);
+    const circle = await ctx.db.get(args.circleId);
+    return {
+      circleName: circle?.name ?? "Circle", weekStart: args.weekStart, members, rows,
+      totals: { done, open, total: done + open, completion: done + open ? Math.round((done / (done + open)) * 100) : 0 }
+    };
   }
 });

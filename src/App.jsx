@@ -1,14 +1,14 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import posthog from "posthog-js";
 import {
   ArrowLeft, ArrowRight, BarChart3, Bell, CalendarDays, Check, CheckSquare2, Clock3, Heart,
   Download, Flame, House, LogOut, Menu, Minimize2, MessageCircle, MoreHorizontal, Pause, Pencil, Play, Plus,
   CornerUpLeft, Moon, Repeat, Search, Send, Settings, Share, Sun, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, UserRound,
-  ChevronDown, Flag, Smile, Users, X
+  ChevronDown, FileText, Flag, Shield, Smile, Users, X
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
-import { WeeklyPage } from "./weekly.jsx";
+import { WeeklyPage, CircleWeeklyPanel } from "./weekly.jsx";
 import { emojiGroups } from "./emoji.js";
 
 const ClockContext = createContext(Date.now());
@@ -27,6 +27,34 @@ function useClock() {
 }
 
 const categories = ["Personal", "Work", "Learning", "Building", "Creative work", "Spiritual", "Health", "Fitness", "Relationships", "Family", "Finance", "Home & errands", "Self-care", "Community"];
+// A request can reach the server a moment before the login session is applied to the connection. That is not a real
+// error, so these are retried quietly instead of being shown to the person using the app.
+function isAuthError(error) {
+  return error?.status === 401 || /unauthenticated|not authenticated/i.test(error?.message || "");
+}
+
+function readJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function writeJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage may be full or blocked */ }
+}
+
+function clearSavedData(userId) {
+  try {
+    localStorage.removeItem("kinda:boot");
+    if (userId) localStorage.removeItem(`kinda:data:${userId}`);
+  } catch { /* ignore */ }
+}
+
+// The days an unfinished task has been moved away from, so past weekly reports stay honest.
+function movedFromFor(task, newDate) {
+  const list = task.movedFrom || [];
+  if (task.done || !task.dueDate || task.dueDate === newDate || list.includes(task.dueDate)) return list;
+  return [...list, task.dueDate];
+}
+
 function useStableCallback(fn) {
   const ref = useRef(fn);
   ref.current = fn;
@@ -380,17 +408,36 @@ function WhatsNewDialog({ onClose }) {
 
 function App({ authClient }) {
   const convexClient = useConvex();
-  const api = useMemo(() => createCloudApi(convexClient), [convexClient]);
+  const api = useMemo(() => {
+    const base = createCloudApi(convexClient);
+    return async (path, options) => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await base(path, options);
+        } catch (error) {
+          if (!isAuthError(error) || attempt >= 3) throw error;
+          try { await authClient.convex.token(); } catch { /* try again anyway */ }
+          await new Promise(resolve => window.setTimeout(resolve, [350, 900, 1800][attempt]));
+        }
+      }
+    };
+  }, [convexClient, authClient]);
   const live = useMemo(() => createCloudLive(convexClient), [convexClient]);
   const { data: authSession, isPending: authPending } = authClient.useSession();
   const inviteTokenFromUrl = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]{32,})\/?$/)?.[1] || "";
-  const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState(inviteTokenFromUrl ? "invite" : (window.location.pathname.includes("reset-password") || new URLSearchParams(window.location.search).has("reset-password") || new URLSearchParams(window.location.search).has("token")) ? "reset" : window.location.hash === "#login" ? "login" : window.location.hash === "#signup" ? "signup" : "landing");
+  const cachedBoot = useMemo(() => {
+    if (inviteTokenFromUrl || /reset-password|[?&]token=/.test(window.location.pathname + window.location.search)) return null;
+    const saved = readJson("kinda:boot");
+    return saved?.user?.id ? saved : null;
+  }, []);
+  const bootVerified = useRef(!cachedBoot);
+  const [user, setUser] = useState(cachedBoot?.user || null);
+  const [screen, setScreen] = useState(cachedBoot ? "dashboard" : inviteTokenFromUrl ? "invite" : (window.location.pathname.includes("reset-password") || new URLSearchParams(window.location.search).has("reset-password") || new URLSearchParams(window.location.search).has("token")) ? "reset" : window.location.hash === "#login" ? "login" : window.location.hash === "#signup" ? "signup" : "landing");
   const [inviteToken, setInviteToken] = useState(inviteTokenFromUrl);
   const [invitePreview, setInvitePreview] = useState(null);
   const [inviteError, setInviteError] = useState("");
   const [page, setPage] = useState("home");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedBoot);
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
@@ -444,8 +491,11 @@ function App({ authClient }) {
   const typingSentRef = useRef(0);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [reminderQueue, setReminderQueue] = useState([]);
-  const [splash, setSplash] = useState(true);
   const [tasksLoaded, setTasksLoaded] = useState(false);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [friendsLoaded, setFriendsLoaded] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState(null);
+  const [weeklyGroup, setWeeklyGroup] = useState(null);
   const [justDoneId, setJustDoneId] = useState(null);
   const [focusTaskId, setFocusTaskId] = useState(null);
   const [banner, setBanner] = useState(null);
@@ -458,7 +508,7 @@ function App({ authClient }) {
   const [activity, setActivity] = useState([]);
   const [friendSearch, setFriendSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(cachedBoot?.user || null);
   const [taskDialog, setTaskDialog] = useState(null);
   const [friendDialog, setFriendDialog] = useState(false);
   const [circleDialog, setCircleDialog] = useState(false);
@@ -508,10 +558,11 @@ function App({ authClient }) {
     if (authPending) return;
     const account = authSession?.user;
     if (!account) {
-      if (user) {
+      if (user && bootVerified.current) {
         setLoading(false);
         return;
       }
+      clearSavedData(user?.id);
       setUser(null);
       setProfile(null);
       resetTasks();
@@ -532,17 +583,27 @@ function App({ authClient }) {
     let cancelled = false;
     authClient.convex.token().then(() => api("/me")).then(value => {
       if (!cancelled) {
+        bootVerified.current = true;
+        writeJson("kinda:boot", { user: value });
         setUser(value);
         setProfile(value);
         setScreen("dashboard");
         setLoading(false);
       }
     }).catch(error => {
-      if (!cancelled) {
+      if (cancelled) return;
+      if (isAuthError(error)) {
+        // The server still rejects the session after several tries, so it has really expired.
+        clearSavedData(user?.id);
+        setUser(null);
+        setProfile(null);
+        setScreen("login");
         setLoading(false);
-        if (!user) setScreen("login");
-        setToast(`Your cloud session could not be verified: ${error.message}`);
+        return;
       }
+      setLoading(false);
+      if (!user) setScreen("login");
+      setToast(`Your cloud session could not be verified: ${error.message}`);
     });
     if (inviteToken) {
       authClient.convex.token().then(() => api(`/invites/${inviteToken}/join`, { method: "POST" })).then(joined => {
@@ -551,11 +612,15 @@ function App({ authClient }) {
         window.history.replaceState(null, "", "/");
         setInviteToken("");
       }).catch(error => {
-        if (!cancelled) setToast(error.message);
+        if (!cancelled && !isAuthError(error)) setToast(error.message);
       });
     }
     return () => { cancelled = true; };
   }, [authPending, authSession?.user?.id, inviteToken, api, authClient]);
+
+  useEffect(() => {
+    if (user && bootVerified.current) writeJson("kinda:boot", { user });
+  }, [user]);
 
   useEffect(() => {
     if (screen === "invite" || inviteTokenFromUrl) return;
@@ -563,21 +628,43 @@ function App({ authClient }) {
   }, [page, screen]);
 
   useEffect(() => {
-    if (!user) return undefined;
     setTasksLoaded(false);
+    setGroupsLoaded(false);
+    setFriendsLoaded(false);
+    if (!user) return;
+    const saved = readJson(`kinda:data:${user.id}`);
+    if (!saved) return;
+    applyServerTasks(saved.tasks || []);
+    setTasksLoaded(true);
+    setGroups(saved.groups || []);
+    setActiveGroup(saved.groups?.[0] || null);
+    setGroupsLoaded(true);
+    setFriends(saved.friends || []);
+    setFriendsLoaded(true);
+    setActivity(saved.activity || []);
+    setActivityLoaded(true);
+    if (saved.streak) setStreak(saved.streak);
+    setNudges(saved.nudges || []);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || authPending || !authSession?.user) return undefined;
+    let cancelled = false;
+    let unsubs = [];
     let errorShown = false;
-    const onError = error => { if (!errorShown) { errorShown = true; setToast(error.message); } };
-    const memberKey = group => group.members.map(member => member.id + member.avatar).join(",");
-    const unsubs = [
+    const onError = error => { if (isAuthError(error)) return; if (!errorShown) { errorShown = true; setToast(error.message); } };
+    const memberKey = group => group.members.map(member => member.id + member.avatar + (member.role || "")).join(",");
+    const subscribe = () => [
       live("/tasks", data => { applyServerTasks(data); setTasksLoaded(true); }, onError),
-      live("/friends", setFriends, onError),
+      live("/friends", data => { setFriends(data); setFriendsLoaded(true); }, onError),
       live("/groups", groupData => {
         setGroups(groupData);
+        setGroupsLoaded(true);
         setActiveGroup(current => {
           const refreshed = groupData.find(group => group.id === current?.id);
           if (!refreshed) return groupData[0] || null;
           if (memberKey(current) === memberKey(refreshed) && current.name === refreshed.name
-            && current.taskCount === refreshed.taskCount && current.doneCount === refreshed.doneCount) return current;
+            && current.taskCount === refreshed.taskCount && current.doneCount === refreshed.doneCount && current.myRole === refreshed.myRole) return current;
           return refreshed;
         });
       }, onError),
@@ -585,8 +672,17 @@ function App({ authClient }) {
       live("/nudges", setNudges, onError),
       live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError)
     ];
-    return () => { unsubs.forEach(stop => stop()); };
-  }, [user?.id, live]);
+    authClient.convex.token().catch(() => {}).then(() => { if (!cancelled) unsubs = subscribe(); });
+    return () => { cancelled = true; unsubs.forEach(stop => stop()); };
+  }, [user?.id, live, authPending, authSession?.user?.id]);
+
+  useEffect(() => {
+    if (!user || !tasksLoaded) return undefined;
+    const timer = window.setTimeout(() => {
+      writeJson(`kinda:data:${user.id}`, { savedAt: Date.now(), tasks: serverTasksRef.current.slice(0, 400), groups, friends, activity: activity.slice(0, 30), streak, nudges: nudges.slice(0, 10) });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [user?.id, tasks, groups, friends, activity, streak, nudges, tasksLoaded]);
 
   const groupIds = groups.map(group => group.id).join(",");
   useEffect(() => {
@@ -673,12 +769,6 @@ function App({ authClient }) {
   }, [page, activity, nudges, incoming, messages, activeGroup?.id, chatMobileOpen, user?.id]);
 
   useEffect(() => {
-    if (page !== "chat" || !chatMobileOpen) return;
-    const node = document.querySelector(".chat-messages");
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, page, chatMobileOpen]);
-
-  useEffect(() => {
     if (!user || page !== "circles" || friendSearch.trim().length < 2) {
       setSearchResults([]);
       return undefined;
@@ -687,7 +777,7 @@ function App({ authClient }) {
     const timeout = window.setTimeout(() => {
       api(`/friends/search?q=${encodeURIComponent(friendSearch.trim())}`)
         .then(results => { if (!cancelled) setSearchResults(results); })
-        .catch(error => { if (!cancelled) setToast(error.message); });
+        .catch(error => { if (!cancelled && !isAuthError(error)) setToast(error.message); });
     }, 250);
     return () => {
       cancelled = true;
@@ -758,11 +848,6 @@ function App({ authClient }) {
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
     return () => { window.removeEventListener("pointerdown", unlock); window.removeEventListener("keydown", unlock); };
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSplash(false), 1900);
-    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -900,6 +985,7 @@ function App({ authClient }) {
   }
 
   function notify(message) {
+    if (/unauthenticated|not authenticated/i.test(String(message))) return;
     setToast(message);
     window.clearTimeout(notify.timeout);
     notify.timeout = window.setTimeout(() => setToast(""), 3200);
@@ -970,6 +1056,7 @@ function App({ authClient }) {
       await dropPushOnServer().catch(() => {});
       const response = await authClient.signOut();
       if (response.error) throw new Error(response.error.message || "Could not log out. Please try again.");
+      clearSavedData(user?.id);
       setUser(null);
       setProfile(null);
       resetTasks();
@@ -1010,7 +1097,8 @@ function App({ authClient }) {
     const editing = taskDialog?.task;
     setTaskDialog(null);
     if (editing) {
-      const { tzOffset, ...patch } = body;
+      const { tzOffset, ...rest } = body;
+      const patch = { ...rest, movedFrom: movedFromFor(editing, rest.dueDate) };
       const opId = stageOp({ type: "patch", taskId: editing.id, patch });
       try {
         const updated = await api(`/tasks/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -1137,7 +1225,7 @@ function App({ authClient }) {
     const movable = list.filter(task => !task.assignmentId);
     if (!movable.length) return;
     const dueDate = localDate();
-    const staged = movable.map(task => ({ task, opId: stageOp({ type: "patch", taskId: task.id, patch: { dueDate } }) }));
+    const staged = movable.map(task => ({ task, opId: stageOp({ type: "patch", taskId: task.id, patch: { dueDate, movedFrom: movedFromFor(task, dueDate) } }) }));
     notify(movable.length === 1 ? "Moved to today." : `Moved ${movable.length} tasks to today.`);
     await Promise.all(staged.map(async ({ task, opId }) => {
       try {
@@ -1162,6 +1250,26 @@ function App({ authClient }) {
     }
   }
 
+  async function changeAdmin(group, member, admin) {
+    try {
+      await api(`/groups/${group.id}/members/${encodeURIComponent(member.id)}/admin`, { method: "POST", body: JSON.stringify({ admin }) });
+      notify(admin ? `${member.name} is now an admin.` : `${member.name} is no longer an admin.`);
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  async function removeMember() {
+    const { group, member } = memberToRemove;
+    setMemberToRemove(null);
+    try {
+      await api(`/groups/${group.id}/members/${encodeURIComponent(member.id)}`, { method: "DELETE" });
+      notify(`${member.name} was removed from ${group.name}.`);
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
   async function saveAssignment(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1172,8 +1280,10 @@ function App({ authClient }) {
       dueDate: String(form.get("dueDate") || "") || null,
       priority: String(form.get("priority") || "normal"),
       targetMinutes: Math.min(1440, Math.max(1, Math.round(Number(form.get("targetMinutes")) || 25))),
-      includeSelf: form.get("includeSelf") === "on"
+      includeSelf: form.get("includeSelf") === "on",
+      assigneeIds: form.getAll("assigneeIds").map(String)
     };
+    if (!body.assigneeIds.length) delete body.assigneeIds;
     if (!body.title || body.title.length > 120) { notify("Task titles must be 1–120 characters."); return; }
     try {
       const result = await api(`/groups/${activeGroup.id}/assignments`, { method: "POST", body: JSON.stringify(body) });
@@ -1356,6 +1466,7 @@ function App({ authClient }) {
       await api("/account/delete", { method: "POST", body: JSON.stringify({ confirm }) });
       try { await authClient.signOut(); } catch { /* account is already gone */ }
       try { localStorage.removeItem(`kinda:seen:${user.id}`); } catch { /* ignore */ }
+      clearSavedData(user.id);
       setUser(null);
       setProfile(null);
       resetTasks();
@@ -1394,7 +1505,7 @@ function App({ authClient }) {
     }
   }
 
-  if (loading || splash) return <KindaLoader/>;
+  if (loading) return <KindaLoader/>;
   if (screen === "invite" && !user) return <InviteScreen invitation={invitePreview} error={inviteError} onSignup={() => setScreen("signup")} onLogin={() => setScreen("login")} onHome={() => { setInviteToken(""); setScreen("landing"); window.history.replaceState(null, "", "/"); }} />;
   if (screen === "landing" && !user) return <Landing onStart={() => setScreen("signup")} onLogin={() => setScreen("login")} />;
   if (["signup", "login", "forgot", "reset"].includes(screen) && !user) {
@@ -1447,7 +1558,7 @@ function App({ authClient }) {
           onTimer={timerTask} onReact={reactToActivity}
           onPage={navigate} onCircle={group => { setActiveGroup(group); navigate("circles"); }} onCreateCircle={() => setCircleDialog(true)}
           streak={streak} loaded={tasksLoaded} justDoneId={justDoneId}
-          onboarding={onboardingHidden || onboardingSteps.every(step => step.done) ? null : onboardingSteps}
+          onboarding={onboardingHidden || !(tasksLoaded && groupsLoaded && friendsLoaded) || onboardingSteps.every(step => step.done) ? null : onboardingSteps}
           onDismissOnboarding={() => { setOnboardingHidden(true); try { localStorage.setItem("kinda:onboarding-dismissed", "1"); } catch { /* ignore */ } }}
         />}
         {page === "tasks" && <TasksPage loaded={tasksLoaded} justDoneId={justDoneId}
@@ -1474,6 +1585,7 @@ function App({ authClient }) {
           onOpenChat={() => navigate("chat")}
           recap={recap} onNudge={nudgeTask} onRevokeInvite={revokeInviteLink} onLeave={setLeaveTarget}
           assignments={assignments} onAssign={() => setAssignDialog(true)} onDeleteAssignment={setAssignmentToDelete}
+          onSetAdmin={changeAdmin} onRemoveMember={(group, member) => setMemberToRemove({ group, member })} onWeeklyReport={setWeeklyGroup}
         />}
         {page === "activity" && <ActivityPage activity={activity} nudges={nudges} userId={user.id} onReact={reactToActivity}/>}
         {page === "chat" && <ChatPage
@@ -1498,10 +1610,14 @@ function App({ authClient }) {
       </section>
 
       {taskDialog && <TaskDialog task={taskDialog.task} groups={groups} initialGroupIds={taskDialog.groupIds} onClose={() => setTaskDialog(null)} onSave={saveTask}/>}
-      {assignDialog && activeGroup && <AssignDialog group={activeGroup} onClose={() => setAssignDialog(false)} onSubmit={saveAssignment}/>}
+      {assignDialog && activeGroup && <AssignDialog group={viewActiveGroup || activeGroup} userId={user.id} onClose={() => setAssignDialog(false)} onSubmit={saveAssignment}/>}
       {assignmentToDelete && <ConfirmDialog title="Remove this assigned task?" confirmLabel="Remove for everyone" danger onConfirm={() => deleteAssignment(assignmentToDelete)} onCancel={() => setAssignmentToDelete(null)}>
         <p>“{assignmentToDelete.title}” will be removed from every member’s list, including anything they have already completed.</p>
       </ConfirmDialog>}
+      {memberToRemove && <ConfirmDialog title={`Remove ${memberToRemove.member.name}?`} confirmLabel="Remove from circle" danger onConfirm={removeMember} onCancel={() => setMemberToRemove(null)}>
+        <p>{memberToRemove.member.name} will lose access to {memberToRemove.group.name}’s chat and tasks, and any tasks assigned to them here will be removed. They can only come back with a new invite.</p>
+      </ConfirmDialog>}
+      {weeklyGroup && <Modal title="Circle weekly report" subtitle={weeklyGroup.name} onClose={() => setWeeklyGroup(null)}><CircleWeeklyPanel fetchWeek={weekStart => api(`/groups/${weeklyGroup.id}/weekly?week=${weekStart}&tz=${new Date().getTimezoneOffset()}`)} onError={notify}/></Modal>}
       {friendDialog && <FriendDialog onClose={() => setFriendDialog(false)} onSubmit={addFriend}/>}
       {circleDialog && <CircleDialog onClose={() => setCircleDialog(false)} onSubmit={createCircle}/>}
       {banner && <InAppBanner banner={banner} onClose={() => setBanner(null)} onOpen={() => {
@@ -1605,12 +1721,19 @@ function PageHeader({ eyebrow, title, description, action }) {
   return <header className="page-header"><div><p className="eyebrow">{label}</p><h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{action}</header>;
 }
 
-function StreakLine({ streak }) {
-  const { current, doneToday, todayTotal, todayDone, needed, percent } = streak;
-  const detail = doneToday ? `You have reached ${percent}% today, so your streak is safe.`
-    : todayTotal === 0 ? `Plan a few tasks and finish ${percent}% of them to keep it going.`
-    : `${todayDone} of ${todayTotal} done. ${needed} more to reach ${percent}%.`;
-  return <p className="streak-line" role="status"><Flame size={15}/><b>{current}-day streak</b><span>{detail}</span></p>;
+function StreakLine({ streak, done, total }) {
+  const threshold = Number(streak.percent) || 80;
+  const current = Number(streak.current) || 0;
+  const percentDone = total ? Math.round((done / total) * 100) : 0;
+  const reached = total > 0 && done * 100 >= total * threshold;
+  const needed = total ? Math.max(0, Math.ceil((total * threshold) / 100) - done) : 0;
+  let message;
+  if (reached) message = `You’ve done ${percentDone}% of today’s tasks, so your streak is saved.`;
+  else if (total === 0) message = `Plan a few tasks today and finish ${threshold}% of them to keep your streak alive.`;
+  else if (done === 0) message = "Start with one small task. Your streak is counting on today.";
+  else if (needed === 1) message = "One more task and your streak is safe. You’re so close.";
+  else message = `${needed} more tasks to reach ${threshold}%. Keep going, you’re building something.`;
+  return <p className="streak-line" role="status"><Flame size={15}/><b>{current > 0 ? `${current}-day streak` : "Start a streak"}</b><span>{message}</span></p>;
 }
 
 function EarlierDays({ tasks, onMove, onShowAll }) {
@@ -1632,11 +1755,11 @@ function HomePage({ user, tasks, done, total, completion, remainingTasks, activi
     <PageHeader eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title={`${greeting()}, ${user.name.split(/\s+/)[0]}`} action={<button className="button button-primary" onClick={onCreate}><Plus size={16}/> New task</button>}/>
     <InstallCard/>
     {onboarding && <OnboardingCard steps={onboarding} onDismiss={onDismissOnboarding}/>}
-    <section className="day-glance" aria-label="Today at a glance">
+    {!loaded ? <section className="day-glance" aria-hidden="true"><span className="skeleton skeleton-ring"/><div className="glance-copy"><span className="skeleton skeleton-line"/><span className="skeleton skeleton-line short"/></div></section> : <section className="day-glance" aria-label="Today at a glance">
       <ProgressRing percent={completion} size={56} stroke={6}><b className="ring-number"><CountUp value={completion}/><small>%</small></b></ProgressRing>
       <div className="glance-copy"><b>{done} of {total} done today</b><span>{total === 0 ? "Nothing planned yet." : completion === 100 ? "Everything finished." : `${remainingTasks} left to go.`}</span></div>
-      {streak && (streak.current > 0 || streak.best > 0 || streak.todayTotal > 0) && <StreakLine streak={streak}/>}
-    </section>
+      {streak && (Number(streak.current) > 0 || Number(streak.best) > 0 || total > 0) && <StreakLine streak={streak} done={done} total={total}/>}
+    </section>}
     <div className="home-grid">
       <section className="home-tasks"><div className="section-title-row"><h2>Today</h2><button className="text-link" onClick={() => onPage("tasks")}>All tasks <ArrowRight size={15}/></button></div>
         {earlier.length > 0 && <EarlierDays tasks={earlier} onMove={onMoveToToday} onShowAll={onShowEarlier}/>}
@@ -1736,7 +1859,9 @@ function EmptyTasks({ onCreate, title = "Start with one thing.", compact = false
   return <div className={`empty-tasks ${compact ? "empty-compact" : ""}`}><span className="empty-spark">✳</span><h3>{title}</h3><p>Add a task when you’re ready. You can keep it private or share it with friends.</p><button className="text-link" onClick={onCreate}><Plus size={15}/> Create a task</button></div>;
 }
 
-function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0, onLeave, assignments = [], onAssign, onDeleteAssignment }) {
+function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, query, setQuery, results, inviteLink, profile, user, onAdd, onInvite, onOpen, onCloseProfile, onCreateCircle, onAddMember, onCreateInvite, onCopyInvite, onCreateTask, onOpenChat, recap, onNudge, onRevokeInvite, earlierCount = 0, onLeave, assignments = [], onAssign, onDeleteAssignment, onSetAdmin, onRemoveMember, onWeeklyReport }) {
+  const myRole = activeGroup?.myRole || (activeGroup?.ownerId === user.id ? "owner" : "member");
+  const canManage = myRole === "owner" || myRole === "admin";
   const memberTaskGroups = (activeGroup?.members || []).map(member => {
     const memberTasks = sharedTasks.filter(task => task.ownerId === member.id);
     const done = memberTasks.filter(task => task.done).length;
@@ -1752,17 +1877,17 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
     <label className="search-box"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find someone by name" autoComplete="off"/></label>
     {query.trim().length >= 2 && <section className="search-results"><p className="eyebrow">PEOPLE</p>{results.length ? results.map((person, index) => {
       const isMember = activeGroup?.members?.some(member => member.id === person.id);
-      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index} avatar={person.avatar}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || "Kinda member"}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || activeGroup.ownerId !== user.id} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd({ friendId: person.id })}>Add friend</button>}</div>;
+      return <div className="friend-card search-person" key={person.id}><Avatar name={person.name} index={index} avatar={person.avatar}/><button className="friend-person-name" onClick={() => person.isFriend && onOpen(person)}><b>{person.name}</b><small>{person.bio || "Kinda member"}</small></button>{person.isFriend ? <button className="button button-secondary small-button" disabled={!activeGroup || isMember || !canManage} onClick={() => onAddMember(activeGroup, person)}>{isMember ? "In circle" : "Add to circle"}</button> : <button className="button button-secondary small-button" onClick={() => onAdd({ friendId: person.id })}>Add friend</button>}</div>;
     }) : <p className="quiet-empty">No accounts match that search yet.</p>}</section>}
     <section className="circles-directory"><div className="section-title-row"><div><p className="eyebrow">YOUR CIRCLES</p><h2>{groups.length ? `${groups.length} ${groups.length === 1 ? "circle" : "circles"}` : "Start a circle"}</h2></div></div>
       {groups.length ? <div className="circles-layout"><div className="circles-list">{groups.map((group, index) => <button className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`} key={group.id} onClick={() => onSelect(group)}><Avatar name={group.name} index={index}/><span><b>{group.name}</b><small>{group.memberCount} {group.memberCount === 1 ? "member" : "members"} · {group.taskCount} {group.taskCount === 1 ? "task" : "tasks"}</small></span><ArrowRight size={15}/></button>)}</div>
-        {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button><button className="button button-secondary small-button danger-button" onClick={() => onLeave(activeGroup)}><LogOut size={14}/> Leave</button></div></div>
+        {activeGroup && <section className="circle-detail"><div className="circle-detail-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h2>{activeGroup.name}</h2><p>{activeGroup.memberNames}</p></div><div className="circle-detail-actions"><button className="button button-secondary small-button" onClick={onOpenChat}><MessageCircle size={14}/> Group chat</button><button className="button button-primary small-button" onClick={onCreateTask}><Plus size={14}/> Post a task</button>{canManage && <button className="button button-secondary small-button" onClick={() => onWeeklyReport(activeGroup)}><FileText size={14}/> Weekly report</button>}<button className="button button-secondary small-button danger-button" onClick={() => onLeave(activeGroup)}><LogOut size={14}/> Leave</button></div></div>
           <div className="circle-progress">{earlierCount > 0 && <small className="quiet-note">Showing today only · {earlierCount} from earlier days hidden</small>}<div><b>{sharedTasks.filter(task => task.done).length} of {sharedTasks.length} tasks done</b><span>{sharedTasks.length ? Math.round(sharedTasks.filter(task => task.done).length / sharedTasks.length * 100) : 0}%</span></div><div className="summary-progress"><span style={{ width: `${sharedTasks.length ? sharedTasks.filter(task => task.done).length / sharedTasks.length * 100 : 0}%` }}/></div></div>
           {recap && <div className="circle-recap"><p className="eyebrow">THIS WEEK</p><b>{recap.total} {recap.total === 1 ? "task" : "tasks"} finished together</b>{recap.top && <span><Flame size={13}/> {recap.top.name} led with {recap.top.completed}</span>}<div className="recap-members">{recap.members.map(member => <span key={member.id}><Avatar name={member.name} avatar={member.avatar}/>{member.completed}</span>)}</div></div>}
-          <AssignmentsSection assignments={assignments} isOwner={activeGroup.ownerId === user.id} onAssign={onAssign} onDelete={onDeleteAssignment}/>
+          <AssignmentsSection assignments={assignments} canManage={canManage} onAssign={onAssign} onDelete={onDeleteAssignment}/>
           <GroupLeaderboard group={activeGroup} userId={user.id}/>
-          <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <span className="circle-member" key={member.id}><Avatar name={member.name} index={index} avatar={member.avatar}/>{member.name}{member.id === activeGroup.ownerId && <small>Owner</small>}</span>)}</div>
-            {activeGroup.ownerId === user.id && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
+          <div className="circle-members"><div className="section-title-row"><div><p className="eyebrow">THE PEOPLE</p><h3>Members</h3></div><span>{activeGroup.memberCount}</span></div><div className="circle-member-list">{activeGroup.members?.map((member, index) => <MemberRow key={member.id} member={member} index={index} you={member.id === user.id} myRole={myRole} onSetAdmin={admin => onSetAdmin(activeGroup, member, admin)} onRemove={() => onRemoveMember(activeGroup, member)}/>)}</div>
+            {canManage && <div className="circle-invite"><p>Invite existing members directly, or send this link to anyone—even before they create an account. Links expire after 7 days.</p><div>{friends.filter(friend => !activeGroup.members?.some(member => member.id === friend.id)).map((friend, index) => <button className="button button-secondary small-button" key={friend.id} onClick={() => onAddMember(activeGroup, friend)}><Plus size={13}/>{friend.name}</button>)}<button className="text-link" onClick={onInvite}><Plus size={14}/> Find people</button><button className="button button-secondary small-button" onClick={() => onCreateInvite(activeGroup)}><Plus size={13}/>{inviteLink ? "Replace invite link" : "Create invite link"}</button></div>{inviteLink && <div className="circle-invite-link"><input aria-label="Circle invite link" readOnly value={inviteLink}/><button className="button button-primary small-button" onClick={() => onCopyInvite(activeGroup)}>Copy link</button><button className="button button-secondary small-button" onClick={() => onRevokeInvite(activeGroup)}>Revoke</button></div>}</div>}
           </div>
           <div className="circle-tasks"><div className="section-title-row"><div><p className="eyebrow">SHARED PROGRESS</p><h3>Tasks by member</h3></div><span>{sharedTasks.length}</span></div>{memberTaskGroups.length ? <div className="member-task-groups">{memberTaskGroups.map(({ member, tasks: memberTasks, done, percent }) => <section className="member-task-group" key={member.id}><div className="member-progress-heading"><span><Avatar name={member.name} avatar={member.avatar}/><b>{member.name}</b>{member.id === user.id && <small>You</small>}</span><strong>{done}/{memberTasks.length} done · {percent}%</strong></div><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div>{memberTasks.length ? <div className="task-list">{memberTasks.map(task => <article className={`shared-task-row ${task.done ? "task-complete" : ""}`} key={`${task.ownerId}-${task.id}`}><span className={`task-check ${task.done ? "checked" : ""}`}>{task.done && <Check size={14}/>}</span><div><h4>{task.title}</h4><p>{task.category} · {dayLabel(task.dueDate)}{task.done && <b> · Done</b>}</p></div>{task.ownerId !== user.id && !task.done && task.dueDate && task.dueDate < localDate() && <button className="nudge-button" onClick={() => onNudge(task)}><Bell size={13}/> Nudge</button>}</article>)}</div> : <p className="quiet-empty">No tasks shared by this member yet.</p>}</section>)}</div> : <p className="quiet-empty">No tasks shared here yet. Post one to get started.</p>}</div>
         </section>}
@@ -1771,28 +1896,67 @@ function CirclesPage({ groups, activeGroup, onSelect, sharedTasks, friends, quer
   </div>;
 }
 
-function AssignmentsSection({ assignments, isOwner, onAssign, onDelete }) {
+function MemberRow({ member, index, you, myRole, onSetAdmin, onRemove }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = event => { if (box.current && !box.current.contains(event.target)) setOpen(false); };
+    const escape = event => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const isOwnerRow = member.role === "owner";
+  const canPromote = myRole === "owner" && !you && !isOwnerRow;
+  const canRemove = !you && !isOwnerRow && (myRole === "owner" || (myRole === "admin" && member.role !== "admin"));
+  return <div className="circle-member" ref={box}>
+    <Avatar name={member.name} index={index} avatar={member.avatar}/>
+    <span className="circle-member-name">{member.name}{you ? " (you)" : ""}</span>
+    {isOwnerRow && <small className="role-badge owner">Owner</small>}
+    {member.role === "admin" && <small className="role-badge"><Shield size={11}/> Admin</small>}
+    {(canPromote || canRemove) && <span className="member-menu">
+      <button className="icon-quiet" aria-label={`Manage ${member.name}`} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(value => !value)}><MoreHorizontal size={16}/></button>
+      {open && <div className="member-menu-list" role="menu">
+        {canPromote && <button role="menuitem" onClick={() => { setOpen(false); onSetAdmin(member.role !== "admin"); }}>{member.role === "admin" ? "Remove admin" : "Make admin"}</button>}
+        {canRemove && <button role="menuitem" className="danger" onClick={() => { setOpen(false); onRemove(); }}>Remove from circle</button>}
+      </div>}
+    </span>}
+  </div>;
+}
+
+function AssignmentsSection({ assignments, canManage, onAssign, onDelete }) {
   return <section className="assignments" aria-label="Tasks assigned to the whole circle">
-    <div className="section-title-row"><div><p className="eyebrow">For everyone</p><h3>Circle tasks</h3></div>{isOwner && <button className="button button-secondary small-button" onClick={onAssign}><Plus size={14}/> Assign a task</button>}</div>
+    <div className="section-title-row"><div><p className="eyebrow">For everyone</p><h3>Circle tasks</h3></div>{canManage && <button className="button button-secondary small-button" onClick={onAssign}><Plus size={14}/> Assign a task</button>}</div>
     {assignments.length ? <div className="assignment-list">{assignments.map(item => {
       const percent = item.total ? Math.round(item.doneCount / item.total * 100) : 0;
       return <article className="assignment" key={item.id}>
         <div className="assignment-head"><div><h4>{item.title}</h4><p>{item.category} · {dayLabel(item.dueDate)} · Assigned by {item.createdByName}</p></div>
-          {isOwner ? <button className="icon-quiet" onClick={() => onDelete(item)} aria-label={`Remove ${item.title}`}><Trash2 size={15}/></button>
+          {canManage ? <button className="icon-quiet" onClick={() => onDelete(item)} aria-label={`Remove ${item.title}`}><Trash2 size={15}/></button>
             : item.mineDone !== null && <span className={`assignment-state ${item.mineDone ? "done" : ""}`}>{item.mineDone ? "You finished this" : "On your list"}</span>}</div>
         {item.description && <p className="assignment-note">{item.description}</p>}
         <div className="assignment-progress"><span>{item.doneCount} of {item.total} done</span><div className="summary-progress"><span style={{ width: `${percent}%` }}/></div></div>
-        {isOwner && item.members.length > 0 && <ul className="assignment-members">{item.members.map(member => <li key={member.id} className={member.done ? "done" : ""}><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}</span><b>{member.done ? "Done" : "Not yet"}</b></li>)}</ul>}
+        {canManage && item.members.length > 0 && <ul className="assignment-members">{item.members.map(member => <li key={member.id} className={member.done ? "done" : ""}><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}</span><b>{member.done ? "Done" : "Not yet"}</b></li>)}</ul>}
       </article>;
-    })}</div> : <p className="quiet-empty">{isOwner ? "Assign one task to everyone in this circle, then see who has finished it." : "Your circle owner has not assigned any tasks yet."}</p>}
+    })}</div> : <p className="quiet-empty">{canManage ? "Assign one task to everyone in this circle, then see who has finished it." : "Your circle owner has not assigned any tasks yet."}</p>}
   </section>;
 }
 
-function AssignDialog({ group, onClose, onSubmit }) {
-  const others = Math.max(0, group.memberCount - 1);
+function AssignDialog({ group, userId, onClose, onSubmit }) {
+  const members = group.members || [];
   const [more, setMore] = useState(false);
-  return <Modal title="Assign a task" subtitle={`It will appear on every member's list in ${group.name}, and you can track who finishes it.`} onClose={onClose}><form className="modal-form" onSubmit={onSubmit}>
-    <label>Task<input name="title" autoFocus placeholder="What should everyone do?" required maxLength="120"/></label>
+  const [mode, setMode] = useState("everyone");
+  const [picked, setPicked] = useState([]);
+  const everyone = members.filter(member => member.id !== userId).length;
+  const count = mode === "everyone" ? everyone : picked.length;
+  const toggle = id => setPicked(list => list.includes(id) ? list.filter(item => item !== id) : [...list, id]);
+  return <Modal title="Assign a task" subtitle={`It will appear on the chosen members' lists in ${group.name}, and you can track who finishes it.`} onClose={onClose}><form className="modal-form" onSubmit={onSubmit}>
+    <label>Task<input name="title" autoFocus placeholder="What needs doing?" required maxLength="120"/></label>
+    <fieldset className="assign-audience"><legend>Who is it for?</legend>
+      <label className="audience-option"><input type="radio" name="audience" value="everyone" checked={mode === "everyone"} onChange={() => setMode("everyone")}/><span><b>Everyone</b><small>{everyone} {everyone === 1 ? "member" : "members"}</small></span></label>
+      <label className="audience-option"><input type="radio" name="audience" value="choose" checked={mode === "choose"} onChange={() => setMode("choose")}/><span><b>Choose people</b><small>Pick one or more members</small></span></label>
+      {mode === "choose" && <div className="audience-list">{members.map(member => <label className="audience-person" key={member.id}><input type="checkbox" name="assigneeIds" value={member.id} checked={picked.includes(member.id)} onChange={() => toggle(member.id)}/><Avatar name={member.name} avatar={member.avatar}/><span>{member.name}{member.id === userId ? " (you)" : ""}</span></label>)}</div>}
+    </fieldset>
     <div className="form-grid"><label>Due date<input name="dueDate" type="date" defaultValue={localDate()}/></label><label>Priority<select name="priority" defaultValue="normal"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>
     <button type="button" className="more-toggle" aria-expanded={more} onClick={() => setMore(value => !value)}><ChevronDown size={15} className={more ? "open" : ""}/> {more ? "Fewer options" : "More options"}<small>Details, category, focus time</small></button>
     <div className="more-fields" hidden={!more}>
@@ -1800,8 +1964,8 @@ function AssignDialog({ group, onClose, onSubmit }) {
       <div className="form-grid"><label>Category<select name="category" defaultValue="Personal">{categories.map(category => <option key={category}>{category}</option>)}</select></label></div>
       <FocusTimeField defaultValue={25}/>
     </div>
-    <label className="check-line"><input type="checkbox" name="includeSelf"/> <span>Add it to my list too</span></label>
-    <button className="button button-primary full-button" type="submit">Assign to {others} {others === 1 ? "member" : "members"} <ArrowRight size={15}/></button>
+    {mode === "everyone" && <label className="check-line"><input type="checkbox" name="includeSelf"/> <span>Add it to my list too</span></label>}
+    <button className="button button-primary full-button" type="submit" disabled={count === 0}>Assign to {count} {count === 1 ? "person" : "people"} <ArrowRight size={15}/></button>
   </form></Modal>;
 }
 
@@ -1861,6 +2025,31 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const composeRef = useRef(null);
+  const messagesRef = useRef(null);
+  const stickRef = useRef(true);
+  const lastMessage = messages[messages.length - 1];
+  // Opening a chat (or switching circles) jumps straight to the newest message; after that the view only follows
+  // new messages while you are already near the bottom, or when the new message is yours.
+  useLayoutEffect(() => { stickRef.current = true; }, [activeGroup?.id, mobileOpen]);
+  useLayoutEffect(() => {
+    const node = messagesRef.current;
+    if (!node || !(stickRef.current || lastMessage?.senderId === user.id)) return undefined;
+    node.scrollTop = node.scrollHeight;
+    const frame = window.requestAnimationFrame(() => { node.scrollTop = node.scrollHeight; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages.length, lastMessage?.id, activeGroup?.id, mobileOpen, dividerTime]);
+  // Things that appear a moment later (the "new messages" line, emoji, avatars) must not leave the view short of the bottom.
+  useEffect(() => {
+    const node = messagesRef.current;
+    if (!node) return undefined;
+    const observer = new MutationObserver(() => { if (stickRef.current) node.scrollTop = node.scrollHeight; });
+    observer.observe(node, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [activeGroup?.id, mobileOpen]);
+  function onMessagesScroll(event) {
+    const node = event.currentTarget;
+    stickRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 140;
+  }
   function insertEmoji(emoji) {
     const input = composeRef.current;
     const start = input?.selectionStart ?? value.length;
@@ -1881,7 +2070,7 @@ function ChatPage({ groups, activeGroup, setActiveGroup, messages, sharedTasks, 
       <section className="chat-conversation">
         {activeGroup ? <><header className="chat-header"><button className="mobile-back" onClick={onMobileBack} aria-label="Back to circles"><ArrowLeft size={18}/></button><Avatar name={activeGroup.name}/><div><h2>{activeGroup.name}</h2><small>{activeGroup.memberCount} members · one group chat</small></div></header>
           <div className="chat-shared-tasks">{sharedTasks.slice(0, 3).map(task => <span key={`${task.ownerId}-${task.id}`}><CheckSquare2 size={12}/>{task.ownerName}: {task.title}</span>)}</div>
-          <div className="chat-messages" aria-live="polite">{messages.length ? messages.map((message, index) => {
+          <div className="chat-messages" aria-live="polite" ref={messagesRef} onScroll={onMessagesScroll}>{messages.length ? messages.map((message, index) => {
             const mine = message.senderId === user.id;
             const previous = messages[index - 1];
             const grouped = previous && previous.senderId === message.senderId && index !== dividerIndex && Date.parse(message.createdAt) - Date.parse(previous.createdAt) < 5 * 60 * 1000;

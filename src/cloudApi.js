@@ -88,6 +88,15 @@ function resolveRoute(path, options = {}) {
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/recap$/)) && method === "GET") {
         route = { type: "query", name: "workspace:circleRecap" };
         args = { circleId: match[1] };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/members\/([^/]+)\/admin$/)) && method === "POST") {
+        route = { type: "mutation", name: "workspace:setCircleAdmin" };
+        args = { circleId: match[1], userId: decodeURIComponent(match[2]), ...body };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/members\/([^/]+)$/)) && method === "DELETE") {
+        route = { type: "mutation", name: "workspace:removeCircleMember" };
+        args = { circleId: match[1], userId: decodeURIComponent(match[2]) };
+      } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/weekly$/)) && method === "GET") {
+        route = { type: "query", name: "workspace:circleWeekly" };
+        args = { circleId: match[1], weekStart: url.searchParams.get("week") || "", tzOffset: Number(url.searchParams.get("tz") || 0) };
       } else if ((match = url.pathname.match(/^\/groups\/([^/]+)\/assignments$/)) && method === "GET") {
         route = { type: "query", name: "workspace:listAssignments" };
         args = { circleId: match[1] };

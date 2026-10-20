@@ -5639,3 +5639,197 @@ html body .modal-form .check-line {
   :root:not([data-theme="light"])[data-accent="olive"] { --accent: #a3b85a; --on-accent: #151b08; }
   :root:not([data-theme="light"])[data-accent="rose"] { --accent: #e5809c; --on-accent: #220c14; }
 }
+
+/* ---- Circle members, roles and menus ---- */
+.circle-member-list {
+  display: grid;
+  gap: 0;
+}
+.circle-member {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 10px 0;
+  background: transparent;
+}
+.circle-member-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html body .role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 2px 9px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+html body .role-badge.owner {
+  border-color: var(--accent);
+  background: var(--soft-accent);
+  color: var(--accent-deep);
+}
+.member-menu {
+  position: relative;
+}
+.member-menu-list {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 16px 40px #1d17102e;
+  animation: pop-in 0.14s ease both;
+}
+.member-menu-list button {
+  min-height: 42px;
+  border: 0;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+}
+.member-menu-list button:hover {
+  background: var(--hover);
+}
+.member-menu-list button.danger {
+  color: #b3392b;
+}
+:root[data-theme="dark"] .member-menu-list button.danger { color: #ee8b7d; }
+
+/* ---- Assign to everyone or to chosen people ---- */
+.assign-audience {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.assign-audience legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+html body .modal-form .audience-option,
+html body .modal-form .audience-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+}
+html body .modal-form .audience-option:has(input:checked),
+html body .modal-form .audience-person:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--soft-accent);
+}
+.modal-form .audience-option input,
+.modal-form .audience-person input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.audience-option > span {
+  display: grid;
+}
+html body .audience-option small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+.audience-list {
+  display: grid;
+  max-height: 220px;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+/* ---- Circle weekly report window ---- */
+.circle-weekly .week-nav {
+  margin-bottom: 16px;
+}
+.circle-weekly .week-stats {
+  grid-template-columns: 1.4fr 1fr 1fr;
+  margin-bottom: 14px;
+}
+.circle-week-members {
+  display: grid;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.circle-week-members li {
+  display: grid;
+  grid-template-columns: minmax(80px, 1.2fr) 2fr auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 0;
+}
+.cwm-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cwm-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border);
+}
+.cwm-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+html body .cwm-count {
+  min-width: 36px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+.circle-weekly-actions {
+  justify-content: flex-end;
+}
+.skeleton-ring {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 50%;
+}
+@media (max-width: 560px) {
+  .circle-weekly .week-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .circle-weekly .week-stat-main {
+    grid-column: 1 / -1;
+  }
+}
