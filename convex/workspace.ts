@@ -791,6 +791,12 @@ export const myStreak = query({
       entry.total += 1;
       if (task.done) entry.done += 1;
       perDay.set(key, entry);
+      for (const movedDay of task.movedFrom ?? []) {
+        if (movedDay === key) continue;
+        const movedEntry = perDay.get(movedDay) ?? { total: 0, done: 0 };
+        movedEntry.total += 1;
+        perDay.set(movedDay, movedEntry);
+      }
     }
     // A day counts when at least one task was planned and 80% or more of that day's tasks are done.
     const qualifies = (key: string) => {

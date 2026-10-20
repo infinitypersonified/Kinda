@@ -9,8 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as http from "../http.js";
 import type * as googleCalendar from "../googleCalendar.js";
+import type * as http from "../http.js";
 import type * as mailer from "../mailer.js";
 import type * as push from "../push.js";
 import type * as pushData from "../pushData.js";
@@ -26,8 +26,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  http: typeof http;
   googleCalendar: typeof googleCalendar;
+  http: typeof http;
   mailer: typeof mailer;
   push: typeof push;
   pushData: typeof pushData;
