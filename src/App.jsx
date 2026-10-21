@@ -154,7 +154,7 @@ const whatsNew = [
 ];
 
 const pushSupported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && Boolean(import.meta.env.VITE_VAPID_PUBLIC_KEY);
-const googleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGN_IN_ENABLED === "true";
+const googleSignInEnabled = true;
 
 function urlBase64ToUint8Array(base64) {
   const padded = `${base64}${"=".repeat((4 - base64.length % 4) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
