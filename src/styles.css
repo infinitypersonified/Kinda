@@ -10189,9 +10189,50 @@ html body .cwm-count {
   --soft-accent: #17110e;
   --accent: #e58a5b;
   --accent-deep: #f0a075;
+  --row-first-bg: #17130b;
+  --warm-bg: #100d0b;
+  --warm-icon-bg: #1c1510;
+  --ok-bg: #080d08;
+  --ok-icon-bg: #101810;
+  --ok-text: #a8d2a8;
+  --error-bg: #160a08;
   background: #000;
   color: #f5f5f5;
   color-scheme: dark;
+}
+.landing-feature-detail:not(.is-dark) { color-scheme: light; }
+.landing-feature-detail .landing-feature-real-preview {
+  isolation: isolate;
+  box-shadow: 0 26px 90px #17110e12;
+  animation: feature-preview-enter .7s cubic-bezier(.2,.8,.2,1) both;
+}
+.landing-feature-detail .landing-feature-real-preview::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 62%);
+  content: "";
+  pointer-events: none;
+}
+.landing-feature-detail .landing-feature-real-preview > .page-content {
+  position: relative;
+  z-index: 1;
+  color: var(--text);
+}
+.landing-feature-detail .landing-feature-real-preview .page-header h1,
+.landing-feature-detail .landing-feature-real-preview .section-title-row h2,
+.landing-feature-detail .landing-feature-real-preview .circle-detail-heading h2,
+.landing-feature-detail .landing-feature-real-preview .leaderboard-person b,
+.landing-feature-detail .landing-feature-real-preview .leaderboard-row > strong,
+.landing-feature-detail .landing-feature-real-preview .chat-header h2 {
+  color: var(--text);
+}
+.landing-feature-detail .landing-feature-real-preview .page-description,
+.landing-feature-detail .landing-feature-real-preview .circle-detail-heading p,
+.landing-feature-detail .landing-feature-real-preview .leaderboard-person small,
+.landing-feature-detail .landing-feature-real-preview .leaderboard-more,
+.landing-feature-detail .landing-feature-real-preview .chat-header small {
+  color: var(--muted);
 }
 .landing-feature-detail.is-dark .landing-feature-real-preview,
 .landing-feature-detail.is-dark .streak-detail-real { border-color: #282828; background: #000; }
@@ -10206,4 +10247,11 @@ html body .cwm-count {
 .landing-feature-real-preview :is(.leaderboard-card,.circle-detail,.profile-panel,.streak-detail-real):focus-within {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   box-shadow: 0 0 32px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+@keyframes feature-preview-enter {
+  from { opacity: 0; transform: translateY(20px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-feature-detail .landing-feature-real-preview { animation: none; }
 }
