@@ -10128,3 +10128,48 @@ html body .cwm-count {
   :root:not([data-theme="light"]) .leaderboard-more { color: #b0b0b0; }
   :root:not([data-theme="light"]) .leaderboard-first .leaderboard-rank { color: #ffd27a; }
 }
+
+.landing-v2 .landing-nav-links { gap: 30px; }
+.landing-v2 .landing-nav-links a,
+.landing-v2 .nav-login { font-size: 15px; }
+.landing-intro h1 {
+  max-width: 1080px;
+  font-size: clamp(68px, 8.2vw, 112px);
+  letter-spacing: -6px;
+}
+.landing-intro .eyebrow { font-size: 12px; }
+.landing-intro-copy > p:not(.eyebrow) { max-width: 500px; font-size: 18px; }
+.feature-copy h3 { font-size: clamp(29px, 3.2vw, 39px); }
+.feature-copy p { font-size: 15px; }
+.app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile) {
+  transition: box-shadow .42s cubic-bezier(.2,.8,.2,1), border-color .42s ease, transform .42s cubic-bezier(.2,.8,.2,1);
+}
+.app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile):hover,
+.app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile):focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent), 0 10px 34px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.app-shell .task-row { transition: background .24s ease, box-shadow .3s ease; }
+.app-shell .task-row:hover,
+.app-shell .task-row:focus-within { box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 16%, transparent); }
+:root[data-theme="dark"] .app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile):hover,
+:root[data-theme="dark"] .app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile):focus-within,
+:root[data-theme="dark"] .app-shell .task-row:hover,
+:root[data-theme="dark"] .app-shell .task-row:focus-within {
+  box-shadow: 0 0 0 1px #ffffff12, 0 0 28px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.landing-dark .feature-panel:hover,
+.landing-dark .feature-panel:focus-visible { box-shadow: 0 0 0 1px #ffffff22, 0 0 34px rgba(255,255,255,.16), 0 0 52px rgba(211,156,118,.22); }
+@media (max-width: 900px) {
+  .landing-intro h1 { font-size: clamp(64px, 9vw, 90px); letter-spacing: -5px; }
+}
+@media (max-width: 700px) {
+  .landing-intro h1 { font-size: clamp(55px, 13vw, 76px); letter-spacing: -4px; }
+  .landing-intro-copy > p:not(.eyebrow) { font-size: 16px; }
+  .feature-copy h3 { font-size: 30px; }
+  .feature-copy p { font-size: 14px; }
+}
+@media (max-width: 380px) { .landing-intro h1 { font-size: 55px; letter-spacing: -4.5px; } }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile,.task-row) { transition: none !important; }
+}
