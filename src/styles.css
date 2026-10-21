@@ -10173,3 +10173,37 @@ html body .cwm-count {
 @media (prefers-reduced-motion: reduce) {
   .app-shell :is(.leaderboard-card,.circle-detail,.profile-panel,.onboarding-card,.celebration-card,.circle-tile,.task-row) { transition: none !important; }
 }
+.landing-feature-detail.is-dark {
+  --background: #000;
+  --surface: #080808;
+  --surface-2: #101010;
+  --text: #f5f5f5;
+  --text-soft: #e5e5e5;
+  --text-mid: #ccc;
+  --muted: #b0b0b0;
+  --quiet: #909090;
+  --border: #282828;
+  --row-bg: #050505;
+  --hover: #181818;
+  --tint: #121212;
+  --soft-accent: #17110e;
+  --accent: #e58a5b;
+  --accent-deep: #f0a075;
+  background: #000;
+  color: #f5f5f5;
+  color-scheme: dark;
+}
+.landing-feature-detail.is-dark .landing-feature-real-preview,
+.landing-feature-detail.is-dark .streak-detail-real { border-color: #282828; background: #000; }
+.landing-feature-detail.is-dark .landing-feature-real-preview .leaderboard-card,
+.landing-feature-detail.is-dark .landing-feature-real-preview .circle-detail,
+.landing-feature-detail.is-dark .landing-feature-real-preview .profile-panel,
+.landing-feature-detail.is-dark .landing-feature-real-preview .streak-detail-real { color: #f5f5f5; }
+.landing-feature-real-preview :is(.leaderboard-card,.circle-detail,.profile-panel,.streak-detail-real) {
+  transition: box-shadow .42s cubic-bezier(.2,.8,.2,1), border-color .42s ease;
+}
+.landing-feature-real-preview :is(.leaderboard-card,.circle-detail,.profile-panel,.streak-detail-real):hover,
+.landing-feature-real-preview :is(.leaderboard-card,.circle-detail,.profile-panel,.streak-detail-real):focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 0 32px color-mix(in srgb, var(--accent) 24%, transparent);
+}

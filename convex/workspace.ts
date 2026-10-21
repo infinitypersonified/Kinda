@@ -1291,7 +1291,7 @@ export const createAssignment = mutation({
       circleId: args.circleId, createdBy: account.id, title, description: args.description.trim(),
       category: args.category, dueDate: args.dueDate, priority: args.priority, targetMinutes: args.targetMinutes, createdAt: now
     });
-    for (const member of assignees) {
+    await Promise.all(assignees.map(async member => {
       const taskId = await ctx.db.insert("tasks", {
         userId: member.userId, title, description: args.description.trim(), category: args.category,
         dueDate: args.dueDate, priority: args.priority, visibility: "private", targetMinutes: args.targetMinutes,
@@ -1304,7 +1304,7 @@ export const createAssignment = mutation({
           userId: member.userId, title: `${account.name} assigned a task in ${circle.name}`, body: title, tag: `assign-${assignmentId}`
         });
       }
-    }
+    }));
     return { id: String(assignmentId), assigned: assignees.length };
   }
 });

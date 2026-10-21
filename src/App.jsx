@@ -1644,8 +1644,7 @@ function App({ authClient }) {
     (task) => taskDay(task) === todayKey,
   );
   const viewGroups = groups.map((group) => {
-    const list = goalsByGroup[group.id];
-    if (!list) return group;
+    const list = goalsByGroup[group.id] || [];
     const todays = list.filter((task) => taskDay(task) === todayKey);
     return {
       ...group,
@@ -4881,6 +4880,7 @@ function AssignmentsSection({ assignments, canManage, onAssign, onDelete }) {
 
 function AssignDialog({ group, userId, onClose, onSubmit }) {
   const members = group.members || [];
+  const [submitting, setSubmitting] = useState(false);
   const [more, setMore] = useState(false);
   const [mode, setMode] = useState("everyone");
   const [picked, setPicked] = useState([]);
@@ -4890,13 +4890,21 @@ function AssignDialog({ group, userId, onClose, onSubmit }) {
     setPicked((list) =>
       list.includes(id) ? list.filter((item) => item !== id) : [...list, id],
     );
+  const submit = async (event) => {
+    setSubmitting(true);
+    try {
+      await onSubmit(event);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <Modal
       title="Assign a task"
       subtitle={`It will appear on the chosen members' lists in ${group.name}, and you can track who finishes it.`}
       onClose={onClose}
     >
-      <form className="modal-form" onSubmit={onSubmit}>
+      <form className="modal-form" onSubmit={submit}>
         <label>
           Task
           <input
@@ -5013,10 +5021,10 @@ function AssignDialog({ group, userId, onClose, onSubmit }) {
         <button
           className="button button-primary full-button"
           type="submit"
-          disabled={count === 0}
+          disabled={count === 0 || submitting}
         >
-          Assign to {count} {count === 1 ? "person" : "people"}{" "}
-          <ArrowRight size={15} />
+          {submitting ? "Assigning…" : `Assign to ${count} ${count === 1 ? "person" : "people"}`}{" "}
+          {!submitting && <ArrowRight size={15} />}
         </button>
       </form>
     </Modal>
