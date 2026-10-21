@@ -9299,7 +9299,7 @@ html body .cwm-count {
   gap: 15px;
   padding-top: 16px;
 }
-.leaderboard-person {
+.feature-art .leaderboard-person {
   position: relative;
   width: 27%;
   display: flex;
@@ -9310,32 +9310,32 @@ html body .cwm-count {
   border-radius: 13px 13px 6px 6px;
   animation: feature-rise 0.7s both;
 }
-.leaderboard-person.first {
+.feature-art .leaderboard-person.first {
   height: 104px;
   background: #fbf2df;
   animation-delay: 0.16s;
 }
-.leaderboard-person.second {
+.feature-art .leaderboard-person.second {
   height: 86px;
   background: #f2eff8;
   animation-delay: 0.04s;
 }
-.leaderboard-person.third {
+.feature-art .leaderboard-person.third {
   height: 72px;
   background: #f8ede6;
   animation-delay: 0.28s;
 }
-.leaderboard-person b,
-.circles-task b {
+.feature-art .leaderboard-person b,
+.feature-art .circles-task b {
   color: #514b45;
   font-size: 10px;
 }
-.leaderboard-person small,
-.circles-task small {
+.feature-art .leaderboard-person small,
+.feature-art .circles-task small {
   color: #9a9188;
   font-size: 9px;
 }
-.leaderboard-person > i {
+.feature-art .leaderboard-person > i {
   position: absolute;
   top: -7px;
   right: -5px;
@@ -9994,4 +9994,137 @@ html body .cwm-count {
   .feature-panel::before {
     animation: none !important;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #000;
+  --surface: #080808;
+  --surface-2: #101010;
+  --hover: #181818;
+  --tint: #121212;
+  --text: #f5f5f5;
+  --text-soft: #e5e5e5;
+  --text-mid: #cccccc;
+  --muted: #b0b0b0;
+  --quiet: #909090;
+  --border: #282828;
+  --border-strong: #404040;
+  --row-bg: #050505;
+  --row-first-bg: #17130b;
+  --warm-bg: #100d0b;
+  --warm-icon-bg: #1c1510;
+  --ok-bg: #080d08;
+  --ok-icon-bg: #101810;
+  --ok-text: #a8d2a8;
+  --error-bg: #160a08;
+  --on-accent: #ffffff;
+}
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .app-shell,
+:root[data-theme="dark"] .main-area,
+:root[data-theme="dark"] .page-content,
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .mobile-topbar,
+:root[data-theme="dark"] .focus-mode {
+  background: #000;
+  color: var(--text);
+}
+:root[data-theme="dark"] .leaderboard-card { color: var(--text); background: #080808; }
+:root[data-theme="dark"] .leaderboard-person b,
+:root[data-theme="dark"] .leaderboard-row > strong { color: #f5f5f5; }
+:root[data-theme="dark"] .leaderboard-person small,
+:root[data-theme="dark"] .leaderboard-row > strong small,
+:root[data-theme="dark"] .leaderboard-more { color: #b0b0b0; }
+:root[data-theme="dark"] .leaderboard-first .leaderboard-rank { color: #ffd27a; }
+.landing-dark {
+  --landing-ink: #f5f5f5;
+  --landing-muted: #a8a8a8;
+  --landing-line: #242424;
+  background: #000;
+  color: #f5f5f5;
+}
+.landing-dark .landing-nav,
+.landing-dark .landing-intro,
+.landing-dark .landing-demo,
+.landing-dark .demo-stage,
+.landing-dark .landing-feature-story,
+.landing-dark .demo-caption,
+.landing-dark .landing-footer,
+.landing-dark .feature-panel,
+.landing-dark .feature-detail-page,
+.landing-dark .feature-detail-art,
+.landing-dark .feature-detail-screen {
+  background: #000;
+}
+.landing-dark .feature-panel { border-color: #262626; color: #f5f5f5; }
+.landing-dark .feature-copy p,
+.landing-dark .landing-nav-links a,
+.landing-dark .nav-login { color: #bcbcbc; }
+.landing-dark .landing-real-app {
+  --background: #000;
+  --surface: #080808;
+  --surface-2: #111;
+  --text: #f5f5f5;
+  --text-soft: #e5e5e5;
+  --text-mid: #ccc;
+  --muted: #b0b0b0;
+  --quiet: #909090;
+  --border: #282828;
+  --row-bg: #050505;
+  --hover: #181818;
+  color-scheme: dark;
+}
+.landing-dark .feature-art > div {
+  border-color: #282828;
+  background: #080808;
+  color: #f2f2f2;
+}
+.landing-dark .feature-art b { color: #f2f2f2; }
+.landing-dark .feature-art small { color: #aaa; }
+.landing-dark .feature-art .leaderboard-person.first { background: #211b10; }
+.landing-dark .feature-art .leaderboard-person.second { background: #17141d; }
+.landing-dark .feature-art .leaderboard-person.third { background: #201612; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --background: #000;
+    --surface: #080808;
+    --surface-2: #101010;
+    --hover: #181818;
+    --tint: #121212;
+    --text: #f5f5f5;
+    --text-soft: #e5e5e5;
+    --text-mid: #cccccc;
+    --muted: #b0b0b0;
+    --quiet: #909090;
+    --border: #282828;
+    --border-strong: #404040;
+    --row-bg: #050505;
+    --row-first-bg: #17130b;
+    --warm-bg: #100d0b;
+    --warm-icon-bg: #1c1510;
+    --ok-bg: #080d08;
+    --ok-icon-bg: #101810;
+    --ok-text: #a8d2a8;
+    --error-bg: #160a08;
+    --on-accent: #ffffff;
+  }
+  :root:not([data-theme="light"]) body,
+  :root:not([data-theme="light"]) .app-shell,
+  :root:not([data-theme="light"]) .main-area,
+  :root:not([data-theme="light"]) .page-content,
+  :root:not([data-theme="light"]) .sidebar,
+  :root:not([data-theme="light"]) .mobile-topbar,
+  :root:not([data-theme="light"]) .focus-mode {
+    background: #000;
+    color: var(--text);
+  }
+  :root:not([data-theme="light"]) .leaderboard-card { color: var(--text); background: #080808; }
+  :root:not([data-theme="light"]) .leaderboard-person b,
+  :root:not([data-theme="light"]) .leaderboard-row > strong { color: #f5f5f5; }
+  :root:not([data-theme="light"]) .leaderboard-person small,
+  :root:not([data-theme="light"]) .leaderboard-row > strong small,
+  :root:not([data-theme="light"]) .leaderboard-more { color: #b0b0b0; }
+  :root:not([data-theme="light"]) .leaderboard-first .leaderboard-rank { color: #ffd27a; }
 }
