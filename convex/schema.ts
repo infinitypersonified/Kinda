@@ -48,6 +48,7 @@ export default defineSchema({
     tzOffset: v.optional(v.number()),
     assignmentId: v.optional(v.id("assignments")),
     assignedByName: v.optional(v.string()),
+    sharedWith: v.optional(v.array(v.string())),
     movedFrom: v.optional(v.array(v.string())),
     createdAt: v.number()
   }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]).index("by_assignment", ["assignmentId"]),

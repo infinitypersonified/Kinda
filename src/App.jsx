@@ -2117,10 +2117,18 @@ function App({ authClient }) {
       title: String(form.get("title") || "").trim(),
       description: String(form.get("description") || "").trim(),
       groupIds: form.getAll("groupIds").map(String),
+      sharedWith: form.getAll("sharedWith").map(String),
       dueDate: String(form.get("dueDate") || "") || null,
       priority: String(form.get("priority") || "normal"),
       category: String(form.get("category") || "Personal"),
-      visibility: String(form.get("visibility") || "private"),
+      visibility: String(
+        form.get("visibility") ||
+          (form.getAll("sharedWith").length
+            ? "friends"
+            : taskDialog?.task?.sharedWith?.length
+              ? "private"
+              : taskDialog?.task?.visibility || "private"),
+      ),
       targetMinutes: Math.min(
         1440,
         Math.max(1, Math.round(Number(form.get("targetMinutes")) || 25)),
@@ -3027,6 +3035,7 @@ function App({ authClient }) {
               sharedTasks={sharedTasksToday}
               earlierCount={sharedTasks.length - sharedTasksToday.length}
               friends={friends}
+              onShareTask={(friend) => setTaskDialog({ task: null, sharedWith: [friend.id] })}
               query={friendSearch}
               setQuery={setFriendSearch}
               results={searchResults}
@@ -3150,7 +3159,9 @@ function App({ authClient }) {
           <TaskDialog
             task={taskDialog.task}
             groups={groups}
+            friends={friends}
             initialGroupIds={taskDialog.groupIds}
+            initialSharedWith={taskDialog.sharedWith}
             onClose={() => setTaskDialog(null)}
             onSave={saveTask}
           />
@@ -4208,6 +4219,7 @@ function CirclesPage({
   onSelect,
   sharedTasks,
   friends,
+  onShareTask,
   query,
   setQuery,
   results,
@@ -4369,10 +4381,46 @@ function CirclesPage({
               );
             })
           ) : (
-            <p className="quiet-empty">No accounts match that search yet.</p>
+            <div className="quiet-empty">
+              <p>No account found for this exact email.</p>
+              {query.includes("@") && (
+                <button className="text-link" onClick={() => onAdd(query.trim())}>
+                  Add this email as a friend
+                </button>
+              )}
+            </div>
           )}
         </section>
       )}
+      <section className="circles-directory friends-directory">
+        <div className="section-title-row">
+          <div>
+            <p className="eyebrow">YOUR PEOPLE</p>
+            <h2>{friends.length ? `${friends.length} friends` : "Your friends"}</h2>
+          </div>
+          <button className="button button-secondary small-button" onClick={onInvite}>
+            <Plus size={14} /> Add a friend
+          </button>
+        </div>
+        {friends.length ? (
+          <div className="friend-list">
+            {friends.map((friend, index) => (
+              <article className="friend-card" key={friend.id}>
+                <Avatar name={friend.name} index={index} avatar={friend.avatar} />
+                <button className="friend-person-name" onClick={() => onOpen(friend)}>
+                  <b>{friend.name}</b>
+                  <small>{friend.email}</small>
+                </button>
+                <button className="button button-secondary small-button" onClick={() => onShareTask(friend)}>
+                  Share a task
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="quiet-empty">Add a friend to share tasks with them directly.</p>
+        )}
+      </section>
       <section className="circles-directory">
         <div className="section-title-row">
           <div>
@@ -6324,9 +6372,10 @@ function SettingsPage({
   );
 }
 
-function TaskDialog({ task, groups, initialGroupIds = [], onClose, onSave }) {
+function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
-  const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0);
+  const selectedFriendIds = task?.sharedWith || initialSharedWith;
+  const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0 || initialSharedWith.length > 0);
   return (
     <Modal
       title={task ? "Edit task" : "New task"}
@@ -6453,6 +6502,18 @@ function TaskDialog({ task, groups, initialGroupIds = [], onClose, onSave }) {
                       {group.memberCount === 1 ? "member" : "members"}
                     </small>
                   </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {friends.length > 0 && (
+            <fieldset className="circle-share-field">
+              <legend>Share with specific friends <span className="optional-label">Optional</span></legend>
+              <p>Only the friends you select can see this task and its progress.</p>
+              {friends.map((friend) => (
+                <label className="circle-share-option" key={friend.id}>
+                  <input type="checkbox" name="sharedWith" value={friend.id} defaultChecked={selectedFriendIds.includes(friend.id)} />
+                  <span><b>{friend.name}</b><small>{friend.email}</small></span>
                 </label>
               ))}
             </fieldset>

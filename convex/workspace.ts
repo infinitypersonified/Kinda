@@ -150,6 +150,7 @@ async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
     createdAt: task.createdAt,
     assignmentId: task.assignmentId ? String(task.assignmentId) : null,
     assignedByName: task.assignedByName ?? null,
+    sharedWith: task.sharedWith ?? [],
     movedFrom: task.movedFrom ?? [],
     groupIds: links.map(link => String(link.circleId))
   };
@@ -209,7 +210,8 @@ export const createTask = mutation({
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
     tzOffset: v.optional(v.number()),
-    groupIds: v.array(v.id("circles"))
+    groupIds: v.array(v.id("circles")),
+    sharedWith: v.optional(v.array(v.string()))
   },
   handler: async (ctx, args) => {
     const account = await requireUser(ctx);
@@ -224,6 +226,10 @@ export const createTask = mutation({
       throw new ConvexError("Focus time must be between 1 and 1,440 minutes.");
     }
     for (const circleId of args.groupIds) await requireCircleMember(ctx, circleId, account.id);
+    const sharedWith = [...new Set(args.sharedWith ?? [])];
+    for (const friendId of sharedWith) {
+      if (friendId === account.id || !await ctx.db.query("friendships").withIndex("by_pair", q => q.eq("userId", account.id).eq("friendId", friendId)).first()) throw new ConvexError("Choose only people who are already your friends.");
+    }
     const taskId = await ctx.db.insert("tasks", {
       userId: account.id,
       title,
@@ -231,7 +237,8 @@ export const createTask = mutation({
       category: args.category,
       dueDate: args.dueDate,
       priority: args.priority,
-      visibility: args.visibility,
+      visibility: sharedWith.length ? "friends" : args.visibility,
+      sharedWith,
       targetMinutes: args.targetMinutes,
       elapsedSeconds: 0,
       timerStartedAt: null,
@@ -266,7 +273,8 @@ export const updateTask = mutation({
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
     tzOffset: v.optional(v.number()),
-    groupIds: v.array(v.id("circles"))
+    groupIds: v.array(v.id("circles")),
+    sharedWith: v.optional(v.array(v.string()))
   },
   handler: async (ctx, args) => {
     const { id } = await requireUser(ctx);
@@ -291,12 +299,16 @@ export const updateTask = mutation({
       throw new ConvexError("Focus time must be between 1 and 1,440 minutes.");
     }
     for (const circleId of args.groupIds) await requireCircleMember(ctx, circleId, id);
+    const sharedWith = [...new Set(args.sharedWith ?? [])];
+    for (const friendId of sharedWith) {
+      if (friendId === id || !await ctx.db.query("friendships").withIndex("by_pair", q => q.eq("userId", id).eq("friendId", friendId)).first()) throw new ConvexError("Choose only people who are already your friends.");
+    }
     // Remember the day an unfinished task was moved away from, so past weekly reports stay honest.
     let movedFrom = task.movedFrom ?? [];
     if (!task.done && task.dueDate && args.dueDate !== task.dueDate && !movedFrom.includes(task.dueDate)) movedFrom = [...movedFrom, task.dueDate];
     await ctx.db.patch(task._id, {
       title, description: args.description.trim(), category: args.category, dueDate: args.dueDate, movedFrom,
-      priority: args.priority, visibility: args.visibility, targetMinutes: args.targetMinutes,
+      priority: args.priority, visibility: sharedWith.length ? "friends" : args.visibility, sharedWith, targetMinutes: args.targetMinutes,
       repeat: args.repeat ?? "none", reminderTime: args.reminderTime ?? "",
       tzOffset: args.tzOffset, reminderAt: reminderTimestamp(args.dueDate, args.reminderTime, args.tzOffset)
     });
@@ -352,7 +364,7 @@ export const taskAction = mutation({
         if (task.repeat && task.repeat !== "none" && task.dueDate) {
           const nextId = await ctx.db.insert("tasks", {
             userId: id, title: task.title, description: task.description, category: task.category,
-            dueDate: nextDueDate(task.dueDate, task.repeat), priority: task.priority, visibility: task.visibility,
+            dueDate: nextDueDate(task.dueDate, task.repeat), priority: task.priority, visibility: task.visibility, sharedWith: task.sharedWith,
             targetMinutes: task.targetMinutes, elapsedSeconds: 0, timerStartedAt: null, done: false,
             repeat: task.repeat, reminderTime: task.reminderTime ?? "", tzOffset: task.tzOffset,
             reminderAt: reminderTimestamp(nextDueDate(task.dueDate, task.repeat), task.reminderTime, task.tzOffset), createdAt: now
@@ -718,7 +730,7 @@ export const friendProfile = query({
     if (!person) throw new ConvexError("That profile could not be found.");
     const profile = await ctx.db.query("profiles").withIndex("by_user", q => q.eq("userId", args.friendId)).first();
     const tasks = await ctx.db.query("tasks").withIndex("by_user", q => q.eq("userId", args.friendId)).collect();
-    const visibleTasks = tasks.filter(task => task.visibility === "friends").slice(0, 30).map(task => ({
+    const visibleTasks = tasks.filter(task => task.visibility === "friends" && (!task.sharedWith?.length || task.sharedWith.includes(id))).slice(0, 30).map(task => ({
       title: task.title, category: task.category, dueDate: task.dueDate, done: task.done, priority: task.priority
     }));
     const friendCount = (await ctx.db.query("friendships").withIndex("by_user", q => q.eq("userId", args.friendId)).collect()).length;
@@ -737,7 +749,7 @@ export const listActivity = query({
     const result = [];
     for (const item of records) {
       const task = await ctx.db.get(item.taskId);
-      if (!task || task.visibility !== "friends") continue;
+      if (!task || task.visibility !== "friends" || (item.userId !== id && task.sharedWith?.length && !task.sharedWith.includes(id))) continue;
       const actor = await authComponent.getAnyUserById(ctx, item.userId);
       const reactions = await ctx.db.query("reactions").withIndex("by_activity", q => q.eq("activityId", item._id)).collect();
       result.push({
@@ -767,7 +779,7 @@ export const toggleReaction = mutation({
     const friendships = await ctx.db.query("friendships").withIndex("by_pair", q => q.eq("userId", id).eq("friendId", activity.userId)).first();
     if (activity.userId !== id && !friendships) throw new ConvexError("That activity could not be found.");
     const task = await ctx.db.get(activity.taskId);
-    if (!task || task.visibility !== "friends") throw new ConvexError("That activity could not be found.");
+    if (!task || task.visibility !== "friends" || (activity.userId !== id && task.sharedWith?.length && !task.sharedWith.includes(id))) throw new ConvexError("That activity could not be found.");
     const mine = await ctx.db.query("reactions").withIndex("by_activity_user", q => q.eq("activityId", activity._id).eq("userId", id)).collect();
     const existing = mine.find(reaction => (reaction.emoji ?? "❤️") === emoji);
     if (existing) await ctx.db.delete(existing._id);
