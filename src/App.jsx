@@ -2282,6 +2282,7 @@ function App({ authClient }) {
       if (action === "complete" && updated.done) {
         loadActivity().catch((error) => notify(error.message));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
+        if (nextCelebration) setCelebrationType(nextCelebration);
         try {
           const nextStreak = await api(
             `/streak?tz=${new Date().getTimezoneOffset()}`,
@@ -2293,6 +2294,7 @@ function App({ authClient }) {
             nextStreak.current > previousStreak
           )
             nextCelebration = "streak";
+          if (nextCelebration === "streak") setCelebrationType("streak");
         } catch (error) {
           notify(error.message);
         }
@@ -2309,7 +2311,7 @@ function App({ authClient }) {
             notify(error.message);
           }
         }
-        if (nextCelebration) setCelebrationType(nextCelebration);
+        if (nextCelebration === "leaderboard") setCelebrationType(nextCelebration);
         if (willFinishAllTasks) {
           if (soundReady) {
             soundReady
@@ -2380,7 +2382,7 @@ function App({ authClient }) {
   }
 
   async function moveToToday(list) {
-    const movable = list.filter((task) => !task.assignmentId);
+    const movable = list;
     if (!movable.length) return;
     const dueDate = localDate();
     const staged = movable.map((task) => ({
@@ -3069,6 +3071,7 @@ function App({ authClient }) {
               nudges={nudges}
               userId={user.id}
               onReact={reactToActivity}
+              onFindPeople={() => navigate("circles")}
             />
           )}
           {page === "chat" && (
@@ -3623,7 +3626,7 @@ function StreakLine({ streak, done, total, onShare }) {
 
 function EarlierDays({ tasks, onMove, onShowAll }) {
   const [open, setOpen] = useState(false);
-  const movable = tasks.filter((task) => !task.assignmentId);
+  const movable = tasks;
   return (
     <section
       className="earlier-days"
@@ -3655,11 +3658,9 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
                   {task.assignmentId ? " · Assigned" : ""}
                 </small>
               </span>
-              {!task.assignmentId && (
-                <button className="text-link" onClick={() => onMove([task])}>
-                  Move to today
-                </button>
-              )}
+              <button className="text-link" onClick={() => onMove([task])}>
+                Move to today
+              </button>
             </div>
           ))}
           {tasks.length > 4 && (
@@ -4321,7 +4322,8 @@ function CirclesPage({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Find someone by name"
+          type="email"
+          placeholder="Find someone by email"
           autoComplete="off"
         />
       </label>
@@ -5031,7 +5033,7 @@ function AssignDialog({ group, userId, onClose, onSubmit }) {
   );
 }
 
-function ActivityPage({ activity, nudges = [], userId, onReact }) {
+function ActivityPage({ activity, nudges = [], userId, onReact, onFindPeople }) {
   return (
     <div className="page-content">
       <PageHeader
@@ -5065,9 +5067,12 @@ function ActivityPage({ activity, nudges = [], userId, onReact }) {
             <Heart size={22} />
             <h2>Nothing new just yet.</h2>
             <p>
-              When you and your friends share tasks or finish one, you’ll see it
-              here.
+              Add friends, then set a task to “Friends” when you create it. Shared
+              tasks and completions will show up here.
             </p>
+            <button className="button button-primary" onClick={onFindPeople}>
+              <Users size={15} /> Find people
+            </button>
           </div>
         )
       )}

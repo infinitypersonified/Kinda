@@ -273,7 +273,14 @@ export const updateTask = mutation({
     checkRepeatAndReminder(args.repeat, args.reminderTime);
     const task = await ctx.db.get(args.taskId);
     if (!task || task.userId !== id) throw new ConvexError("That task could not be found.");
-    if (task.assignmentId) throw new ConvexError("This task was assigned by your circle owner, so it can't be edited.");
+    if (task.assignmentId) {
+      const unchanged = args.title === task.title && args.description === (task.description ?? "") && args.category === task.category && args.priority === task.priority && args.visibility === task.visibility && args.targetMinutes === task.targetMinutes && (args.repeat ?? "none") === (task.repeat ?? "none") && (args.reminderTime ?? "") === (task.reminderTime ?? "") && args.groupIds.length === (task.groupIds ?? []).length && args.groupIds.every((groupId, index) => String(groupId) === String(task.groupIds![index]));
+      if (!unchanged) throw new ConvexError("This task was assigned by your circle owner, so its details can't be edited.");
+      const movedFrom = task.movedFrom ?? [];
+      if (!task.done && task.dueDate && args.dueDate !== task.dueDate && !movedFrom.includes(task.dueDate)) movedFrom.push(task.dueDate);
+      await ctx.db.patch(task._id, { dueDate: args.dueDate, movedFrom, tzOffset: args.tzOffset, reminderAt: reminderTimestamp(args.dueDate, task.reminderTime ?? "", args.tzOffset) });
+      return await mapTask(ctx, (await ctx.db.get(task._id))!);
+    }
     const title = args.title.trim();
     if (!title || title.length > 120) throw new ConvexError("Task titles must be 1–120 characters.");
     if (args.description.length > 2000) throw new ConvexError("Task descriptions must be 2,000 characters or fewer.");
@@ -660,12 +667,12 @@ export const searchFriends = query({
     const search = args.query.trim().slice(0, 80).toLowerCase();
     if (search.length < 2) return [];
     const { page: users } = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-      model: "user", limit: 50, paginationOpts: { numItems: 50, cursor: null }
-    }) as { page: Array<{ _id: string; name: string }> };
+      model: "user", where: [{ field: "email", value: search }], limit: 20,
+      paginationOpts: { numItems: 20, cursor: null }
+    }) as { page: Array<{ _id: string; name: string; email: string }> };
     const friendships = await ctx.db.query("friendships").withIndex("by_user", q => q.eq("userId", id)).collect();
     const friendIds = new Set(friendships.map(item => item.friendId));
-    const matches = users.filter(person => String(person._id) !== id
-      && person.name.toLowerCase().includes(search)).slice(0, 20);
+    const matches = users.filter(person => String(person._id) !== id);
     return await Promise.all(matches.map(async person => ({
       id: String(person._id), name: person.name, bio: "",
       avatar: await avatarOf(ctx, String(person._id)),
