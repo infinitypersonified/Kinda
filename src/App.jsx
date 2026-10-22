@@ -2137,6 +2137,7 @@ function App({ authClient }) {
       reminderTime: String(form.get("reminderTime") || ""),
       tzOffset: new Date().getTimezoneOffset(),
     };
+    if (!body.sharedWith.length) delete body.sharedWith;
     if (!body.title || body.title.length > 120) {
       notify("Task titles must be 1–120 characters.");
       return;
