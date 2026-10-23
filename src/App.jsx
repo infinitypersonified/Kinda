@@ -1297,7 +1297,9 @@ function App({ authClient }) {
     setFriendsLoaded(true);
     setActivity(saved.activity || []);
     setActivityLoaded(true);
-    if (saved.streak) setStreak(saved.streak);
+    // Streak values are server-derived. Do not briefly restore a stale cached count
+    // after a shared reset while the live Convex query is connecting.
+    setStreak(null);
     setNudges(saved.nudges || []);
   }, [user?.id]);
 
@@ -2343,6 +2345,26 @@ function App({ authClient }) {
     } catch (error) {
       if (soundReady)
         soundReady.then((context) => context.close()).catch(() => {});
+      if (action === "complete") {
+        try {
+          // A request can commit on Convex even if its response is interrupted.
+          // Reconcile before rolling back the optimistic checkbox state.
+          const latest = await api("/tasks");
+          const confirmed = latest.find((item) => item.id === task.id);
+          if (confirmed && confirmed.done === Boolean(body.done)) {
+            settleOps(opIds, confirmed);
+            if (confirmed.done) {
+              loadActivity().catch(() => {});
+              api(`/streak?tz=${new Date().getTimezoneOffset()}`)
+                .then(setStreak)
+                .catch(() => {});
+            }
+            return;
+          }
+        } catch {
+          // Fall through to the normal rollback when the server cannot be checked.
+        }
+      }
       settleOps(opIds);
       notify(error.message);
     }
