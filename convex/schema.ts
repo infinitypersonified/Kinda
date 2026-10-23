@@ -42,6 +42,7 @@ export default defineSchema({
     elapsedSeconds: v.number(),
     timerStartedAt: v.union(v.string(), v.null()),
     done: v.boolean(),
+    completedAt: v.optional(v.number()),
     repeat: v.optional(v.string()),
     reminderTime: v.optional(v.string()),
     reminderAt: v.optional(v.number()),
@@ -49,9 +50,11 @@ export default defineSchema({
     assignmentId: v.optional(v.id("assignments")),
     assignedByName: v.optional(v.string()),
     sharedWith: v.optional(v.array(v.string())),
+    seriesId: v.optional(v.id("tasks")),
+    recurrenceJobFor: v.optional(v.string()),
     movedFrom: v.optional(v.array(v.string())),
     createdAt: v.number()
-  }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]).index("by_assignment", ["assignmentId"]),
+  }).index("by_user", ["userId"]).index("by_user_created", ["userId", "createdAt"]).index("by_user_due", ["userId", "dueDate"]).index("by_assignment", ["assignmentId"]).index("by_series", ["seriesId"]).index("by_series_due", ["seriesId", "dueDate"]),
   assignments: defineTable({
     circleId: v.id("circles"),
     createdBy: v.string(),
@@ -68,7 +71,7 @@ export default defineSchema({
     taskId: v.id("tasks"),
     sharedBy: v.string(),
     createdAt: v.number()
-  }).index("by_circle", ["circleId"]).index("by_task", ["taskId"]).index("by_circle_task", ["circleId", "taskId"]),
+  }).index("by_circle", ["circleId"]).index("by_task", ["taskId"]).index("by_circle_task", ["circleId", "taskId"]).index("by_shared_by", ["sharedBy"]),
   messages: defineTable({
     circleId: v.id("circles"),
     senderId: v.string(),

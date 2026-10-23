@@ -5133,6 +5133,25 @@ html body .ring-number {
 .earlier-list {
   display: grid;
 }
+.earlier-day-group {
+  display: grid;
+  gap: 5px;
+  padding: 14px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+.earlier-day-group > h4 {
+  margin: 0 0 4px 21px;
+  color: var(--text);
+  font-size: 14px;
+}
+.earlier-status-group {
+  display: grid;
+  gap: 2px;
+}
+.earlier-status-group > .eyebrow {
+  margin-left: 21px;
+  font-size: 10px;
+}
 .earlier-row {
   display: flex;
   align-items: center;

@@ -111,6 +111,7 @@ async function removeMemberData(ctx: MutationCtx, circleId: Id<"circles">, userI
 }
 
 const STREAK_PERCENT = 80;
+const STREAK_MIN_TASKS = 5;
 
 async function removeTaskCompletely(ctx: MutationCtx, task: Doc<"tasks">) {
   for (const link of await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect()) await ctx.db.delete(link._id);
@@ -130,8 +131,8 @@ async function deleteCircleAssignments(ctx: MutationCtx, circleId: Id<"circles">
   }
 }
 
-async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
-  const links = await ctx.db.query("circleTasks")
+async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">, knownLinks?: Doc<"circleTasks">[]) {
+  const links = knownLinks ?? await ctx.db.query("circleTasks")
     .withIndex("by_task", q => q.eq("taskId", task._id)).collect();
   return {
     id: String(task._id),
@@ -145,15 +146,61 @@ async function mapTask(ctx: WorkspaceCtx, task: Doc<"tasks">) {
     elapsedSeconds: task.elapsedSeconds,
     timerStartedAt: task.timerStartedAt,
     done: task.done,
+    completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : null,
     repeat: task.repeat ?? "none",
     reminderTime: task.reminderTime ?? "",
     createdAt: task.createdAt,
     assignmentId: task.assignmentId ? String(task.assignmentId) : null,
     assignedByName: task.assignedByName ?? null,
     sharedWith: task.sharedWith ?? [],
+    seriesId: task.seriesId ? String(task.seriesId) : null,
     movedFrom: task.movedFrom ?? [],
     groupIds: links.map(link => String(link.circleId))
   };
+}
+
+async function scheduleRecurringOccurrence(ctx: MutationCtx, task: Doc<"tasks">) {
+  if (!task.dueDate || !task.repeat || task.repeat === "none") return;
+  const nextDate = nextDueDate(task.dueDate, task.repeat);
+  if (task.recurrenceJobFor === nextDate) return;
+  await ctx.db.patch(task._id, { recurrenceJobFor: nextDate });
+  const [year, month, day] = nextDate.split("-").map(Number);
+  const runAt = Date.UTC(year, month - 1, day) + (task.tzOffset ?? 0) * 60000;
+  const args = { sourceTaskId: task._id };
+  if (runAt <= Date.now()) await ctx.scheduler.runAfter(0, internal.workspace.generateRecurringOccurrence, args);
+  else await ctx.scheduler.runAt(runAt, internal.workspace.generateRecurringOccurrence, args);
+}
+
+async function ensureNextRecurringOccurrence(ctx: MutationCtx, source: Doc<"tasks">, root: Doc<"tasks">) {
+  if (!source.dueDate || !root.repeat || root.repeat === "none") return;
+  const seriesId = root._id;
+  const dueDate = nextDueDate(source.dueDate, root.repeat);
+  let next = await ctx.db.query("tasks").withIndex("by_series_due", q => q.eq("seriesId", seriesId).eq("dueDate", dueDate)).first();
+  if (!next) {
+    // Adopt the next task created by the previous recurrence implementation, if present.
+    const sameDay = await ctx.db.query("tasks").withIndex("by_user_due", q => q.eq("userId", root.userId).eq("dueDate", dueDate)).collect();
+    const legacy = sameDay.find(task => !task.seriesId && task.repeat === root.repeat && task.title === root.title && task.category === root.category && task.description === root.description);
+    if (legacy) {
+      await ctx.db.patch(legacy._id, { seriesId });
+      next = { ...legacy, seriesId };
+    }
+  }
+  if (!next) {
+    const now = Date.now();
+    const taskId = await ctx.db.insert("tasks", {
+      userId: root.userId, title: root.title, description: root.description, category: root.category,
+      dueDate, priority: root.priority, visibility: root.visibility, sharedWith: root.sharedWith,
+      targetMinutes: root.targetMinutes, elapsedSeconds: 0, timerStartedAt: null, done: false,
+      repeat: root.repeat, reminderTime: root.reminderTime ?? "", tzOffset: root.tzOffset,
+      reminderAt: reminderTimestamp(dueDate, root.reminderTime, root.tzOffset), seriesId, createdAt: now
+    });
+    await scheduleReminder(ctx, taskId, reminderTimestamp(dueDate, root.reminderTime, root.tzOffset));
+    for (const link of await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", root._id)).collect()) {
+      await ctx.db.insert("circleTasks", { circleId: link.circleId, taskId, sharedBy: root.userId, createdAt: now });
+    }
+    next = await ctx.db.get(taskId);
+  }
+  if (next) await scheduleRecurringOccurrence(ctx, next);
 }
 
 export const me = query({
@@ -194,7 +241,26 @@ export const listTasks = query({
     const { id } = await requireUser(ctx);
     const tasks = await ctx.db.query("tasks").withIndex("by_user_created", q => q.eq("userId", id))
       .order("desc").collect();
-    return await Promise.all(tasks.map(task => mapTask(ctx, task)));
+    const links = await ctx.db.query("circleTasks").withIndex("by_shared_by", q => q.eq("sharedBy", id)).collect();
+    const linksByTask = new Map<string, Doc<"circleTasks">[]>();
+    for (const link of links) {
+      const key = String(link.taskId);
+      const group = linksByTask.get(key) ?? [];
+      group.push(link);
+      linksByTask.set(key, group);
+    }
+    const oldestRecentDay = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const legacyCompleted = tasks.filter(task => task.done && !task.completedAt && task.dueDate && task.dueDate >= oldestRecentDay);
+    const completionTimes = await Promise.all(legacyCompleted.map(async task => {
+      const events = await ctx.db.query("activities").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
+      const latest = events.filter(event => event.type === "completed").sort((a, b) => b.createdAt - a.createdAt)[0];
+      return latest ? [String(task._id), new Date(latest.createdAt).toISOString()] as const : null;
+    }));
+    const legacyCompletionByTask = new Map(completionTimes.filter((entry): entry is readonly [string, string] => entry !== null));
+    return await Promise.all(tasks.map(async task => {
+      const mapped = await mapTask(ctx, task, linksByTask.get(String(task._id)) ?? []);
+      return task.completedAt ? mapped : { ...mapped, completedAt: legacyCompletionByTask.get(String(task._id)) ?? null };
+    }));
   }
 });
 
@@ -256,6 +322,11 @@ export const createTask = mutation({
     if (args.visibility === "friends") {
       await ctx.db.insert("activities", { userId: account.id, taskId, type: "created", createdAt: Date.now() });
     }
+    if (args.repeat && args.repeat !== "none" && args.dueDate) {
+      await ctx.db.patch(taskId, { seriesId: taskId });
+      const recurringTask = (await ctx.db.get(taskId))!;
+      await ensureNextRecurringOccurrence(ctx, recurringTask, recurringTask);
+    }
     return await mapTask(ctx, (await ctx.db.get(taskId))!);
   }
 });
@@ -282,7 +353,9 @@ export const updateTask = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task || task.userId !== id) throw new ConvexError("That task could not be found.");
     if (task.assignmentId) {
-      const unchanged = args.title === task.title && args.description === (task.description ?? "") && args.category === task.category && args.priority === task.priority && args.visibility === task.visibility && args.targetMinutes === task.targetMinutes && (args.repeat ?? "none") === (task.repeat ?? "none") && (args.reminderTime ?? "") === (task.reminderTime ?? "") && args.groupIds.length === (task.groupIds ?? []).length && args.groupIds.every((groupId, index) => String(groupId) === String(task.groupIds![index]));
+      const links = await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
+      const existingGroupIds = links.map(link => String(link.circleId));
+      const unchanged = args.title === task.title && args.description === (task.description ?? "") && args.category === task.category && args.priority === task.priority && args.visibility === task.visibility && args.targetMinutes === task.targetMinutes && (args.repeat ?? "none") === (task.repeat ?? "none") && (args.reminderTime ?? "") === (task.reminderTime ?? "") && args.groupIds.length === existingGroupIds.length && args.groupIds.every((groupId, index) => String(groupId) === existingGroupIds[index]);
       if (!unchanged) throw new ConvexError("This task was assigned by your circle owner, so its details can't be edited.");
       const movedFrom = task.movedFrom ?? [];
       if (!task.done && task.dueDate && args.dueDate !== task.dueDate && !movedFrom.includes(task.dueDate)) movedFrom.push(task.dueDate);
@@ -325,6 +398,23 @@ export const updateTask = mutation({
         await ctx.db.insert("circleTasks", { circleId, taskId: task._id, sharedBy: id, createdAt: Date.now() });
       }
     }
+    const repeat = args.repeat ?? "none";
+    const seriesId = task.seriesId ?? (repeat !== "none" && args.dueDate ? task._id : undefined);
+    if (seriesId !== task.seriesId) await ctx.db.patch(task._id, { seriesId });
+    const savedTask = (await ctx.db.get(task._id))!;
+    if (seriesId && repeat === "none") {
+      const root = await ctx.db.get(seriesId);
+      if (root && root.repeat !== "none") await ctx.db.patch(seriesId, { repeat: "none" });
+      const related = await ctx.db.query("tasks").withIndex("by_series", q => q.eq("seriesId", seriesId)).collect();
+      for (const occurrence of related) {
+        if (occurrence._id !== task._id && !occurrence.done && (!args.dueDate || !occurrence.dueDate || occurrence.dueDate >= args.dueDate)) {
+          await removeTaskCompletely(ctx, occurrence);
+        }
+      }
+    } else if (seriesId && repeat !== "none" && args.dueDate) {
+      const root = await ctx.db.get(seriesId);
+      if (root) await ensureNextRecurringOccurrence(ctx, savedTask, root);
+    }
     return await mapTask(ctx, (await ctx.db.get(task._id))!);
   }
 });
@@ -358,26 +448,31 @@ export const taskAction = mutation({
     } else {
       const done = Boolean(args.done);
       const elapsed = task.timerStartedAt ? Math.max(0, Math.floor((now - Date.parse(task.timerStartedAt)) / 1000)) : 0;
-      await ctx.db.patch(task._id, { done, elapsedSeconds: task.elapsedSeconds + elapsed, timerStartedAt: null });
+      await ctx.db.patch(task._id, { done, completedAt: done ? now : undefined, elapsedSeconds: task.elapsedSeconds + elapsed, timerStartedAt: null });
       if (done && !task.done) {
         await ctx.db.insert("activities", { userId: id, taskId: task._id, type: "completed", createdAt: now });
         if (task.repeat && task.repeat !== "none" && task.dueDate) {
-          const nextId = await ctx.db.insert("tasks", {
-            userId: id, title: task.title, description: task.description, category: task.category,
-            dueDate: nextDueDate(task.dueDate, task.repeat), priority: task.priority, visibility: task.visibility, sharedWith: task.sharedWith,
-            targetMinutes: task.targetMinutes, elapsedSeconds: 0, timerStartedAt: null, done: false,
-            repeat: task.repeat, reminderTime: task.reminderTime ?? "", tzOffset: task.tzOffset,
-            reminderAt: reminderTimestamp(nextDueDate(task.dueDate, task.repeat), task.reminderTime, task.tzOffset), createdAt: now
-          });
-          await scheduleReminder(ctx, nextId, reminderTimestamp(nextDueDate(task.dueDate, task.repeat), task.reminderTime, task.tzOffset));
-          const links = await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
-          for (const link of links) {
-            await ctx.db.insert("circleTasks", { circleId: link.circleId, taskId: nextId, sharedBy: id, createdAt: now });
-          }
+          const seriesId = task.seriesId ?? task._id;
+          if (!task.seriesId) await ctx.db.patch(task._id, { seriesId });
+          const root = await ctx.db.get(seriesId);
+          if (root && root.repeat !== "none") await ensureNextRecurringOccurrence(ctx, task, root);
         }
       }
     }
     return await mapTask(ctx, (await ctx.db.get(task._id))!);
+  }
+});
+
+export const generateRecurringOccurrence = internalMutation({
+  args: { sourceTaskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.sourceTaskId);
+    if (!source || !source.dueDate || !source.repeat || source.repeat === "none") return;
+    const seriesId = source.seriesId ?? source._id;
+    if (!source.seriesId) await ctx.db.patch(source._id, { seriesId });
+    const root = await ctx.db.get(seriesId);
+    if (!root || !root.repeat || root.repeat === "none") return;
+    await ensureNextRecurringOccurrence(ctx, source, root);
   }
 });
 
@@ -388,6 +483,17 @@ export const deleteTask = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task || task.userId !== id) throw new ConvexError("That task could not be found.");
     if (task.assignmentId) throw new ConvexError("This task was assigned by your circle owner, so it can't be deleted.");
+    const seriesId = task.seriesId ?? (task.repeat && task.repeat !== "none" ? task._id : null);
+    if (seriesId) {
+      const root = await ctx.db.get(seriesId);
+      if (root && root.repeat !== "none") await ctx.db.patch(seriesId, { repeat: "none" });
+      const related = await ctx.db.query("tasks").withIndex("by_series", q => q.eq("seriesId", seriesId)).collect();
+      for (const occurrence of related) {
+        if (occurrence._id !== task._id && !occurrence.done && (!task.dueDate || !occurrence.dueDate || occurrence.dueDate >= task.dueDate)) {
+          await removeTaskCompletely(ctx, occurrence);
+        }
+      }
+    }
     await removeTaskCompletely(ctx, task);
     return { ok: true };
   }
@@ -817,10 +923,10 @@ export const myStreak = query({
         perDay.set(movedDay, movedEntry);
       }
     }
-    // A day counts when at least one task was planned and 80% or more of that day's tasks are done.
+    // A day counts when at least five tasks were planned and 80% or more are done.
     const qualifies = (key: string) => {
       const entry = perDay.get(key);
-      return Boolean(entry && entry.total > 0 && entry.done * 100 >= entry.total * STREAK_PERCENT);
+      return Boolean(entry && entry.total >= STREAK_MIN_TASKS && entry.done * 100 >= entry.total * STREAK_PERCENT);
     };
     const keyAt = (offsetDays: number) => localDayKey(now - offsetDays * dayMs, args.tzOffset);
     const todayKey = keyAt(0);
@@ -837,8 +943,10 @@ export const myStreak = query({
       best = Math.max(best, run);
       previous = day;
     }
-    const needed = today.total ? Math.max(0, Math.ceil((STREAK_PERCENT * today.total) / 100) - today.done) : 0;
-    return { current, best, doneToday: qualifiedToday, todayTotal: today.total, todayDone: today.done, needed, percent: STREAK_PERCENT };
+    const needed = today.total < STREAK_MIN_TASKS
+      ? STREAK_MIN_TASKS - today.total
+      : Math.max(0, Math.ceil((STREAK_PERCENT * today.total) / 100) - today.done);
+    return { current, best, doneToday: qualifiedToday, todayTotal: today.total, todayDone: today.done, needed, percent: STREAK_PERCENT, minTasks: STREAK_MIN_TASKS };
   }
 });
 

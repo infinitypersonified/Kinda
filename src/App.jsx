@@ -292,8 +292,8 @@ const whatsNew = [
   ],
   [
     "🔥",
-    "Streaks now mean 80%",
-    "A day counts when you finish at least 80% of that day's tasks, not just one.",
+    "Streaks need 5 tasks + 80%",
+    "Plan at least 5 tasks and finish at least 80% of them for the day to count.",
   ],
   [
     "😊",
@@ -1637,6 +1637,13 @@ function App({ authClient }) {
   const openTasks = tasks.filter((task) => !task.done);
   const todayKey = localDate();
   const todayTasks = tasks.filter((task) => taskDay(task) === todayKey);
+  const recentPastDayKeys = Array.from({ length: 3 }, (_, index) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - index - 1);
+    return localDate(date);
+  });
+  const recentPastTasks = tasks.filter((task) => recentPastDayKeys.includes(taskDay(task)));
   const earlierOpenTasks = tasks.filter(
     (task) => !task.done && taskDay(task) < todayKey,
   );
@@ -2971,7 +2978,7 @@ function App({ authClient }) {
               total={todayTasks.length}
               completion={todayCompletion}
               remainingTasks={openTodayTasks.length}
-              earlier={earlierOpenTasks}
+              earlier={recentPastTasks}
               onMoveToToday={moveToToday}
               onShowEarlier={() => {
                 setFilter("Earlier");
@@ -3605,17 +3612,18 @@ function PageHeader({ eyebrow, title, description, action }) {
 
 function StreakLine({ streak, done, total, onShare }) {
   const threshold = Number(streak.percent) || 80;
+  const minTasks = Number(streak.minTasks) || 5;
   const current = Number(streak.current) || 0;
   const percentDone = total ? Math.round((done / total) * 100) : 0;
-  const reached = total > 0 && done * 100 >= total * threshold;
+  const reached = total >= minTasks && done * 100 >= total * threshold;
   const needed = total
     ? Math.max(0, Math.ceil((total * threshold) / 100) - done)
     : 0;
   let message;
   if (reached)
     message = `You’ve done ${percentDone}% of today’s tasks, so your streak is saved.`;
-  else if (total === 0)
-    message = `Plan a few tasks today and finish ${threshold}% of them to keep your streak alive.`;
+  else if (total < minTasks)
+    message = `Plan at least ${minTasks} tasks today, then finish ${threshold}% of them to keep your streak alive.`;
   else if (done === 0)
     message = "Start with one small task. Your streak is counting on today.";
   else if (needed === 1)
@@ -3638,11 +3646,18 @@ function StreakLine({ streak, done, total, onShare }) {
 
 function EarlierDays({ tasks, onMove, onShowAll }) {
   const [open, setOpen] = useState(false);
-  const movable = tasks;
+  const movable = tasks.filter((task) => !task.done);
+  const days = [...new Set(tasks.map(taskDay))]
+    .sort((left, right) => right.localeCompare(left))
+    .map((day) => ({
+      day,
+      done: tasks.filter((task) => taskDay(task) === day && task.done),
+      unfinished: tasks.filter((task) => taskDay(task) === day && !task.done),
+    }));
   return (
     <section
       className="earlier-days"
-      aria-label="Unfinished tasks from earlier days"
+      aria-label="Tasks from the previous three days"
     >
       <div className="earlier-bar">
         <button
@@ -3651,7 +3666,7 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
           onClick={() => setOpen((value) => !value)}
         >
           <ChevronDown size={15} className={open ? "open" : ""} />
-          <b>{tasks.length} unfinished from earlier days</b>
+          <b>Tasks from the previous 3 days ({tasks.length})</b>
         </button>
         {movable.length > 0 && (
           <button className="text-link" onClick={() => onMove(movable)}>
@@ -3661,25 +3676,41 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
       </div>
       {open && (
         <div className="earlier-list">
-          {tasks.slice(0, 4).map((task) => (
-            <div className="earlier-row" key={task.id}>
-              <span>
-                <b>{task.title}</b>
-                <small>
-                  {dayLabel(taskDay(task))}
-                  {task.assignmentId ? " · Assigned" : ""}
-                </small>
-              </span>
-              <button className="text-link" onClick={() => onMove([task])}>
-                Move to today
-              </button>
-            </div>
+          {days.map(({ day, done, unfinished }) => (
+            <section className="earlier-day-group" key={day}>
+              <h4>{dayLabel(day)}</h4>
+              {done.length > 0 && (
+                <div className="earlier-status-group">
+                  <small className="eyebrow">COMPLETED</small>
+                  {done.map((task) => (
+                    <div className="earlier-row" key={task.id}>
+                      <span>
+                        <b>{task.title}</b>
+                        <small>Done at {task.completedAt ? dateTime(task.completedAt) : "time unavailable"}{task.assignmentId ? " · Assigned" : ""}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {unfinished.length > 0 && (
+                <div className="earlier-status-group">
+                  <small className="eyebrow">NOT COMPLETED</small>
+                  {unfinished.map((task) => (
+                    <div className="earlier-row" key={task.id}>
+                      <span>
+                        <b>{task.title}</b>
+                        <small>{task.assignmentId ? "Assigned · not completed" : "Not completed"}</small>
+                      </span>
+                      <button className="text-link" onClick={() => onMove([task])}>Move to today</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           ))}
-          {tasks.length > 4 && (
-            <button className="text-link" onClick={onShowAll}>
-              See all {tasks.length}
-            </button>
-          )}
+          <button className="text-link" onClick={onShowAll}>
+            See all earlier tasks
+          </button>
         </div>
       )}
     </section>
@@ -6848,7 +6879,7 @@ function InviteScreen({ invitation, error, onSignup, onLogin, onHome }) {
               <span className="feature-label">YOUR OWN PACE</span>
               <h3>Keep a rhythm, not a streak of perfection.</h3>
               <p>
-                Finish 80% of today’s tasks to keep your streak going. Miss a
+                Plan at least 5 tasks and finish 80% to keep your streak going. Miss a
                 day? Start again kindly.
               </p>
             </div>
@@ -6898,7 +6929,7 @@ function InviteScreen({ invitation, error, onSignup, onLogin, onHome }) {
                 </div>
                 <div className="streak-progress-copy">
                   <span>Today’s progress</span>
-                  <b>80% to continue</b>
+                  <b>5 tasks + 80%</b>
                 </div>
                 <div className="streak-progress">
                   <i />
@@ -6969,7 +7000,7 @@ function Landing({ onStart, onLogin }) {
     ],
     streak: [
       "Streaks",
-      "Your streak continues when you complete at least 80% of the tasks planned for that day. It resets when you miss the threshold.",
+      "A day counts when you plan at least 5 tasks and finish 80% or more. It resets when you miss either threshold.",
       "A clear daily goal, without pretending a missed day counts.",
     ],
   };
@@ -7755,7 +7786,7 @@ function Landing({ onStart, onLogin }) {
               <span className="feature-label">YOUR OWN PACE</span>
               <h3>Keep a rhythm, not a streak of perfection.</h3>
               <p>
-                Finish 80% of today’s tasks to keep your streak going. Miss a
+                Plan at least 5 tasks and finish 80% to keep your streak going. Miss a
                 day? Start again kindly.
               </p>
             </div>
@@ -7805,7 +7836,7 @@ function Landing({ onStart, onLogin }) {
                 </div>
                 <div className="streak-progress-copy">
                   <span>Today’s progress</span>
-                  <b>80% to continue</b>
+                  <b>5 tasks + 80%</b>
                 </div>
                 <div className="streak-progress">
                   <i />
@@ -8184,7 +8215,7 @@ function LandingFeatureDetailPage({
     ],
     streak: [
       "Streaks",
-      "Complete at least 80% of the tasks planned for a day to continue your streak. Miss the threshold and it resets.",
+      "Plan at least 5 tasks and complete at least 80% of that day's tasks to continue your streak. Miss either threshold and it resets.",
     ],
   }[feature];
   const preview =
@@ -8264,7 +8295,7 @@ function LandingFeatureDetailPage({
           <span style={{ width: "67%" }} />
         </div>
         <p>
-          Complete 3 of 3 planned tasks today to reach 80% and keep this streak
+          Plan 5 tasks and complete at least 4 to reach 80% and keep this streak
           going.
         </p>
       </section>
