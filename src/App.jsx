@@ -1643,7 +1643,9 @@ function App({ authClient }) {
     date.setDate(date.getDate() - index - 1);
     return localDate(date);
   });
-  const recentPastTasks = tasks.filter((task) => recentPastDayKeys.includes(taskDay(task)));
+  const recentPastTasks = tasks.filter((task) =>
+    [taskDay(task), ...(task.movedFrom || [])].some((day) => recentPastDayKeys.includes(day)),
+  );
   const olderOpenTasks = tasks.filter(
     (task) => !task.done && taskDay(task) < recentPastDayKeys[recentPastDayKeys.length - 1],
   );
@@ -3978,7 +3980,7 @@ function TasksPage({
           ),
         )}
       </div>
-      {(filter === "Today" || filter === "Earlier") && recentTasks.length > 0 && (
+      {filter === "Earlier" && recentTasks.length > 0 && (
         <TaskHistory tasks={recentTasks} onMove={onMoveToToday} />
       )}
       {!loaded ? (
@@ -4016,12 +4018,17 @@ function TasksPage({
 }
 
 function TaskHistory({ tasks, onMove }) {
-  const days = [...new Set(tasks.map(taskDay))]
+  const history = tasks.flatMap((task) => {
+    const days = [...new Set([taskDay(task), ...(task.movedFrom || [])])]
+      .filter((day) => day < localDate());
+    return days.map((day) => ({ task, day }));
+  });
+  const days = [...new Set(history.map((entry) => entry.day))]
     .sort((a, b) => b.localeCompare(a))
     .map((day) => ({
       day,
-      done: tasks.filter((task) => taskDay(task) === day && task.done),
-      unfinished: tasks.filter((task) => taskDay(task) === day && !task.done),
+      done: history.filter((entry) => entry.day === day && entry.task.done).map((entry) => entry.task),
+      unfinished: history.filter((entry) => entry.day === day && !entry.task.done).map((entry) => entry.task),
     }));
   return (
     <section className="task-history" aria-label="Tasks from the previous three days">
