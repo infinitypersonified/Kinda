@@ -250,7 +250,11 @@ export const listTasks = query({
       linksByTask.set(key, group);
     }
     const oldestRecentDay = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const legacyCompleted = tasks.filter(task => task.done && !task.completedAt && task.dueDate && task.dueDate >= oldestRecentDay);
+    const legacyCompleted = tasks.filter(task => {
+      if (!task.done || task.completedAt) return false;
+      const taskDay = task.dueDate ?? new Date(task._creationTime).toISOString().slice(0, 10);
+      return taskDay >= oldestRecentDay;
+    });
     const completionTimes = await Promise.all(legacyCompleted.map(async task => {
       const events = await ctx.db.query("activities").withIndex("by_task", q => q.eq("taskId", task._id)).collect();
       const latest = events.filter(event => event.type === "completed").sort((a, b) => b.createdAt - a.createdAt)[0];

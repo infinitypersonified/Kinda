@@ -1644,8 +1644,8 @@ function App({ authClient }) {
     return localDate(date);
   });
   const recentPastTasks = tasks.filter((task) => recentPastDayKeys.includes(taskDay(task)));
-  const earlierOpenTasks = tasks.filter(
-    (task) => !task.done && taskDay(task) < todayKey,
+  const olderOpenTasks = tasks.filter(
+    (task) => !task.done && taskDay(task) < recentPastDayKeys[recentPastDayKeys.length - 1],
   );
   const sharedTasksToday = sharedTasks.filter(
     (task) => taskDay(task) === todayKey,
@@ -1703,14 +1703,14 @@ function App({ authClient }) {
   const openTodayTasks = todayTasks.filter((task) => !task.done);
   const filteredTasks = useMemo(() => {
     if (filter === "Completed") return doneTasks;
-    if (filter === "Earlier") return earlierOpenTasks;
+    if (filter === "Earlier") return olderOpenTasks;
     if (filter === "Upcoming")
       return openTasks.filter(
         (task) => task.dueDate && task.dueDate > localDate(),
       );
     if (filter === "No date") return openTasks.filter((task) => !task.dueDate);
     return todayTasks;
-  }, [filter, doneTasks, openTasks, todayTasks, earlierOpenTasks]);
+  }, [filter, doneTasks, openTasks, todayTasks, olderOpenTasks]);
 
   useEffect(() => {
     document.title =
@@ -2978,12 +2978,6 @@ function App({ authClient }) {
               total={todayTasks.length}
               completion={todayCompletion}
               remainingTasks={openTodayTasks.length}
-              earlier={recentPastTasks}
-              onMoveToToday={moveToToday}
-              onShowEarlier={() => {
-                setFilter("Earlier");
-                navigate("tasks");
-              }}
               leaderboardGroupId={leaderboardGroupId ?? groups[0]?.id}
               onSelectLeaderboardGroup={setLeaderboardGroupId}
               activity={activity.slice(0, 4)}
@@ -3025,6 +3019,8 @@ function App({ authClient }) {
               loaded={tasksLoaded}
               justDoneId={justDoneId}
               tasks={filteredTasks}
+              recentTasks={recentPastTasks}
+              onMoveToToday={moveToToday}
               filter={filter}
               setFilter={setFilter}
               allCount={tasks.length}
@@ -3942,6 +3938,8 @@ function HomePage({
 
 function TasksPage({
   tasks,
+  recentTasks = [],
+  onMoveToToday,
   filter,
   setFilter,
   allCount,
@@ -3980,6 +3978,9 @@ function TasksPage({
           ),
         )}
       </div>
+      {(filter === "Today" || filter === "Earlier") && recentTasks.length > 0 && (
+        <TaskHistory tasks={recentTasks} onMove={onMoveToToday} />
+      )}
       {!loaded ? (
         <SkeletonList rows={4} />
       ) : tasks.length ? (
@@ -4011,6 +4012,39 @@ function TasksPage({
         />
       )}
     </div>
+  );
+}
+
+function TaskHistory({ tasks, onMove }) {
+  const days = [...new Set(tasks.map(taskDay))]
+    .sort((a, b) => b.localeCompare(a))
+    .map((day) => ({
+      day,
+      done: tasks.filter((task) => taskDay(task) === day && task.done),
+      unfinished: tasks.filter((task) => taskDay(task) === day && !task.done),
+    }));
+  return (
+    <section className="task-history" aria-label="Tasks from the previous three days">
+      <div className="section-title-row"><h2>Previous 3 days</h2></div>
+      {days.map(({ day, done, unfinished }) => (
+        <section className="earlier-day-group" key={day}>
+          <h4>{dayLabel(day)}</h4>
+          {done.length > 0 && <div className="earlier-status-group">
+            <small className="eyebrow">COMPLETED</small>
+            {done.map((task) => <div className="earlier-row" key={task.id}>
+              <span><b>{task.title}</b><small>Done at {task.completedAt ? dateTime(task.completedAt) : "time unavailable"}</small></span>
+            </div>)}
+          </div>}
+          {unfinished.length > 0 && <div className="earlier-status-group">
+            <small className="eyebrow">NOT COMPLETED</small>
+            {unfinished.map((task) => <div className="earlier-row" key={task.id}>
+              <span><b>{task.title}</b><small>{task.assignmentId ? "Assigned · not completed" : "Not completed"}</small></span>
+              <button className="text-link" onClick={() => onMove(unfinished.filter((item) => item.id === task.id))}>Move to today</button>
+            </div>)}
+          </div>}
+        </section>
+      ))}
+    </section>
   );
 }
 
