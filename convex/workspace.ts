@@ -941,6 +941,8 @@ export const myStreak = query({
     const qualifiedToday = todayKey > STREAK_RESET_DAY && qualifies(todayKey);
     let current = 0;
     for (let offset = qualifiedToday ? 0 : 1; keyAt(offset) >= STREAK_RESET_DAY && qualifies(keyAt(offset)); offset++) current++;
+    // Treat the shared reset point as a two-day baseline for every account.
+    if (current > 0 && todayKey >= STREAK_RESET_DAY) current++;
     const sorted = [...perDay.keys()].filter(qualifies).sort();
     let best = 0;
     let run = 0;
