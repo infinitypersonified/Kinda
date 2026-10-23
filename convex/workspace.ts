@@ -112,6 +112,8 @@ async function removeMemberData(ctx: MutationCtx, circleId: Id<"circles">, userI
 
 const STREAK_PERCENT = 80;
 const STREAK_MIN_TASKS = 5;
+// Shared restart point: every user's current streak begins at one on this day.
+const STREAK_RESET_DAY = "2026-10-23";
 
 async function removeTaskCompletely(ctx: MutationCtx, task: Doc<"tasks">) {
   for (const link of await ctx.db.query("circleTasks").withIndex("by_task", q => q.eq("taskId", task._id)).collect()) await ctx.db.delete(link._id);
@@ -929,15 +931,16 @@ export const myStreak = query({
     }
     // A day counts when at least five tasks were planned and 80% or more are done.
     const qualifies = (key: string) => {
+      if (key === STREAK_RESET_DAY) return true;
       const entry = perDay.get(key);
       return Boolean(entry && entry.total >= STREAK_MIN_TASKS && entry.done * 100 >= entry.total * STREAK_PERCENT);
     };
     const keyAt = (offsetDays: number) => localDayKey(now - offsetDays * dayMs, args.tzOffset);
     const todayKey = keyAt(0);
     const today = perDay.get(todayKey) ?? { total: 0, done: 0 };
-    const qualifiedToday = qualifies(todayKey);
+    const qualifiedToday = todayKey > STREAK_RESET_DAY && qualifies(todayKey);
     let current = 0;
-    for (let offset = qualifiedToday ? 0 : 1; qualifies(keyAt(offset)); offset++) current++;
+    for (let offset = qualifiedToday ? 0 : 1; keyAt(offset) >= STREAK_RESET_DAY && qualifies(keyAt(offset)); offset++) current++;
     const sorted = [...perDay.keys()].filter(qualifies).sort();
     let best = 0;
     let run = 0;
