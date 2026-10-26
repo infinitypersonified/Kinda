@@ -77,8 +77,12 @@ export function createSupabaseLive(client, api) {
   return function live(path, onData, onError = () => {}) {
     let stopped = false;
     let pending = false;
+    let fallbackTimer = null;
     const channelName = `kinda:${crypto.randomUUID()}`;
     const channel = client.channel(channelName);
+    const pathname = new URL(path, window.location.origin).pathname;
+    const shouldPoll = pathname === "/tasks" || pathname === "/groups" ||
+      /^\/groups\/[^/]+\/goals$/.test(pathname);
     const refresh = () => {
       if (stopped || pending) return;
       pending = true;
@@ -92,16 +96,54 @@ export function createSupabaseLive(client, api) {
         }
       }, 80);
     };
-    for (const tableSpec of tablesForPath(new URL(path, window.location.origin).pathname)) {
+    const stopFallback = () => {
+      if (fallbackTimer !== null) {
+        window.clearInterval(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+    const startFallback = () => {
+      if (!shouldPoll || fallbackTimer !== null || stopped) return;
+      // Keep tasks and circle views current if a network blocks Realtime sockets.
+      // Skip background tabs to avoid spending API quota while the app is unused.
+      refresh();
+      fallbackTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible") refresh();
+      }, 60_000);
+    };
+    const onVisibilityChange = () => {
+      if (
+        !stopped && document.visibilityState === "visible" &&
+        fallbackTimer !== null
+      ) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    for (const tableSpec of tablesForPath(pathname)) {
       const [table, filter] = Array.isArray(tableSpec) ? tableSpec : [tableSpec, undefined];
       channel.on("postgres_changes", { event: "*", schema: "public", table, ...(filter ? { filter } : {}) }, refresh);
     }
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") refresh();
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") onError(new Error("Live updates could not connect."));
+    channel.subscribe((status, error) => {
+      if (status === "SUBSCRIBED") {
+        stopFallback();
+        refresh();
+      }
+      if (
+        status === "CHANNEL_ERROR" || status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
+        startFallback();
+        const detail = error?.message ? ` (${error.message})` : "";
+        onError(
+          new Error(
+            `Live updates could not connect${detail}. Task and circle data will sync every minute.`,
+          ),
+        );
+      }
     });
     return () => {
       stopped = true;
+      stopFallback();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       client.removeChannel(channel);
     };
   };
