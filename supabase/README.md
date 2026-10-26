@@ -6,9 +6,10 @@ being prepared. Do not remove the Convex project or its data.
 ## Database setup
 
 1. Open the Kinda project in Supabase and go to **SQL Editor**.
-2. Run `migrations/202610260001_initial_schema.sql` once, then run
-   `migrations/202610260002_performance_indexes.sql` once. The second migration
-   only adds indexes and can be rerun safely.
+2. Run migrations `202610260001_initial_schema.sql` through
+   `202610260004_task_reminder_compat.sql` in order. The compatibility
+   migration safely adds reminder tracking to databases created from the
+   earlier schema.
 3. In **Project Settings > API**, copy the Project URL and publishable key into
    the local `.env.local` as `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_PUBLISHABLE_KEY`.
@@ -17,13 +18,10 @@ being prepared. Do not remove the Convex project or its data.
 
 The schema keeps `legacy_id` values so imported Convex document IDs can be
 mapped and the import can be retried safely. App data references Supabase Auth
-UUIDs. Existing accounts are provisioned first by the importer. Better Auth's
-password format in this project is not directly compatible with Supabase Auth,
-so existing users cannot keep their old passwords. Supabase Auth provisions
-their accounts with confirmed email addresses. When an imported user signs in
-with Google using that same verified email address, Supabase links the Google
-identity to the existing account, preserving access to its imported app data.
-Email/password users need to set a new password through account recovery.
+UUIDs. Existing accounts are provisioned first by the importer. A one-time
+server-side transition verifies existing Better Auth scrypt hashes and sets
+the same password in Supabase Auth at the user's first email/password login.
+Google can also be used with the same verified email address.
 
 ## Data import (only after the SQL schema is installed)
 
@@ -49,7 +47,16 @@ Email/password users need to set a new password through account recovery.
 
    The secret key is only used by this local migration script. Never use it as
    a `VITE_*` variable or share it in chat.
-4. The script prints row counts and saves a local user-ID map for safe retries.
+4. Import the credential hashes from the same Convex export into the protected
+   transition table:
+
+   ```powershell
+   npm run import:supabase-passwords -- .\convex-export-live
+   ```
+
+   Hashes are checked server-side at first login, upgraded into Supabase Auth,
+   and deleted after success. They are never printed or exposed to clients.
+5. The importer prints row counts and saves a local user-ID map for safe retries.
    Compare those counts with Convex. Recheck what Supabase currently contains
    at any time with:
 
@@ -57,19 +64,15 @@ Email/password users need to set a new password through account recovery.
    npm run verify:supabase-import
    ```
 
-The importer never deletes or modifies Convex. It creates Supabase Auth users
-with confirmed email addresses and no copied password, because the existing
-Better Auth hash is scrypt while Supabase expects its supported hash formats.
-If users will sign in with Google, confirm Google sign-in by using a Google
-account with the same verified email as an imported user. Configure email
-delivery only if users also need email/password recovery or email confirmations.
+The importer never deletes or modifies Convex. Configure Google sign-in only as
+an optional method, using the same verified email as the imported account.
 
 Do not switch the live site to Supabase until the import counts are checked,
 authentication is verified, and the app's API/realtime layer is ready.
 
 ## Current migration status
 
-This is a staged migration, not a production cutover. The app still defaults to
+This migration has been deployed in stages. The app still defaults to
 Convex unless `VITE_BACKEND=supabase` is set. The API and scheduler cover the main
 account, task, circle, chat, activity, nudge, streak, push, reminder, recurrence,
 calendar, Google Calendar, and Telegram flows. They still need deployment and

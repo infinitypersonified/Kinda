@@ -9,7 +9,7 @@ const response = await fetch(`${supabaseUrl}/auth/v1/settings`, {
 });
 if (!response.ok) throw new Error(`Auth settings request failed: HTTP ${response.status}`);
 const settings = await response.json();
-const localRedirect = "http://127.0.0.1:5173/";
+const localRedirect = process.env.VITE_SITE_URL || "http://127.0.0.1:5173/";
 const authorizationUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
 authorizationUrl.searchParams.set("provider", "google");
 authorizationUrl.searchParams.set("redirect_to", localRedirect);

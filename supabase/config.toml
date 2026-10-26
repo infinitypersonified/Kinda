@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.scheduler]
 verify_jwt = false
+
+[functions.migrate-legacy-password]
+verify_jwt = false

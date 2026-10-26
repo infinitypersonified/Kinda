@@ -44,8 +44,26 @@ export function createSupabaseAuthClient(supabase) {
     },
     signIn: {
       email: async ({ email, password }) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        return { data, error };
+        const firstAttempt = await supabase.auth.signInWithPassword({ email, password });
+        if (!firstAttempt.error) return firstAttempt;
+        if (
+          firstAttempt.error.code !== "invalid_credentials" &&
+          !/invalid login credentials/i.test(firstAttempt.error.message || "")
+        ) return firstAttempt;
+
+        // Existing Better Auth passwords are checked server-side against the
+        // imported scrypt hash, then upgraded into Supabase Auth on first login.
+        const { data: migration, error: migrationError } = await supabase.functions
+          .invoke("migrate-legacy-password", { body: { email, password } });
+        if (migrationError) {
+          const details = await migrationError.context?.json?.().catch(() => null);
+          if (details?.error && !/invalid email or password/i.test(details.error)) {
+            return { data: null, error: new Error(details.error) };
+          }
+          return firstAttempt;
+        }
+        if (!migration?.migrated) return firstAttempt;
+        return await supabase.auth.signInWithPassword({ email, password });
       },
       social: async ({ provider, callbackURL }) => {
         const { data, error } = await supabase.auth.signInWithOAuth({

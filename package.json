@@ -8,6 +8,7 @@
     "dev:convex": "convex dev",
     "build": "vite build",
     "migrate:supabase": "node --env-file=./supabase/env.migration scripts/migrate-convex-to-supabase.mjs",
+    "import:supabase-passwords": "node --env-file=./supabase/env.migration scripts/import-legacy-passwords.mjs",
     "verify:supabase-import": "node --env-file=./supabase/env.migration scripts/verify-supabase-import.mjs",
     "check:supabase-functions": "node --env-file=./supabase/env.migration scripts/check-supabase-functions.mjs",
     "check:supabase-auth": "node --env-file=.env.local scripts/check-supabase-auth-settings.mjs",
