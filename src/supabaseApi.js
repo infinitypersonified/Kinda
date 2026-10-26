@@ -15,9 +15,31 @@ function friendlyError(cause) {
 }
 
 export function createSupabaseApi(client) {
-  return async function supabaseApi(path, options = {}) {
+  const cache = new Map();
+  const inFlightGets = new Map();
+  const cacheTtlMs = 8_000;
+
+  const invalidateCache = () => cache.clear();
+
+  const api = async function supabaseApi(path, options = {}) {
     const url = new URL(path, window.location.origin);
     const method = options.method || "GET";
+    const cacheKey = `${url.pathname}${url.search}`;
+    const canCache = method === "GET" && options.cache !== "no-store";
+
+    if (method === "GET") {
+      if (canCache) {
+        const cached = cache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) return structuredClone(cached.data);
+        if (cached) cache.delete(cacheKey);
+      }
+      const pending = inFlightGets.get(cacheKey);
+      if (pending) return structuredClone(await pending);
+    } else {
+      invalidateCache();
+    }
+
+    const request = (async () => {
     try {
       const invoke = async (query) => {
         const { data, error } = await client.functions.invoke("api", {
@@ -36,21 +58,41 @@ export function createSupabaseApi(client) {
         return data;
       };
       const query = Object.fromEntries(url.searchParams.entries());
+      let result;
       if (method === "GET" && url.pathname === "/tasks") {
         const pageSize = 500;
         const rows = [];
         for (let offset = 0; ; offset += pageSize) {
           const page = await invoke({ ...query, limit: pageSize, offset });
-          if (!Array.isArray(page)) return page;
+          if (!Array.isArray(page)) {
+            result = page;
+            break;
+          }
           rows.push(...page);
-          if (page.length < pageSize) return rows;
+          if (page.length < pageSize) {
+            result = rows;
+            break;
+          }
         }
+      } else {
+        result = await invoke(query);
       }
-      return await invoke(query);
+      if (canCache) cache.set(cacheKey, { data: structuredClone(result), expiresAt: Date.now() + cacheTtlMs });
+      return result;
     } catch (cause) {
       throw friendlyError(cause);
+    } finally {
+      if (method === "GET") inFlightGets.delete(cacheKey);
     }
+    })();
+
+    if (method === "GET") inFlightGets.set(cacheKey, request);
+    return request;
   };
+
+  api.invalidateCache = invalidateCache;
+  client.auth.onAuthStateChange(() => invalidateCache());
+  return api;
 }
 
 const tablesForPath = (path) => {
@@ -97,7 +139,8 @@ export function createSupabaseLive(client, api) {
         if (stopped || inFlight) return;
         inFlight = true;
         try {
-          onData(await api(path));
+          api.invalidateCache?.();
+          onData(await api(path, { cache: "no-store" }));
         } catch (error) {
           onError(friendlyError(error));
         } finally {

@@ -612,7 +612,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const { error: seriesError } = await db.from("tasks").update({
           series_id: task.id,
         }).eq("id", task.id);
-        if (seriesError) throw seriesError;
+        if (seriesError) {
+          await db.from("tasks").delete().eq("id", task.id).eq("user_id", userId);
+          throw seriesError;
+        }
         task.series_id = task.id;
       }
       if (groupIds.length) {
@@ -624,15 +627,20 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const { error: linkError } = await db.from("circle_tasks").insert(
           links,
         );
-        if (linkError) throw linkError;
+        if (linkError) {
+          // Avoid leaving a task that appears created but is not attached to its Circle.
+          await db.from("tasks").delete().eq("id", task.id).eq("user_id", userId);
+          throw linkError;
+        }
       }
       if (sharedWith.length || fields.visibility === "friends") {
-        const { error: activityError } = await db.from("activities").insert({
+        // Activity is secondary; a feed-write failure must not make the client retry
+        // an already-created task and accidentally create a duplicate.
+        await db.from("activities").insert({
           user_id: userId,
           task_id: task.id,
           type: "created",
         });
-        if (activityError) throw activityError;
       }
       return response(201, await taskWithGroups(task));
     }
