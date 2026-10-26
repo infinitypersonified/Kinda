@@ -6,3 +6,10 @@ dist/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+.supabase-user-map.json
+convex-export*/
+convex-export*.zip
+.env.migration
+/supabase/env.migration
+/supabase/functions/.env
+/supabase/scheduler-setup.local.sql

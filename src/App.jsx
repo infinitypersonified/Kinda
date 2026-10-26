@@ -59,6 +59,8 @@ import {
   X,
 } from "lucide-react";
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
+import { createSupabaseApi, createSupabaseLive } from "./supabaseApi.js";
+import { createSupabaseAuthClient } from "./supabaseAuth.js";
 import { WeeklyPage, CircleWeeklyPanel } from "./weekly.jsx";
 import { shareProgressCard, socialShareUrl } from "./share.js";
 import { emojiGroups } from "./emoji.js";
@@ -938,10 +940,12 @@ function WhatsNewDialog({ onClose }) {
   );
 }
 
-function App({ authClient }) {
-  const convexClient = useConvex();
+function WorkspaceApp({ authClient, backendClient, backend }) {
+  const convexClient = backendClient;
   const api = useMemo(() => {
-    const base = createCloudApi(convexClient);
+    const base = backend === "supabase"
+      ? createSupabaseApi(convexClient)
+      : createCloudApi(convexClient);
     return async (path, options) => {
       for (let attempt = 0; ; attempt += 1) {
         try {
@@ -959,8 +963,13 @@ function App({ authClient }) {
         }
       }
     };
-  }, [convexClient, authClient]);
-  const live = useMemo(() => createCloudLive(convexClient), [convexClient]);
+  }, [convexClient, authClient, backend]);
+  const live = useMemo(
+    () => backend === "supabase"
+      ? createSupabaseLive(convexClient, api)
+      : createCloudLive(convexClient),
+    [convexClient, backend, api],
+  );
   const { data: authSession, isPending: authPending } = authClient.useSession();
   const inviteTokenFromUrl =
     window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]{32,})\/?$/)?.[1] ||
@@ -1068,6 +1077,12 @@ function App({ authClient }) {
     opsRef.current = [];
     setTasks([]);
   }, []);
+  const refreshTasks = useCallback(async () => {
+    const latest = await api("/tasks");
+    applyServerTasks(latest);
+    setTasksLoaded(true);
+    return latest;
+  }, [api, applyServerTasks]);
   const [assignments, setAssignments] = useState([]);
   const [assignDialog, setAssignDialog] = useState(false);
   const [assignmentToDelete, setAssignmentToDelete] = useState(null);
@@ -1234,7 +1249,9 @@ function App({ authClient }) {
           writeJson("kinda:boot", { user: value });
           setUser(value);
           setProfile(value);
-          setScreen("dashboard");
+          const recoveringPassword = new URLSearchParams(window.location.search).has("reset-password")
+            || new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery";
+          setScreen(recoveringPassword ? "reset" : "dashboard");
           setLoading(false);
         }
       })
@@ -2031,7 +2048,8 @@ function App({ authClient }) {
           url.searchParams.get("token") ||
           url.pathname.match(/\/reset-password\/([^/]+)/)?.[1] ||
           "";
-        if (!token)
+        const supabaseRecovery = new URLSearchParams(url.hash.slice(1)).get("type") === "recovery";
+        if (!token && !supabaseRecovery)
           throw new Error(
             "This reset link is missing its token. Request a new password reset link.",
           );
@@ -2065,6 +2083,11 @@ function App({ authClient }) {
         throw new Error(
           "Sign-in completed without an account. Please try again.",
         );
+      if (backend === "supabase" && screen === "signup" && !response.data?.session) {
+        setAuthNotice("Check your email to confirm your account, then log in.");
+        setScreen("login");
+        return;
+      }
       await authClient.convex.token();
       setPage("home");
     } catch (error) {
@@ -2165,6 +2188,7 @@ function App({ authClient }) {
           body: JSON.stringify(body),
         });
         settleOps([opId], updated);
+        refreshTasks().catch((error) => notify(error.message));
       } catch (error) {
         settleOps([opId]);
         notify(error.message);
@@ -2189,6 +2213,7 @@ function App({ authClient }) {
         body: JSON.stringify(body),
       });
       settleOps([opId], created);
+      refreshTasks().catch((error) => notify(error.message));
       if (body.visibility === "friends")
         loadActivity().catch((error) => notify(error.message));
     } catch (error) {
@@ -2299,6 +2324,7 @@ function App({ authClient }) {
         });
       }
       settleOps(opIds, updated);
+      refreshTasks().catch((error) => notify(error.message));
       if (action === "complete" && updated.done) {
         loadActivity().catch((error) => notify(error.message));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
@@ -2399,6 +2425,7 @@ function App({ authClient }) {
     });
     try {
       settleOps([opId], await patchTask(task, { targetMinutes }));
+      refreshTasks().catch((error) => notify(error.message));
     } catch (error) {
       settleOps([opId]);
       notify(error.message);
@@ -2448,6 +2475,7 @@ function App({ authClient }) {
         }
       }),
     );
+    refreshTasks().catch((error) => notify(error.message));
   }
 
   async function deleteTask(task) {
@@ -2462,6 +2490,7 @@ function App({ authClient }) {
     try {
       await api(`/tasks/${task.id}`, { method: "DELETE" });
       settleOps([opId], null, task.id);
+      refreshTasks().catch((error) => notify(error.message));
     } catch (error) {
       settleOps([opId]);
       notify(error.message);
@@ -8587,6 +8616,16 @@ function AuthScreen({
       </div>
     </main>
   );
+}
+
+function App({ authClient }) {
+  const convexClient = useConvex();
+  return <WorkspaceApp authClient={authClient} backendClient={convexClient} backend="convex" />;
+}
+
+export function SupabaseApp({ client }) {
+  const authClient = useMemo(() => createSupabaseAuthClient(client), [client]);
+  return <WorkspaceApp authClient={authClient} backendClient={client} backend="supabase" />;
 }
 
 export default App;
