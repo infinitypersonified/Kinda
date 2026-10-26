@@ -437,4 +437,5 @@ alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.typing;
 alter publication supabase_realtime add table public.activities;
+alter publication supabase_realtime add table public.reactions;
 alter publication supabase_realtime add table public.nudges;

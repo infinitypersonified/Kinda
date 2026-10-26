@@ -1,13 +1,14 @@
 # Supabase migration
 
-The current production app remains connected to Convex while this migration is
-being prepared. Do not remove the Convex project or its data.
+The production frontend is using Supabase. Keep the Convex project and its data
+available as a rollback/source copy until Supabase data and integrations have
+been verified.
 
 ## Database setup
 
 1. Open the Kinda project in Supabase and go to **SQL Editor**.
 2. Run migrations `202610260001_initial_schema.sql` through
-   `202610260004_task_reminder_compat.sql` in order. The compatibility
+   `202610260005_reactions_realtime.sql` in order. The compatibility
    migration safely adds reminder tracking to databases created from the
    earlier schema.
 3. In **Project Settings > API**, copy the Project URL and publishable key into
@@ -72,12 +73,12 @@ authentication is verified, and the app's API/realtime layer is ready.
 
 ## Current migration status
 
-This migration has been deployed in stages. The app still defaults to
-Convex unless `VITE_BACKEND=supabase` is set. The API and scheduler cover the main
-account, task, circle, chat, activity, nudge, streak, push, reminder, recurrence,
-calendar, Google Calendar, and Telegram flows. They still need deployment and
-verification against an imported snapshot. Do not enable the Supabase backend
-for all users until that verification is complete.
+This migration has been deployed in stages. The frontend uses Supabase when
+`VITE_BACKEND=supabase` is set and falls back to Convex when the setting is
+empty. The API and scheduler cover the main account, task, circle, chat,
+activity, nudge, streak, push, reminder, recurrence, calendar, Google Calendar,
+and Telegram flows. Redeploy the API after changing its source and verify it
+against the imported snapshot before removing the Convex rollback copy.
 
 Deploying the Edge Functions requires the Supabase CLI and a Supabase access
 token entered through `npx supabase login` (do not put that token in this

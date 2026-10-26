@@ -10,7 +10,6 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useConvex } from "convex/react";
-import posthog from "posthog-js";
 import {
   ArrowLeft,
   ArrowRight,
@@ -61,9 +60,16 @@ import {
 import { createCloudApi, createCloudLive } from "./cloudApi.js";
 import { createSupabaseApi, createSupabaseLive } from "./supabaseApi.js";
 import { createSupabaseAuthClient } from "./supabaseAuth.js";
-import { WeeklyPage, CircleWeeklyPanel } from "./weekly.jsx";
+import { capturePageview } from "./analytics.js";
 import { shareProgressCard, socialShareUrl } from "./share.js";
 import { emojiGroups } from "./emoji.js";
+
+const WeeklyPage = React.lazy(() =>
+  import("./weekly.jsx").then((module) => ({ default: module.WeeklyPage })),
+);
+const CircleWeeklyPanel = React.lazy(() =>
+  import("./weekly.jsx").then((module) => ({ default: module.CircleWeeklyPanel })),
+);
 
 const ClockContext = createContext(Date.now());
 
@@ -1185,25 +1191,95 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   }, [messagesByGroup, goalsByGroup, user?.id]);
 
   const loadWorkspace = useCallback(async () => {
-    const [taskData, friendData, groupData] = await Promise.all([
-      api("/tasks"),
-      api("/friends"),
-      api("/groups"),
-    ]);
-    applyServerTasks(taskData);
-    setFriends(friendData);
-    setGroups(groupData);
-    setActiveGroup(
-      (current) =>
+    const taskRequest = api("/tasks").then((taskData) => {
+      applyServerTasks(taskData);
+      setTasksLoaded(true);
+    });
+    const friendRequest = api("/friends").then((friendData) => {
+      setFriends(friendData);
+      setFriendsLoaded(true);
+    });
+    const groupRequest = api("/groups").then((groupData) => {
+      setGroups(groupData);
+      setGroupsLoaded(true);
+      setActiveGroup((current) =>
         groupData.find((group) => group.id === current?.id) ||
         groupData[0] ||
         null,
-    );
+      );
+    });
+    await Promise.all([taskRequest, friendRequest, groupRequest]);
   }, [api, applyServerTasks]);
 
   const loadActivity = useCallback(async () => {
     setActivity(await api("/activity"));
+    setActivityLoaded(true);
   }, [api]);
+
+  const syncCircleTask = useCallback((task, remove = false) => {
+    if (!task?.id) return;
+    const circleIds = remove || !Array.isArray(task.groupIds)
+      ? []
+      : [...new Set(task.groupIds.map(String))];
+    const circleTask = {
+      id: task.id,
+      ownerId: task.ownerId || user?.id,
+      ownerName: task.ownerName || profile?.name || "Member",
+      title: task.title,
+      category: task.category,
+      dueDate: task.dueDate || null,
+      createdAt: task.createdAt || Date.now(),
+      done: Boolean(task.done),
+    };
+    setGoalsByGroup((current) => {
+      const next = { ...current };
+      const allCircleIds = new Set([...Object.keys(current), ...circleIds]);
+      for (const circleId of allCircleIds) {
+        const list = current[circleId] || [];
+        if (!circleIds.includes(circleId)) {
+          if (list.some((item) => item.id === task.id)) {
+            next[circleId] = list.filter((item) => item.id !== task.id);
+          }
+          continue;
+        }
+        const previous = list.find((item) => item.id === task.id);
+        const updated = {
+          ...previous,
+          ...circleTask,
+          ownerName: task.ownerName || previous?.ownerName || circleTask.ownerName,
+        };
+        next[circleId] = [...list.filter((item) => item.id !== task.id), updated]
+          .sort((left, right) => right.createdAt - left.createdAt);
+      }
+      return next;
+    });
+  }, [profile?.name, user?.id]);
+
+  const refreshCircleGoals = useCallback(async (circleIds) => {
+    const ids = [...new Set((circleIds || []).map(String))];
+    const results = await Promise.all(ids.map(async (id) => [
+      id,
+      await api(`/groups/${id}/goals`),
+    ]));
+    setGoalsByGroup((current) => ({
+      ...current,
+      ...Object.fromEntries(results),
+    }));
+  }, [api]);
+
+  useEffect(() => {
+    if (
+      !user || authPending || !authSession?.user ||
+      authSession.user.id !== user.id
+    ) return undefined;
+    let cancelled = false;
+    Promise.all([loadWorkspace(), loadActivity()]).catch((error) => {
+      if (!cancelled && !isAuthError(error)) setToast(error.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authPending, authSession?.user?.id, loadWorkspace, loadActivity]);
 
   useEffect(() => {
     if (inviteToken) {
@@ -1295,7 +1371,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
 
   useEffect(() => {
     if (screen === "invite" || inviteTokenFromUrl) return;
-    posthog.capture("$pageview", { page, screen });
+    capturePageview({ page, screen }).catch(() => {});
   }, [page, screen]);
 
   useEffect(() => {
@@ -1344,6 +1420,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           setTasksLoaded(true);
         },
         onError,
+        { initialRefresh: false },
       ),
       live(
         "/friends",
@@ -1352,6 +1429,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           setFriendsLoaded(true);
         },
         onError,
+        { initialRefresh: false },
       ),
       live(
         "/groups",
@@ -1375,6 +1453,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           });
         },
         onError,
+        { initialRefresh: false },
       ),
       live(
         "/activity",
@@ -1383,6 +1462,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           setActivityLoaded(true);
         },
         onError,
+        { initialRefresh: false },
       ),
       live("/nudges", setNudges, onError),
       live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError),
@@ -2181,16 +2261,26 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     if (editing) {
       const { tzOffset, ...rest } = body;
       const patch = { ...rest, movedFrom: movedFromFor(editing, rest.dueDate) };
+      const optimistic = { ...editing, ...patch };
+      const affectedCircleIds = [
+        ...(editing.groupIds || []),
+        ...(optimistic.groupIds || []),
+      ];
       const opId = stageOp({ type: "patch", taskId: editing.id, patch });
+      syncCircleTask(optimistic);
       try {
         const updated = await api(`/tasks/${editing.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
         settleOps([opId], updated);
+        syncCircleTask(updated);
         refreshTasks().catch((error) => notify(error.message));
       } catch (error) {
         settleOps([opId]);
+        syncCircleTask(editing);
+        refreshTasks().catch(() => {});
+        refreshCircleGoals(affectedCircleIds).catch(() => {});
         notify(error.message);
       }
       return;
@@ -2207,17 +2297,23 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       assignedByName: null,
     };
     const opId = stageOp({ type: "create", task: draft });
+    syncCircleTask(draft);
     try {
       const created = await api("/tasks", {
         method: "POST",
         body: JSON.stringify(body),
       });
       settleOps([opId], created);
+      syncCircleTask(draft, true);
+      syncCircleTask(created);
       refreshTasks().catch((error) => notify(error.message));
       if (body.visibility === "friends")
         loadActivity().catch((error) => notify(error.message));
     } catch (error) {
       settleOps([opId]);
+      syncCircleTask(draft, true);
+      refreshTasks().catch(() => {});
+      refreshCircleGoals(draft.groupIds).catch(() => {});
       notify(error.message);
     }
   }
@@ -2268,7 +2364,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         timerStartedAt: null,
       };
     }
+    const optimisticTask = { ...task, ...patch };
     const opIds = [stageOp({ type: "patch", taskId: task.id, patch })];
+    syncCircleTask(optimisticTask);
     if (action === "start") {
       tasks.forEach((item) => {
         if (item.id === task.id || !item.timerStartedAt || item.done) return;
@@ -2324,6 +2422,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         });
       }
       settleOps(opIds, updated);
+      syncCircleTask(updated);
       refreshTasks().catch((error) => notify(error.message));
       if (action === "complete" && updated.done) {
         loadActivity().catch((error) => notify(error.message));
@@ -2379,6 +2478,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           const confirmed = latest.find((item) => item.id === task.id);
           if (confirmed && confirmed.done === Boolean(body.done)) {
             settleOps(opIds, confirmed);
+            syncCircleTask(confirmed);
             if (confirmed.done) {
               loadActivity().catch(() => {});
               api(`/streak?tz=${new Date().getTimezoneOffset()}`)
@@ -2392,6 +2492,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         }
       }
       settleOps(opIds);
+      syncCircleTask(task);
+      refreshTasks().catch(() => {});
+      refreshCircleGoals(sharedGroupIds).catch(() => {});
       notify(error.message);
     }
   }
@@ -2460,6 +2563,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         patch: { dueDate, movedFrom: movedFromFor(task, dueDate) },
       }),
     }));
+    staged.forEach(({ task }) =>
+      syncCircleTask({
+        ...task,
+        dueDate,
+        movedFrom: movedFromFor(task, dueDate),
+      }),
+    );
     notify(
       movable.length === 1
         ? "Moved to today."
@@ -2468,9 +2578,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     await Promise.all(
       staged.map(async ({ task, opId }) => {
         try {
-          settleOps([opId], await patchTask(task, { dueDate }));
+          const updated = await patchTask(task, { dueDate });
+          settleOps([opId], updated);
+          syncCircleTask(updated);
         } catch (error) {
           settleOps([opId]);
+          syncCircleTask(task);
+          refreshCircleGoals(task.groupIds).catch(() => {});
           notify(error.message);
         }
       }),
@@ -2486,6 +2600,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       return;
     }
     const opId = stageOp({ type: "remove", taskId: task.id });
+    syncCircleTask(task, true);
     notify("Task deleted.");
     try {
       await api(`/tasks/${task.id}`, { method: "DELETE" });
@@ -2493,6 +2608,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       refreshTasks().catch((error) => notify(error.message));
     } catch (error) {
       settleOps([opId]);
+      syncCircleTask(task);
+      refreshTasks().catch(() => {});
+      refreshCircleGoals(task.groupIds).catch(() => {});
       notify(error.message);
     }
   }
@@ -3176,7 +3294,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             />
           )}
           {page === "weekly" && (
-            <WeeklyPage tasks={tasks} userName={user.name} onError={notify} />
+            <React.Suspense fallback={<p className="quiet-empty">Loading your weekly report…</p>}>
+              <WeeklyPage tasks={tasks} userName={user.name} onError={notify} />
+            </React.Suspense>
           )}
           {page === "profile" && (
             <ProfilePage
@@ -3267,14 +3387,16 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             subtitle={weeklyGroup.name}
             onClose={() => setWeeklyGroup(null)}
           >
-            <CircleWeeklyPanel
-              fetchWeek={(weekStart) =>
-                api(
-                  `/groups/${weeklyGroup.id}/weekly?week=${weekStart}&tz=${new Date().getTimezoneOffset()}`,
-                )
-              }
-              onError={notify}
-            />
+            <React.Suspense fallback={<p className="quiet-empty">Loading circle report…</p>}>
+              <CircleWeeklyPanel
+                fetchWeek={(weekStart) =>
+                  api(
+                    `/groups/${weeklyGroup.id}/weekly?week=${weekStart}&tz=${new Date().getTimezoneOffset()}`,
+                  )
+                }
+                onError={notify}
+              />
+            </React.Suspense>
           </Modal>
         )}
         {friendDialog && (

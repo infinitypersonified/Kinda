@@ -1,22 +1,16 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import posthog from "posthog-js";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import App, { SupabaseApp } from "./App.jsx";
+import { initializeAnalytics } from "./analytics.js";
 import { createCloudClients } from "./cloudClient.js";
 import { createSupabaseClient } from "./supabaseClient.js";
 import "./styles.css";
 
-if (import.meta.env.VITE_POSTHOG_KEY) {
-  posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
-    api_host: import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com",
-    person_profiles: "identified_only",
-    autocapture: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    disable_session_recording: true
-  });
-}
+initializeAnalytics(
+  import.meta.env.VITE_POSTHOG_KEY,
+  import.meta.env.VITE_POSTHOG_HOST,
+);
 
 window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();

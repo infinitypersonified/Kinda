@@ -445,6 +445,22 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       if (error) throw error;
       return taskToClient(task, (links || []).map((row: any) => row.circle_id));
     };
+    const tasksWithGroups = async (tasks: any[]) => {
+      if (!tasks.length) return [];
+      const { data: links, error } = await db.from("circle_tasks").select(
+        "task_id,circle_id",
+      ).in("task_id", tasks.map((task) => task.id));
+      if (error) throw error;
+      const groupIdsByTask = new Map<string, string[]>();
+      for (const link of links || []) {
+        const groupIds = groupIdsByTask.get(link.task_id) || [];
+        groupIds.push(link.circle_id);
+        groupIdsByTask.set(link.task_id, groupIds);
+      }
+      return tasks.map((task) =>
+        taskToClient(task, groupIdsByTask.get(task.id) || [])
+      );
+    };
     const validTaskFields = () => {
       const title = String(body.title || "").trim();
       if (!title || title.length > 120) {
@@ -534,10 +550,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         offset + pageSize - 1,
       );
       if (error) throw error;
-      return response(
-        200,
-        await Promise.all((tasks || []).map(taskWithGroups)),
-      );
+      return response(200, await tasksWithGroups(tasks || []));
     }
     if (method === "POST" && pathname === "/tasks") {
       const fields = validTaskFields();
@@ -910,62 +923,99 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const { data: memberRows, error } = await db.from("circle_members")
         .select("circle_id,role").eq("user_id", userId);
       if (error) throw error;
-      const groups = [];
-      for (const membership of memberRows || []) {
-        const { data: circle, error: circleError } = await db.from("circles")
-          .select("id,name,owner_id,created_at").eq("id", membership.circle_id).maybeSingle();
-        if (circleError) throw circleError;
-        if (!circle) continue;
-        const { data: members, error: membersError } = await db.from(
-          "circle_members",
-        ).select("user_id,role,joined_at").eq("circle_id", circle.id);
-        if (membersError) throw membersError;
-        const { data: links, error: linksError } = await db.from("circle_tasks")
-          .select("task_id,shared_by").eq("circle_id", circle.id);
-        if (linksError) throw linksError;
-        const taskIds = (links || []).map((row) => row.task_id);
-        const { data: tasks, error: tasksError } = taskIds.length
-          ? await db.from("tasks").select("id,user_id,done").in("id", taskIds)
-          : { data: [], error: null };
-        if (tasksError) throw tasksError;
-        const ids = [...new Set((members || []).map((row) => row.user_id))];
-        const { data: profiles, error: profilesError } = ids.length
-          ? await db.from("profiles").select("id,name,avatar").in("id", ids)
-          : { data: [], error: null };
-        if (profilesError) throw profilesError;
-        const membersMapped = (members || []).map((row) => {
-          const profile = (profiles || []).find((item) =>
-            item.id === row.user_id
-          );
-          const personTasks = (links || []).filter((link) =>
-            link.shared_by === row.user_id
-          ).flatMap((link) => {
-            const task = (tasks || []).find((item) => item.id === link.task_id);
-            return task ? [task] : [];
-          });
+      const ownMemberships = (memberRows || []) as Array<{ circle_id: string }>;
+      const circleIds = [...new Set(ownMemberships.map((row) => row.circle_id))];
+      if (!circleIds.length) return response(200, []);
+      const [circlesResult, membersResult, linksResult] = await Promise.all([
+        db.from("circles").select("id,name,owner_id").in("id", circleIds),
+        db.from("circle_members").select("circle_id,user_id,role").in(
+          "circle_id",
+          circleIds,
+        ),
+        db.from("circle_tasks").select("circle_id,task_id,shared_by").in(
+          "circle_id",
+          circleIds,
+        ),
+      ]);
+      if (circlesResult.error) throw circlesResult.error;
+      if (membersResult.error) throw membersResult.error;
+      if (linksResult.error) throw linksResult.error;
+      type CircleRow = { id: string; name: string; owner_id: string };
+      type CircleMemberRow = { circle_id: string; user_id: string; role: string };
+      type CircleTaskLink = { circle_id: string; task_id: string; shared_by: string };
+      type CountTaskRow = { id: string; user_id: string; done: boolean };
+      type CircleProfileRow = { id: string; name?: string; avatar?: string };
+      const circleRows = (circlesResult.data || []) as CircleRow[];
+      const allMembers = (membersResult.data || []) as CircleMemberRow[];
+      const links = (linksResult.data || []) as CircleTaskLink[];
+      const taskIds = [...new Set(links.map((row) => row.task_id))];
+      const profileIds = [...new Set(allMembers.map((row) => row.user_id))];
+      const [tasksResult, profilesResult] = await Promise.all([
+        taskIds.length
+          ? db.from("tasks").select("id,user_id,done").in("id", taskIds)
+          : Promise.resolve({ data: [], error: null }),
+        profileIds.length
+          ? db.from("profiles").select("id,name,avatar").in("id", profileIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (tasksResult.error) throw tasksResult.error;
+      if (profilesResult.error) throw profilesResult.error;
+      const taskRows = (tasksResult.data || []) as CountTaskRow[];
+      const profileRows = (profilesResult.data || []) as CircleProfileRow[];
+      const tasksById = new Map<string, CountTaskRow>();
+      for (const task of taskRows) tasksById.set(task.id, task);
+      const profilesById = new Map<string, CircleProfileRow>();
+      for (const profile of profileRows) profilesById.set(profile.id, profile);
+      const membersByCircle = new Map<string, CircleMemberRow[]>();
+      for (const member of allMembers) {
+        const members = membersByCircle.get(member.circle_id) || [];
+        members.push(member);
+        membersByCircle.set(member.circle_id, members);
+      }
+      const linksByCircle = new Map<string, CircleTaskLink[]>();
+      for (const link of links) {
+        const circleLinks = linksByCircle.get(link.circle_id) || [];
+        circleLinks.push(link);
+        linksByCircle.set(link.circle_id, circleLinks);
+      }
+      const groups = circleRows.map((circle) => {
+        const circleMembers = membersByCircle.get(circle.id) || [];
+        const circleLinks = linksByCircle.get(circle.id) || [];
+        const tasksByMember = new Map<string, CountTaskRow[]>();
+        const circleTaskRows: CountTaskRow[] = [];
+        for (const link of circleLinks) {
+          const task = tasksById.get(link.task_id);
+          if (!task) continue;
+          const memberTasks = tasksByMember.get(link.shared_by) || [];
+          memberTasks.push(task);
+          tasksByMember.set(link.shared_by, memberTasks);
+          circleTaskRows.push(task);
+        }
+        const membersMapped = circleMembers.map((member) => {
+          const profile = profilesById.get(member.user_id);
+          const personTasks = tasksByMember.get(member.user_id) || [];
           return {
-            id: row.user_id,
+            id: member.user_id,
             name: profile?.name || "Member",
             avatar: profile?.avatar || "",
-            role: row.user_id === circle.owner_id ? "owner" : row.role,
+            role: member.user_id === circle.owner_id ? "owner" : member.role,
             taskCount: personTasks.length,
             doneCount: personTasks.filter((task) => task.done).length,
           };
         });
-        const taskRows = tasks || [];
-        groups.push({
+        return {
           id: circle.id,
           name: circle.name,
           ownerId: circle.owner_id,
-          myRole: membersMapped.find((row) => row.id === userId)?.role ||
+          myRole: membersMapped.find((member) => member.id === userId)?.role ||
             "member",
           members: membersMapped,
           memberCount: membersMapped.length,
-          memberNames: membersMapped.map((row) => row.name).join(", "),
-          taskCount: (links || []).length,
-          doneCount: taskRows.filter((task) => task.done).length,
-        });
-      }
+          memberNames: membersMapped.map((member) => member.name).join(", "),
+          taskCount: circleTaskRows.length,
+          doneCount: circleTaskRows.filter((task) => task.done).length,
+        };
+      });
       return response(200, groups);
     }
     if (method === "POST" && pathname === "/groups") {
@@ -1582,21 +1632,44 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         );
       }
       if (method === "GET" && feature === "goals") {
-        const { data: links, error } = await db.from("circle_tasks").select(
-          "task_id",
-        ).eq("circle_id", circleId);
-        if (error) throw error;
+        const [linksResult, membersResult] = await Promise.all([
+          db.from("circle_tasks").select("task_id").eq("circle_id", circleId),
+          db.from("circle_members").select("user_id").eq(
+            "circle_id",
+            circleId,
+          ),
+        ]);
+        if (linksResult.error) throw linksResult.error;
+        if (membersResult.error) throw membersResult.error;
+        type GoalLinkRow = { task_id: string };
+        type GoalMemberRow = { user_id: string };
+        type GoalTaskRow = {
+          id: string;
+          user_id: string;
+          title: string;
+          category: string;
+          due_date: string | null;
+          created_at: string;
+          done: boolean;
+        };
+        type GoalProfileRow = { id: string; name?: string };
+        const links = (linksResult.data || []) as GoalLinkRow[];
         const taskIds = (links || []).map((row) => row.task_id);
         if (!taskIds.length) return response(200, []);
-        const { data: tasks, error: taskError } = await db.from("tasks").select(
-          "id,user_id,title,category,due_date,created_at,done",
-        ).in("id", taskIds).order("created_at", { ascending: false });
-        if (taskError) throw taskError;
-        const memberIds = [...new Set((tasks || []).map((row) => row.user_id))];
-        const { data: profiles, error: profileError } = await db.from(
-          "profiles",
-        ).select("id,name").in("id", memberIds);
-        if (profileError) throw profileError;
+        const members = (membersResult.data || []) as GoalMemberRow[];
+        const memberIds = [...new Set(members.map((row) => row.user_id))];
+        const [tasksResult, profilesResult] = await Promise.all([
+          db.from("tasks").select(
+            "id,user_id,title,category,due_date,created_at,done",
+          ).in("id", taskIds).order("created_at", { ascending: false }),
+          memberIds.length
+            ? db.from("profiles").select("id,name").in("id", memberIds)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (tasksResult.error) throw tasksResult.error;
+        if (profilesResult.error) throw profilesResult.error;
+        const tasks = (tasksResult.data || []) as GoalTaskRow[];
+        const profiles = (profilesResult.data || []) as GoalProfileRow[];
         return response(
           200,
           (tasks || []).map((task) => ({

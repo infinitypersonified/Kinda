@@ -74,9 +74,11 @@ const tablesForPath = (path) => {
 // Convex query subscriptions currently power multiple UI panels. Refresh the
 // matching edge-function query whenever a relevant Postgres change arrives.
 export function createSupabaseLive(client, api) {
-  return function live(path, onData, onError = () => {}) {
+  return function live(path, onData, onError = () => {}, options = {}) {
     let stopped = false;
-    let pending = false;
+    let pendingTimer = null;
+    let inFlight = false;
+    let changedDuringFetch = false;
     let fallbackTimer = null;
     const channelName = `kinda:${crypto.randomUUID()}`;
     const channel = client.channel(channelName);
@@ -84,17 +86,28 @@ export function createSupabaseLive(client, api) {
     const shouldPoll = pathname === "/tasks" || pathname === "/groups" ||
       /^\/groups\/[^/]+\/goals$/.test(pathname);
     const refresh = () => {
-      if (stopped || pending) return;
-      pending = true;
-      window.setTimeout(async () => {
-        pending = false;
-        if (stopped) return;
+      if (stopped) return;
+      if (inFlight) {
+        changedDuringFetch = true;
+        return;
+      }
+      if (pendingTimer !== null) window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(async () => {
+        pendingTimer = null;
+        if (stopped || inFlight) return;
+        inFlight = true;
         try {
           onData(await api(path));
         } catch (error) {
           onError(friendlyError(error));
+        } finally {
+          inFlight = false;
+          if (changedDuringFetch) {
+            changedDuringFetch = false;
+            refresh();
+          }
         }
-      }, 80);
+      }, 100);
     };
     const stopFallback = () => {
       if (fallbackTimer !== null) {
@@ -125,7 +138,7 @@ export function createSupabaseLive(client, api) {
     channel.subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
         stopFallback();
-        refresh();
+        if (options.initialRefresh !== false) refresh();
       }
       if (
         status === "CHANNEL_ERROR" || status === "TIMED_OUT" ||
@@ -143,6 +156,7 @@ export function createSupabaseLive(client, api) {
     return () => {
       stopped = true;
       stopFallback();
+      if (pendingTimer !== null) window.clearTimeout(pendingTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       client.removeChannel(channel);
     };
