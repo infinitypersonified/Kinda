@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import type { ApiDatabase } from "../_shared/database.ts";
 
 function supabaseSecretKey() {
   const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
@@ -15,12 +16,12 @@ function supabaseSecretKey() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 }
 
-let serviceClient: any = null;
-function getServiceClient() {
+let serviceClient: ReturnType<typeof createClient<ApiDatabase>> | null = null;
+function getServiceClient(): ReturnType<typeof createClient<ApiDatabase>> | null {
   const url = Deno.env.get("SUPABASE_URL");
   const key = supabaseSecretKey();
   if (!url || !key) return null;
-  serviceClient ??= createClient(url, key, {
+  serviceClient ??= createClient<ApiDatabase>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return serviceClient;

@@ -69,7 +69,7 @@ export function createSupabaseAuthClient(supabase) {
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider,
           options: { redirectTo: callbackURL },
-        });
+        })
         return { data, error };
       },
     },

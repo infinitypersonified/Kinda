@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { scryptAsync } from "npm:@noble/hashes@2.4.0/scrypt.js";
 import { hexToBytes } from "npm:@noble/hashes@2.4.0/utils.js";
+import type { ApiDatabase } from "../_shared/database.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("SITE_URL") || "*",
@@ -33,12 +34,12 @@ function serviceKey() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 }
 
-let client: any;
-function getClient() {
+let client: ReturnType<typeof createClient<ApiDatabase>> | null = null;
+function getClient(): ReturnType<typeof createClient<ApiDatabase>> | null {
   const url = Deno.env.get("SUPABASE_URL");
   const key = serviceKey();
   if (!url || !key) return null;
-  client ??= createClient(url, key, {
+  client ??= createClient<ApiDatabase>(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   return client;

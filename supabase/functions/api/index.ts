@@ -1,5 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import type { ApiDatabase, ApiRow } from "../_shared/database.ts";
+
+const supabaseProjectUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("SITE_URL") || "*",
@@ -22,12 +25,12 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
-let serviceClient: any = null;
-function getServiceClient() {
+let serviceClient: ReturnType<typeof createClient<ApiDatabase>> | null = null;
+function getServiceClient(): ReturnType<typeof createClient<ApiDatabase>> {
   const url = Deno.env.get("SUPABASE_URL");
   const secret = supabaseSecretKey();
   if (!url || !secret) fail("The Supabase API is not configured.", 503);
-  serviceClient ??= createClient(url, secret, {
+  serviceClient ??= createClient<ApiDatabase>(url, secret, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return serviceClient;
@@ -257,7 +260,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       request.method === "GET" && requestPath === "/google-calendar/callback"
     ) {
       const callbackUrl = `${
-        url.replace(/\/$/, "")
+        supabaseProjectUrl
       }/functions/v1/api/google-calendar/callback`;
       const destination = Deno.env.get("SITE_URL") || "https://example.com";
       const finish = (status: string) =>
@@ -323,8 +326,21 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       }
     }
 
-    const input = await request.json();
+    // The function also receives direct requests (for example, an accidental
+    // request to the function base URL) that may not contain a JSON body.
+    // Do not let an empty or malformed body become an opaque 500 error.
+    const input = await request.json().catch(() => null);
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return jsonResponse(400, {
+        error: "Expected a JSON request body containing path and method.",
+      });
+    }
     const path = String(input.path || "");
+    if (!path.startsWith("/")) {
+      return jsonResponse(400, {
+        error: "Missing or invalid API path. Expected a path beginning with '/'.",
+      });
+    }
     const method = String(input.method || "GET").toUpperCase();
     responseMethod = method;
     const body = input.body && typeof input.body === "object" ? input.body : {};
@@ -413,7 +429,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       if (typingError) throw typingError;
       if (memberError) throw memberError;
     };
-    const taskToClient = (task: any, groupIds: string[] = []) => ({
+    const taskToClient = (task: ApiRow, groupIds: string[] = []) => ({
       id: task.id,
       title: task.title,
       description: task.description,
@@ -438,14 +454,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       movedFrom: task.moved_from || [],
       groupIds,
     });
-    const taskWithGroups = async (task: any) => {
+    const taskWithGroups = async (task: ApiRow) => {
       const { data: links, error } = await db.from("circle_tasks").select(
         "circle_id",
       ).eq("task_id", task.id);
       if (error) throw error;
-      return taskToClient(task, (links || []).map((row: any) => row.circle_id));
+      return taskToClient(task, (links || []).map((row: ApiRow) => row.circle_id));
     };
-    const tasksWithGroups = async (tasks: any[]) => {
+    const tasksWithGroups = async (tasks: ApiRow[]) => {
       if (!tasks.length) return [];
       const { data: links, error } = await db.from("circle_tasks").select(
         "task_id,circle_id",
@@ -928,19 +944,23 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     }
 
     if (method === "GET" && pathname === "/groups") {
+      // Use select("*") here because some existing Kinda databases were
+      // created before the current schema migration. Explicit projections can
+      // make PostgREST reject the whole /groups request when a legacy table is
+      // missing a newer optional column.
       const { data: memberRows, error } = await db.from("circle_members")
-        .select("circle_id,role").eq("user_id", userId);
+        .select("*").eq("user_id", userId);
       if (error) throw error;
       const ownMemberships = (memberRows || []) as Array<{ circle_id: string }>;
       const circleIds = [...new Set(ownMemberships.map((row) => row.circle_id))];
       if (!circleIds.length) return response(200, []);
       const [circlesResult, membersResult, linksResult] = await Promise.all([
-        db.from("circles").select("id,name,owner_id").in("id", circleIds),
-        db.from("circle_members").select("circle_id,user_id,role").in(
+        db.from("circles").select("*").in("id", circleIds),
+        db.from("circle_members").select("*").in(
           "circle_id",
           circleIds,
         ),
-        db.from("circle_tasks").select("circle_id,task_id,shared_by").in(
+        db.from("circle_tasks").select("*").in(
           "circle_id",
           circleIds,
         ),
@@ -960,10 +980,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const profileIds = [...new Set(allMembers.map((row) => row.user_id))];
       const [tasksResult, profilesResult] = await Promise.all([
         taskIds.length
-          ? db.from("tasks").select("id,user_id,done").in("id", taskIds)
+          ? db.from("tasks").select("*").in("id", taskIds)
           : Promise.resolve({ data: [], error: null }),
         profileIds.length
-          ? db.from("profiles").select("id,name,avatar").in("id", profileIds)
+          ? db.from("profiles").select("*").in("id", profileIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (tasksResult.error) throw tasksResult.error;
@@ -1695,7 +1715,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         );
       }
       if (feature === "messages" && method === "GET") {
-        let requestQuery = db.from("messages").select(
+        const requestQuery = db.from("messages").select(
           "id,sender_id,content,reply_to,mentions,edited_at,created_at",
         ).eq(
           "circle_id",
@@ -1851,7 +1871,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       );
     }
     if (method === "POST" && pathname === "/friends") {
-      let person: any = null;
+      let person: ApiRow | null = null;
       if (body.friendId) {
         const { data, error } = await db.from("profiles").select(
           "id,name,email,bio,avatar",
@@ -2185,7 +2205,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         fail("Google Calendar is not configured yet.", 503);
       }
       const callbackUrl = `${
-        url.replace(/\/$/, "")
+        supabaseProjectUrl
       }/functions/v1/api/google-calendar/callback`;
       const state = `${crypto.randomUUID().replaceAll("-", "")}${
         crypto.randomUUID().replaceAll("-", "")
@@ -2286,7 +2306,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             ).catch(() => {});
           }
         }
-        const nextLinks = [];
+        const nextLinks: ApiRow[] = [];
         for (const task of taskRows) {
           const old = prior.get(task.id);
           const date = task.due_date;
@@ -2677,11 +2697,27 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       501,
     );
   } catch (error) {
-    console.error("Supabase API request failed:", error);
-    return response(Number((error as any)?.status) || 500, {
-      error: error instanceof Error
-        ? error.message
-        : "The request failed. Please try again.",
+    const details = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+      code?: unknown;
+      status?: unknown;
+    };
+    console.error("Supabase API request failed:", {
+      message: details?.message ?? String(error),
+      code: details?.code,
+      details: details?.details,
+      hint: details?.hint,
+      status: details?.status,
     });
-  }
+const errorMessage =
+  typeof details?.message === "string"
+    ? details.message
+    : error instanceof Error
+    ? error.message
+    : String(error);
+
+return response(Number(details?.status) || 500, {
+  error: errorMessage,
 });
