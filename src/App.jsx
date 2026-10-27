@@ -1727,8 +1727,10 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       seen.shared === null
         ? 0
         : incoming.shared.filter((key) => !seen.shared.includes(key)).length,
+    // Only what is still open for today. Counting every overdue task ever made
+    // inflated this number with old and repeating tasks.
     tasks: tasks.filter(
-      (task) => !task.done && task.dueDate && task.dueDate <= localDate(),
+      (task) => !task.done && taskDay(task) === localDate(),
     ).length,
   };
   const totalBadges = badges.chat + badges.activity + badges.circles;

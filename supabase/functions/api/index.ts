@@ -71,6 +71,44 @@ function fail(message: string, status = 400): never {
   throw Object.assign(new Error(message), { status });
 }
 
+
+// PostgREST puts `.in()` lists in the URL, so a long list of UUIDs (a few hundred
+// tasks is enough) makes the request fail. Query in small batches and merge.
+async function selectIn<T = ApiRow>(
+  db: ReturnType<typeof getServiceClient>,
+  table: string,
+  columns: string,
+  column: string,
+  ids: string[],
+  // deno-lint-ignore no-explicit-any
+  refine: (query: any) => any = (query) => query,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const unique = [...new Set(ids)];
+  const batches: string[][] = [];
+  for (let index = 0; index < unique.length; index += 100) {
+    batches.push(unique.slice(index, index + 100));
+  }
+  const results = await Promise.all(batches.map(async (batch) => {
+    const rows: T[] = [];
+    // PostgREST caps a response at 1000 rows, so page through each batch.
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await refine(
+        // deno-lint-ignore no-explicit-any
+        (db as any).from(table).select(columns).in(column, batch),
+      ).range(from, from + 999);
+      if (error) return { rows, error };
+      rows.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return { rows, error: null };
+  }));
+  const failed = results.find((result) => result.error);
+  return {
+    data: results.flatMap((result) => result.rows),
+    error: failed?.error ?? null,
+  };
+}
+
 function supabaseSecretKey() {
   const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
   if (secretKeys) {
@@ -463,9 +501,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     };
     const tasksWithGroups = async (tasks: ApiRow[]) => {
       if (!tasks.length) return [];
-      const { data: links, error } = await db.from("circle_tasks").select(
-        "task_id,circle_id",
-      ).in("task_id", tasks.map((task) => task.id));
+      const { data: links, error } = await selectIn<
+        { task_id: string; circle_id: string }
+      >(db, "circle_tasks", "task_id,circle_id", "task_id", tasks.map((task) => task.id));
       if (error) throw error;
       const groupIdsByTask = new Map<string, string[]>();
       for (const link of links || []) {
@@ -960,10 +998,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           "circle_id",
           circleIds,
         ),
-        db.from("circle_tasks").select("*").in(
-          "circle_id",
-          circleIds,
-        ),
+        selectIn(db, "circle_tasks", "*", "circle_id", circleIds),
       ]);
       if (circlesResult.error) throw circlesResult.error;
       if (membersResult.error) throw membersResult.error;
@@ -980,7 +1015,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const profileIds = [...new Set(allMembers.map((row) => row.user_id))];
       const [tasksResult, profilesResult] = await Promise.all([
         taskIds.length
-          ? db.from("tasks").select("*").in("id", taskIds)
+          ? selectIn(db, "tasks", "id,user_id,done", "id", taskIds)
           : Promise.resolve({ data: [], error: null }),
         profileIds.length
           ? db.from("profiles").select("*").in("id", profileIds)
@@ -1483,10 +1518,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             )
             : Promise.resolve({ data: [] }),
           taskIds.length
-            ? db.from("activities").select("user_id,task_id").eq(
-              "type",
-              "completed",
-            ).gte("created_at", since).in("task_id", taskIds)
+            ? selectIn(
+              db,
+              "activities",
+              "user_id,task_id",
+              "task_id",
+              taskIds,
+              (query) => query.eq("type", "completed").gte("created_at", since).order("id"),
+            )
             : Promise.resolve({ data: [] }),
         ]);
         const people = (members || []).map((row) => ({
@@ -1536,9 +1575,13 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             ? db.from("profiles").select("id,name,avatar").in("id", userIds)
             : Promise.resolve({ data: [] }),
           taskIds.length
-            ? db.from("tasks").select(
+            ? selectIn(
+              db,
+              "tasks",
               "id,user_id,title,category,due_date,created_at,done,moved_from",
-            ).in("id", taskIds)
+              "id",
+              taskIds,
+            )
             : Promise.resolve({ data: [] }),
         ]);
         const people = new Map(userIds.map((id) => {
@@ -1687,9 +1730,19 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const members = (membersResult.data || []) as GoalMemberRow[];
         const memberIds = [...new Set(members.map((row) => row.user_id))];
         const [tasksResult, profilesResult] = await Promise.all([
-          db.from("tasks").select(
+          selectIn(
+            db,
+            "tasks",
             "id,user_id,title,category,due_date,created_at,done",
-          ).in("id", taskIds).order("created_at", { ascending: false }),
+            "id",
+            taskIds,
+            (query) => query.order("created_at", { ascending: false }).order("id"),
+          ).then((result) => ({
+            ...result,
+            data: result.data.sort((a, b) =>
+              String(b.created_at).localeCompare(String(a.created_at))
+            ),
+          })),
           memberIds.length
             ? db.from("profiles").select("id,name").in("id", memberIds)
             : Promise.resolve({ data: [], error: null }),
@@ -2711,13 +2764,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       hint: details?.hint,
       status: details?.status,
     });
-const errorMessage =
-  typeof details?.message === "string"
-    ? details.message
-    : error instanceof Error
-    ? error.message
-    : String(error);
+    const errorMessage = typeof details?.message === "string"
+      ? details.message
+      : error instanceof Error
+      ? error.message
+      : String(error);
 
-return response(Number(details?.status) || 500, {
-  error: errorMessage,
+    return response(Number(details?.status) || 500, {
+      error: errorMessage,
+    });
+  }
 });
