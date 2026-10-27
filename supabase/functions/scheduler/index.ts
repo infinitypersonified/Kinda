@@ -139,12 +139,20 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     }
     return date;
   };
-  const horizon = addDays(new Date().toISOString().slice(0, 10), 8);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const horizon = addDays(todayKey, 8);
+  // Only recent occurrences can still need a next one. Without a lower bound
+  // this scanned every past occurrence of every repeating task, with several
+  // queries each, once a minute.
+  const earliest = addDays(todayKey, -3);
   const recurring = [];
   for (let offset = 0; ; offset += 1000) {
     const { data: page, error } = await db.from("tasks").select(
       "id,user_id,title,description,category,due_date,priority,visibility,target_minutes,shared_with,repeat,reminder_time,tz_offset,series_id",
-    ).neq("repeat", "none").not("due_date", "is", null).lte(
+    ).neq("repeat", "none").not("due_date", "is", null).gte(
+      "due_date",
+      earliest,
+    ).lte(
       "due_date",
       horizon,
     ).order("id", { ascending: true }).range(offset, offset + 999);

@@ -1704,7 +1704,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       }
       if (method === "GET" && feature === "goals") {
         const [linksResult, membersResult] = await Promise.all([
-          db.from("circle_tasks").select("task_id").eq("circle_id", circleId),
+          // Newest first: the database returns at most 1000 rows, and without
+          // an order a circle with many tasks could drop the one just added.
+          db.from("circle_tasks").select("task_id").eq("circle_id", circleId)
+            .order("created_at", { ascending: false }).limit(1000),
           db.from("circle_members").select("user_id").eq(
             "circle_id",
             circleId,
@@ -2591,7 +2594,24 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           }
         }
       }
+      // One-time streak reset: the `streak_base` days before `streak_base_date`
+      // count as completed, and earlier history is ignored.
+      const { data: baseRow, error: baseError } = await db.from("profiles")
+        .select("streak_base,streak_base_date").eq("id", userId).maybeSingle();
+      if (baseError) throw baseError;
+      const baseDate: string | null = baseRow?.streak_base_date || null;
+      const baseDays = Number(baseRow?.streak_base || 0);
+      const virtualDays = new Set<string>();
+      if (baseDate) {
+        for (let back = 1; back <= baseDays; back++) {
+          virtualDays.add(
+            new Date(Date.parse(`${baseDate}T00:00:00Z`) - back * dayMs)
+              .toISOString().slice(0, 10),
+          );
+        }
+      }
       const qualifies = (key: string) => {
+        if (baseDate && key < baseDate) return virtualDays.has(key);
         const item = perDay.get(key);
         return Boolean(
           item && item.total >= 5 && item.done * 100 >= item.total * 80,
@@ -2605,7 +2625,8 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         if (!qualifies(key)) break;
         current++;
       }
-      const qualified = [...perDay.keys()].filter(qualifies).sort();
+      const qualified = [...new Set([...perDay.keys(), ...virtualDays])]
+        .filter(qualifies).sort();
       let best = 0;
       let run = 0;
       let prev = "";

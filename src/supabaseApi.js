@@ -95,14 +95,20 @@ export function createSupabaseApi(client) {
   return api;
 }
 
-const tablesForPath = (path) => {
-  if (path === "/tasks" || path.startsWith("/tasks/")) return ["tasks", "circle_tasks"];
-  if (path === "/groups") return ["circles", "circle_members", "circle_tasks", "tasks", "profiles"];
-  if (path === "/friends" || path.startsWith("/friends")) return ["friendships", "profiles"];
-  if (path === "/activity" || path.startsWith("/activity/")) return ["activities", "reactions", "tasks", "profiles"];
-  if (path === "/nudges") return ["nudges"];
-  if (path === "/streak") return ["tasks"];
-  if (path === "/me") return ["profiles"];
+const tablesForPath = (path, userId) => {
+  // Only listen to this person's own rows where possible. Without a filter,
+  // every change by every user wakes every open app and makes it reload.
+  const mine = (table, column = "user_id") =>
+    userId ? [table, `${column}=eq.${userId}`] : [table];
+  if (path === "/tasks" || path.startsWith("/tasks/")) {
+    return [mine("tasks"), mine("circle_tasks", "shared_by")];
+  }
+  if (path === "/groups") return [["circles"], ["circle_members"], ["circle_tasks"], ["tasks"], ["profiles"]];
+  if (path === "/friends" || path.startsWith("/friends")) return [["friendships"], ["profiles"]];
+  if (path === "/activity" || path.startsWith("/activity/")) return [["activities"], ["reactions"], ["tasks"], ["profiles"]];
+  if (path === "/nudges") return [["nudges"]];
+  if (path === "/streak") return [mine("tasks")];
+  if (path === "/me") return [userId ? ["profiles", `id=eq.${userId}`] : ["profiles"]];
   const group = path.match(/^\/groups\/([^/]+)\/(goals|messages|typing|assignments|recap|weekly)/);
   if (!group) return [];
   const [_, circleId, feature] = group;
@@ -122,11 +128,13 @@ export function createSupabaseLive(client, api) {
     let inFlight = false;
     let changedDuringFetch = false;
     let fallbackTimer = null;
-    const channelName = `kinda:${crypto.randomUUID()}`;
-    const channel = client.channel(channelName);
+    let channel = null;
     const pathname = new URL(path, window.location.origin).pathname;
     const shouldPoll = pathname === "/tasks" || pathname === "/groups" ||
       /^\/groups\/[^/]+\/goals$/.test(pathname);
+    // Chat and typing should feel instant. Everything else waits a moment so a
+    // burst of changes causes one reload instead of many.
+    const delay = /\/(messages|typing)$/.test(pathname) ? 100 : 1500;
     const refresh = () => {
       if (stopped) return;
       if (inFlight) {
@@ -150,7 +158,7 @@ export function createSupabaseLive(client, api) {
             refresh();
           }
         }
-      }, 100);
+      }, delay);
     };
     const stopFallback = () => {
       if (fallbackTimer !== null) {
@@ -174,34 +182,43 @@ export function createSupabaseLive(client, api) {
       ) refresh();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    for (const tableSpec of tablesForPath(pathname)) {
-      const [table, filter] = Array.isArray(tableSpec) ? tableSpec : [tableSpec, undefined];
-      channel.on("postgres_changes", { event: "*", schema: "public", table, ...(filter ? { filter } : {}) }, refresh);
-    }
-    channel.subscribe((status, error) => {
-      if (status === "SUBSCRIBED") {
-        stopFallback();
-        if (options.initialRefresh !== false) refresh();
+
+    const connect = (userId) => {
+      if (stopped) return;
+      channel = client.channel(`kinda:${crypto.randomUUID()}`);
+      for (const tableSpec of tablesForPath(pathname, userId)) {
+        const [table, filter] = tableSpec;
+        channel.on("postgres_changes", { event: "*", schema: "public", table, ...(filter ? { filter } : {}) }, refresh);
       }
-      if (
-        status === "CHANNEL_ERROR" || status === "TIMED_OUT" ||
-        status === "CLOSED"
-      ) {
-        startFallback();
-        const detail = error?.message ? ` (${error.message})` : "";
-        onError(
-          new Error(
-            `Live updates could not connect${detail}. Task and circle data will sync every minute.`,
-          ),
-        );
-      }
-    });
+      channel.subscribe((status, error) => {
+        if (status === "SUBSCRIBED") {
+          stopFallback();
+          if (options.initialRefresh !== false) refresh();
+        }
+        if (
+          status === "CHANNEL_ERROR" || status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          startFallback();
+          const detail = error?.message ? ` (${error.message})` : "";
+          onError(
+            new Error(
+              `Live updates could not connect${detail}. Task and circle data will sync every minute.`,
+            ),
+          );
+        }
+      });
+    };
+    client.auth.getSession()
+      .then(({ data }) => connect(data?.session?.user?.id))
+      .catch(() => connect(undefined));
+
     return () => {
       stopped = true;
       stopFallback();
       if (pendingTimer !== null) window.clearTimeout(pendingTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      client.removeChannel(channel);
+      if (channel) client.removeChannel(channel);
     };
   };
 }
