@@ -41,6 +41,21 @@ Deno.serve({ automaticCompression: true }, async (request) => {
       status: 503,
     });
   }
+  // Only one run at a time. A slow run used to overlap the next minute's run,
+  // and both created the same day's copy of every repeating task.
+  const lockedUntil = new Date(Date.now() + 120_000).toISOString();
+  const { data: lock, error: lockError } = await db.from("scheduler_lock")
+    .update({ locked_until: lockedUntil }).eq("id", 1)
+    .lt("locked_until", new Date().toISOString()).select("id");
+  if (!lockError && !lock?.length) {
+    return Response.json({ ok: true, skipped: "another run is in progress" });
+  }
+  const releaseLock = async () => {
+    if (lockError) return;
+    await db.from("scheduler_lock").update({
+      locked_until: "1970-01-01T00:00:00Z",
+    }).eq("id", 1);
+  };
   let remindersSent = 0;
   let occurrencesCreated = 0;
   const now = Date.now();
@@ -91,6 +106,7 @@ Deno.serve({ automaticCompression: true }, async (request) => {
       .order("reminder_at", { ascending: true }).order("id", { ascending: true })
       .range(offset, offset + 499);
     if (error) {
+      await releaseLock();
       return Response.json({ error: error.message }, { status: 500 });
     }
     dueTasks.push(...(page || []));
@@ -157,6 +173,7 @@ Deno.serve({ automaticCompression: true }, async (request) => {
       horizon,
     ).order("id", { ascending: true }).range(offset, offset + 999);
     if (error) {
+      await releaseLock();
       return Response.json({ error: error.message }, { status: 500 });
     }
     recurring.push(...(page || []));
@@ -220,5 +237,6 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     occurrencesCreated++;
   }
 
+  await releaseLock();
   return Response.json({ ok: true, remindersSent, occurrencesCreated });
 });

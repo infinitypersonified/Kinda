@@ -1,0 +1,2654 @@
+{
+ "url": "http://127.0.0.1:5173",
+ "at": "2026-10-27T12:30:38.298Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 4,
+   "filled": [
+    0.31,
+    0.29,
+    0.36,
+    0.44
+   ],
+   "motion": {
+    "elements": 480,
+    "css": 10,
+    "transitions": 470,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 3282,
+     "screens": 3.6,
+     "words": 470,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 59,
+     "sections": 11,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "🌿",
+      "💛",
+      "✓",
+      "✳"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "chars": 29,
+     "lines": 2,
+     "size": 112,
+     "vw": 7.8,
+     "font": "Fraunces",
+     "weight": 500,
+     "tracking": -0.054,
+     "leading": 0.98,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "center",
+     "position": "center",
+     "widthRatio": 0.75,
+     "top": 138,
+     "mixedFonts": [
+      "Fraunces",
+      "Fraunces italic"
+     ],
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "lines": 2,
+     "size": 112,
+     "font": "Fraunces"
+    },
+    "headings": [
+     {
+      "text": "Make room for what moves you.",
+      "words": 6,
+      "chars": 29,
+      "lines": 2,
+      "size": 112,
+      "vw": 7.8,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.054,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.75,
+      "top": 138,
+      "mixedFonts": [
+       "Fraunces",
+       "Fraunces italic"
+      ],
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Come on in.",
+      "words": 3,
+      "chars": 11,
+      "lines": 1,
+      "size": 33,
+      "vw": 2.3,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.03,
+      "leading": 1.05,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.15,
+      "top": 591,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Small steps. Shared momentum.",
+      "words": 4,
+      "chars": 29,
+      "lines": 2,
+      "size": 68,
+      "vw": 4.7,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.055,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.42,
+      "top": 1521,
+      "mixedFonts": [
+       "Georgia",
+       "Georgia italic"
+      ],
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Cheer each other on.",
+      "words": 4,
+      "chars": 20,
+      "lines": 2,
+      "size": 39,
+      "vw": 2.7,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.17,
+      "top": 1823,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Make room for your people.",
+      "words": 5,
+      "chars": 26,
+      "lines": 2,
+      "size": 29,
+      "vw": 2,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.17,
+      "top": 2094,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Keep a rhythm, not a streak of perfection.",
+      "words": 8,
+      "chars": 42,
+      "lines": 2,
+      "size": 29,
+      "vw": 2,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.17,
+      "top": 2094,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Good company, built in.",
+      "words": 4,
+      "chars": 23,
+      "lines": 3,
+      "size": 39,
+      "vw": 2.7,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.17,
+      "top": 2635,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Start with one thing.",
+      "words": 4,
+      "chars": 21,
+      "lines": 1,
+      "size": 40,
+      "vw": 2.8,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.042,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.24,
+      "top": 3055,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 8,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 4,
+     "mixedFontHeadings": 2
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.84,
+       "mono": false
+      },
+      {
+       "family": "Georgia",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Fraunces",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Manrope",
+       "share": 0.02,
+       "mono": false
+      },
+      {
+       "family": "DM Mono",
+       "share": 0.02,
+       "mono": true
+      }
+     ],
+     "familyCount": 5,
+     "sizes": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      17,
+      18,
+      23,
+      27,
+      29,
+      33,
+      39,
+      40,
+      68,
+      112
+     ],
+     "sizeCount": 18,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 13,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 8.7
+     },
+     "measureChars": 53,
+     "max": {
+      "size": 112,
+      "vw": 7.8,
+      "font": "Fraunces",
+      "text": "Make room for"
+     },
+     "monoShare": 0.02,
+     "monoProseShare": 0.02,
+     "monoFamilies": [
+      "DM Mono"
+     ],
+     "monoSamples": [
+      "Product walkthrough · interactive previe"
+     ],
+     "microLabels": 12,
+     "microLabelShare": 0.068,
+     "microSamples": [
+      "A LITTLE TOUR",
+      "SAMPLE CONTENT",
+      "Up next",
+      "CIRCLE STANDINGS",
+      "A LITTLE BETTER, TOGETHER",
+      "A FRIENDLY PUSH"
+     ],
+     "upperShare": 0.07,
+     "centerShare": 0.14,
+     "smallText": 22
+    },
+    "eyebrows": [
+     {
+      "text": "A LITTLE TOUR",
+      "above": "Come on in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 573
+     },
+     {
+      "text": "A LITTLE BETTER, TOGETHER",
+      "above": "Small steps. Shared momentum.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 11,
+      "top": 1496
+     },
+     {
+      "text": "A FRIENDLY PUSH",
+      "above": "Cheer each other on.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 1786
+     },
+     {
+      "text": "YOUR PEOPLE",
+      "above": "Make room for your people.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 2057
+     },
+     {
+      "text": "YOUR OWN PACE",
+      "above": "Keep a rhythm, not a streak of perfectio",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 2057
+     },
+     {
+      "text": "CIRCLE CHAT",
+      "above": "Good company, built in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 2598
+     },
+     {
+      "text": "YOUR SPACE IS WAITING",
+      "above": "Start with one thing.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 3036
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#000000",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 0
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#000000",
+       "top": 0,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+       }
+      },
+      {
+       "color": "#050506",
+       "top": 669,
+       "hsl": {
+        "h": 240,
+        "s": 0.09,
+        "l": 0.02
+       }
+      },
+      {
+       "color": "#111210",
+       "top": 707,
+       "hsl": {
+        "h": 90,
+        "s": 0.06,
+        "l": 0.07
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b0b0b0",
+       "share": 0.21
+      },
+      {
+       "color": "#f5f5f5",
+       "share": 0.15
+      },
+      {
+       "color": "#bcbcbc",
+       "share": 0.14
+      },
+      {
+       "color": "#bbb2a7",
+       "share": 0.08
+      },
+      {
+       "color": "#f2f2f2",
+       "share": 0.04
+      }
+     ],
+     "button": {
+      "bg": "#e07a45",
+      "hsl": {
+       "h": 21,
+       "s": 0.71,
+       "l": 0.57
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": [
+      {
+       "text": "💛 2",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#f2f2f2",
+       "bg": "#ffffff"
+      },
+      {
+       "text": "kinda",
+       "ratio": 1.8,
+       "need": 4.5,
+       "size": 17,
+       "fg": "#44362d",
+       "bg": "#000000"
+      },
+      {
+       "text": "Morgan",
+       "ratio": 2.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#aaaaaa",
+       "bg": "#f4f1ec"
+      },
+      {
+       "text": "Today’s leaderboard",
+       "ratio": 2.3,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#504943",
+       "bg": "#080808"
+      },
+      {
+       "text": "New task",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      },
+      {
+       "text": "Install",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 12,
+     "inHero": 4,
+     "radius": 5,
+     "height": 34,
+     "withShadow": 1,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Get started",
+      "Start your space",
+      "Laptop",
+      "New task"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 12,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "section#demo.landing-demo → rgba(0, 0, 0, 0.533) 0px 22px 70px 0px",
+      "button.selected → rgba(71, 55, 44, 0.125) 0px 1px 4px 0px",
+      "div.device-frame → rgba(0, 0, 0, 0.733) 0px 26px 70px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0p",
+      "div.device-screen → rgba(65, 54, 41, 0.125) 0px 22px 65px 0px"
+     ],
+     "gradients": 1,
+     "scrims": 0,
+     "gradientSamples": [
+      "section.landing-close → linear-gradient(115deg, rgb(48, 41, 33), rgb(46, 41, 37) 55%, rgb(51, 39, 37))"
+     ],
+     "gradientText": 0,
+     "hairlines": 11,
+     "hairlineSamples": [
+      "nav.landing-nav 1320px",
+      "aside.landing-real-sidebar 145px",
+      "div.landing-real-top 975px",
+      "section.day-glance 931px",
+      "article.task-row.priority-normal 598px"
+     ],
+     "outlinedBoxes": 13,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 16,
+     "boxRadius": 17,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 78,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm mono",
+     "dm sans",
+     "fraunces",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 3282,
+    "margins": {
+     "left": 114,
+     "right": 121
+    },
+    "sections": [
+     {
+      "sel": "section.landing-intro",
+      "tag": "section",
+      "top": 78,
+      "height": 460,
+      "words": 23,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Make room for",
+       "size": 112,
+       "tag": "h1"
+      },
+      "left": 407,
+      "right": 407,
+      "textLeft": 407,
+      "textRight": 407,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#demo.landing-demo",
+      "tag": "section",
+      "top": 538,
+      "height": 868,
+      "words": 139,
+      "media": 0,
+      "middle": 4,
+      "heading": {
+       "text": "Come on in.",
+       "size": 33,
+       "tag": "h2"
+      },
+      "left": 99,
+      "right": 104,
+      "textLeft": 99,
+      "textRight": 115,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#little-things.landing-feature-story",
+      "tag": "section",
+      "top": 1496,
+      "height": 1381,
+      "words": 196,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Small steps.",
+       "size": 68,
+       "tag": "h2"
+      },
+      "left": 170,
+      "right": 170,
+      "textLeft": 170,
+      "textRight": 226,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.landing-close",
+      "tag": "section",
+      "top": 2982,
+      "height": 200,
+      "words": 16,
+      "media": 0,
+      "middle": 538,
+      "heading": {
+       "text": "Start with one thing.",
+       "size": 40,
+       "tag": "h2"
+      },
+      "left": 207,
+      "right": 207,
+      "textLeft": 207,
+      "textRight": 248,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Make room for what moves you.",
+      "size": 112,
+      "top": 138,
+      "firstScreen": true
+     },
+     {
+      "text": "Good afternoon, You",
+      "size": 23,
+      "top": 790,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 199,
+      "n": 3
+     },
+     {
+      "x": 170,
+      "n": 2
+     },
+     {
+      "x": 327,
+      "n": 2
+     },
+     {
+      "x": 971,
+      "n": 2
+     },
+     {
+      "x": 99,
+      "n": 1
+     },
+     {
+      "x": 269,
+      "n": 1
+     },
+     {
+      "x": 706,
+      "n": 1
+     },
+     {
+      "x": 827,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 13,
+    "bodySize": 13,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0.13,
+    "voidBox": {
+     "x": 1080,
+     "y": 120,
+     "w": 360,
+     "h": 480
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.44,
+    0.46,
+    0.56
+   ],
+   "motion": {
+    "elements": 14,
+    "css": 10,
+    "transitions": 4,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 3025,
+     "screens": 3,
+     "words": 464,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 59,
+     "sections": 11,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "🌿",
+      "💛",
+      "✓",
+      "✳"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "chars": 29,
+     "lines": 2,
+     "size": 69.1,
+     "vw": 9,
+     "font": "Fraunces",
+     "weight": 500,
+     "tracking": -0.072,
+     "leading": 0.98,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "center",
+     "position": "center",
+     "widthRatio": 0.9,
+     "top": 130,
+     "mixedFonts": [
+      "Fraunces",
+      "Fraunces italic"
+     ],
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "lines": 2,
+     "size": 69.1,
+     "font": "Fraunces"
+    },
+    "headings": [
+     {
+      "text": "kinda.",
+      "words": 1,
+      "chars": 6,
+      "lines": 1,
+      "size": 27,
+      "vw": 3.5,
+      "font": "Manrope",
+      "weight": 800,
+      "tracking": -0.074,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.09,
+      "top": 20,
+      "tag": "button",
+      "kind": "heading"
+     },
+     {
+      "text": "Make room for what moves you.",
+      "words": 6,
+      "chars": 29,
+      "lines": 2,
+      "size": 69.1,
+      "vw": 9,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.072,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.9,
+      "top": 130,
+      "mixedFonts": [
+       "Fraunces",
+       "Fraunces italic"
+      ],
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Come on in.",
+      "words": 3,
+      "chars": 11,
+      "lines": 1,
+      "size": 33,
+      "vw": 4.3,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.03,
+      "leading": 1.05,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.29,
+      "top": 486,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Small steps. Shared momentum.",
+      "words": 4,
+      "chars": 29,
+      "lines": 2,
+      "size": 46.1,
+      "vw": 6,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.055,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.78,
+      "top": 1322,
+      "mixedFonts": [
+       "Georgia",
+       "Georgia italic"
+      ],
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Cheer each other on.",
+      "words": 4,
+      "chars": 20,
+      "lines": 1,
+      "size": 29,
+      "vw": 3.8,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.32,
+      "top": 1607,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Good company, built in.",
+      "words": 4,
+      "chars": 23,
+      "lines": 2,
+      "size": 29,
+      "vw": 3.8,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.29,
+      "top": 2410,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Start with one thing.",
+      "words": 4,
+      "chars": 21,
+      "lines": 1,
+      "size": 40,
+      "vw": 5.2,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.042,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.44,
+      "top": 2798,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 7,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 4,
+     "mixedFontHeadings": 2
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.84,
+       "mono": false
+      },
+      {
+       "family": "Georgia",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Fraunces",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Manrope",
+       "share": 0.02,
+       "mono": false
+      },
+      {
+       "family": "DM Mono",
+       "share": 0.02,
+       "mono": true
+      }
+     ],
+     "familyCount": 5,
+     "sizes": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      17,
+      18,
+      22,
+      23,
+      27,
+      29,
+      33,
+      40,
+      46,
+      69
+     ],
+     "sizeCount": 18,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 13,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 8.7
+     },
+     "measureChars": 44,
+     "max": {
+      "size": 69.1,
+      "vw": 9,
+      "font": "Fraunces",
+      "text": "Make room for"
+     },
+     "monoShare": 0.02,
+     "monoProseShare": 0.02,
+     "monoFamilies": [
+      "DM Mono"
+     ],
+     "monoSamples": [
+      "Product walkthrough · interactive previe"
+     ],
+     "microLabels": 12,
+     "microLabelShare": 0.069,
+     "microSamples": [
+      "A LITTLE TOUR",
+      "SAMPLE CONTENT",
+      "Up next",
+      "CIRCLE STANDINGS",
+      "A LITTLE BETTER, TOGETHER",
+      "A FRIENDLY PUSH"
+     ],
+     "upperShare": 0.07,
+     "centerShare": 0.14,
+     "smallText": 22
+    },
+    "eyebrows": [
+     {
+      "text": "A LITTLE TOUR",
+      "above": "Come on in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 468
+     },
+     {
+      "text": "Take a proper lunch",
+      "above": "Small steps. Shared momentum.",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 13,
+      "top": 1298
+     },
+     {
+      "text": "A FRIENDLY PUSH",
+      "above": "Cheer each other on.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 1570
+     },
+     {
+      "text": "CIRCLE CHAT",
+      "above": "Good company, built in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 2373
+     },
+     {
+      "text": "YOUR SPACE IS WAITING",
+      "above": "Start with one thing.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 2779
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#000000",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 0
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#000000",
+       "top": 0,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+       }
+      },
+      {
+       "color": "#050506",
+       "top": 564,
+       "hsl": {
+        "h": 240,
+        "s": 0.09,
+        "l": 0.02
+       }
+      },
+      {
+       "color": "#111210",
+       "top": 602,
+       "hsl": {
+        "h": 90,
+        "s": 0.06,
+        "l": 0.07
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b0b0b0",
+       "share": 0.21
+      },
+      {
+       "color": "#f5f5f5",
+       "share": 0.15
+      },
+      {
+       "color": "#bcbcbc",
+       "share": 0.13
+      },
+      {
+       "color": "#bbb2a7",
+       "share": 0.08
+      },
+      {
+       "color": "#f2f2f2",
+       "share": 0.04
+      }
+     ],
+     "button": {
+      "bg": "#e07a45",
+      "hsl": {
+       "h": 21,
+       "s": 0.71,
+       "l": 0.57
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": [
+      {
+       "text": "💛 2",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#f2f2f2",
+       "bg": "#ffffff"
+      },
+      {
+       "text": "kinda",
+       "ratio": 1.8,
+       "need": 4.5,
+       "size": 17,
+       "fg": "#44362d",
+       "bg": "#000000"
+      },
+      {
+       "text": "Morgan",
+       "ratio": 2.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#aaaaaa",
+       "bg": "#f4f1ec"
+      },
+      {
+       "text": "Today’s leaderboard",
+       "ratio": 2.3,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#504943",
+       "bg": "#080808"
+      },
+      {
+       "text": "New task",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      },
+      {
+       "text": "Install",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 12,
+     "inHero": 4,
+     "radius": 5,
+     "height": 34,
+     "withShadow": 1,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Get started",
+      "Start your space",
+      "Laptop",
+      "New task"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 12,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "section#demo.landing-demo → rgba(0, 0, 0, 0.533) 0px 22px 70px 0px",
+      "button.selected → rgba(71, 55, 44, 0.125) 0px 1px 4px 0px",
+      "div.device-frame → rgba(0, 0, 0, 0.733) 0px 26px 70px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0p",
+      "div.device-screen → rgba(65, 54, 41, 0.125) 0px 22px 65px 0px"
+     ],
+     "gradients": 1,
+     "scrims": 0,
+     "gradientSamples": [
+      "section.landing-close → linear-gradient(115deg, rgb(48, 41, 33), rgb(46, 41, 37) 55%, rgb(51, 39, 37))"
+     ],
+     "gradientText": 0,
+     "hairlines": 10,
+     "hairlineSamples": [
+      "nav.landing-nav 768px",
+      "aside.landing-real-sidebar 145px",
+      "div.landing-real-top 473px",
+      "section.day-glance 429px",
+      "article.task-row.priority-normal 429px"
+     ],
+     "outlinedBoxes": 13,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 16,
+     "boxRadius": 17,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 78,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm mono",
+     "dm sans",
+     "fraunces",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 3025,
+    "margins": {
+     "left": 40,
+     "right": 41
+    },
+    "sections": [
+     {
+      "sel": "section.landing-intro",
+      "tag": "section",
+      "top": 78,
+      "height": 363,
+      "words": 23,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Make room for",
+       "size": 69,
+       "tag": "h1"
+      },
+      "left": 139,
+      "right": 139,
+      "textLeft": 139,
+      "textRight": 139,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#demo.landing-demo",
+      "tag": "section",
+      "top": 441,
+      "height": 766,
+      "words": 98,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Come on in.",
+       "size": 33,
+       "tag": "h2"
+      },
+      "left": 42,
+      "right": 47,
+      "textLeft": 42,
+      "textRight": 58,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#little-things.landing-feature-story",
+      "tag": "section",
+      "top": 1297,
+      "height": 1323,
+      "words": 196,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Small steps.",
+       "size": 46,
+       "tag": "h2"
+      },
+      "left": 40,
+      "right": 40,
+      "textLeft": 40,
+      "textRight": 83,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.landing-close",
+      "tag": "section",
+      "top": 2725,
+      "height": 200,
+      "words": 16,
+      "media": 0,
+      "middle": 110,
+      "heading": {
+       "text": "Start with one thing.",
+       "size": 40,
+       "tag": "h2"
+      },
+      "left": 85,
+      "right": 85,
+      "textLeft": 85,
+      "textRight": 126,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Make room for what moves you.",
+      "size": 69,
+      "top": 130,
+      "firstScreen": true
+     },
+     {
+      "text": "Good afternoon, You",
+      "size": 23,
+      "top": 685,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 40,
+      "n": 3
+     },
+     {
+      "x": 65,
+      "n": 3
+     },
+     {
+      "x": 242,
+      "n": 2
+     },
+     {
+      "x": 85,
+      "n": 1
+     },
+     {
+      "x": 255,
+      "n": 1
+     },
+     {
+      "x": 417,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 11,
+    "bodySize": 13,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 5,
+   "filled": [
+    0.51,
+    0.53,
+    0.59,
+    0.54,
+    0.61
+   ],
+   "motion": {
+    "elements": 15,
+    "css": 11,
+    "transitions": 4,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 3821,
+     "screens": 4.5,
+     "words": 454,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 59,
+     "sections": 11,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "🌿",
+      "💛",
+      "✓",
+      "✳"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "chars": 29,
+     "lines": 3,
+     "size": 55,
+     "vw": 14.1,
+     "font": "Fraunces",
+     "weight": 500,
+     "tracking": -0.073,
+     "leading": 0.98,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "center",
+     "position": "center",
+     "widthRatio": 0.88,
+     "top": 125,
+     "mixedFonts": [
+      "Fraunces",
+      "Fraunces italic"
+     ],
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Make room for what moves you.",
+     "words": 6,
+     "lines": 3,
+     "size": 55,
+     "font": "Fraunces"
+    },
+    "headings": [
+     {
+      "text": "kinda.",
+      "words": 1,
+      "chars": 6,
+      "lines": 1,
+      "size": 25,
+      "vw": 6.4,
+      "font": "Manrope",
+      "weight": 800,
+      "tracking": -0.08,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.16,
+      "top": 15,
+      "tag": "button",
+      "kind": "heading"
+     },
+     {
+      "text": "Make room for what moves you.",
+      "words": 6,
+      "chars": 29,
+      "lines": 3,
+      "size": 55,
+      "vw": 14.1,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.073,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.88,
+      "top": 125,
+      "mixedFonts": [
+       "Fraunces",
+       "Fraunces italic"
+      ],
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Come on in.",
+      "words": 3,
+      "chars": 11,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.033,
+      "leading": 1.05,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.51,
+      "top": 475,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Small steps. Shared momentum.",
+      "words": 4,
+      "chars": 29,
+      "lines": 2,
+      "size": 42,
+      "vw": 10.8,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.055,
+      "leading": 0.98,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.9,
+      "top": 1457,
+      "mixedFonts": [
+       "Georgia",
+       "Georgia italic"
+      ],
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Cheer each other on.",
+      "words": 4,
+      "chars": 20,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 1694,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Make room for your people.",
+      "words": 5,
+      "chars": 26,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 2118,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Keep a rhythm, not a streak of perfection.",
+      "words": 8,
+      "chars": 42,
+      "lines": 2,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 2574,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Good company, built in.",
+      "words": 4,
+      "chars": 23,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "Georgia",
+      "weight": 500,
+      "tracking": -0.035,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 3009,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Start with one thing.",
+      "words": 4,
+      "chars": 21,
+      "lines": 1,
+      "size": 34,
+      "vw": 8.7,
+      "font": "Fraunces",
+      "weight": 500,
+      "tracking": -0.05,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.73,
+      "top": 3542,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 9,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 4,
+     "mixedFontHeadings": 2
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.84,
+       "mono": false
+      },
+      {
+       "family": "Georgia",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Fraunces",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "DM Mono",
+       "share": 0.02,
+       "mono": true
+      },
+      {
+       "family": "Manrope",
+       "share": 0.02,
+       "mono": false
+      }
+     ],
+     "familyCount": 5,
+     "sizes": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      22,
+      25,
+      30,
+      34,
+      42,
+      55
+     ],
+     "sizeCount": 17,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 13,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 8.7
+     },
+     "measureChars": 46,
+     "max": {
+      "size": 55,
+      "vw": 14.1,
+      "font": "Fraunces",
+      "text": "Make room for"
+     },
+     "monoShare": 0.02,
+     "monoProseShare": 0.02,
+     "monoFamilies": [
+      "DM Mono"
+     ],
+     "monoSamples": [
+      "Product walkthrough · interactive previe"
+     ],
+     "microLabels": 12,
+     "microLabelShare": 0.07,
+     "microSamples": [
+      "A LITTLE TOUR",
+      "SAMPLE CONTENT",
+      "Up next",
+      "CIRCLE STANDINGS",
+      "A LITTLE BETTER, TOGETHER",
+      "A FRIENDLY PUSH"
+     ],
+     "upperShare": 0.07,
+     "centerShare": 0.13,
+     "smallText": 22
+    },
+    "eyebrows": [
+     {
+      "text": "A LITTLE TOUR",
+      "above": "Come on in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 456
+     },
+     {
+      "text": "A LITTLE BETTER, TOGETHER",
+      "above": "Small steps. Shared momentum.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 11,
+      "top": 1431
+     },
+     {
+      "text": "A FRIENDLY PUSH",
+      "above": "Cheer each other on.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 1657
+     },
+     {
+      "text": "CIRCLE CHAT",
+      "above": "Good company, built in.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": true,
+      "size": 13,
+      "top": 2972
+     },
+     {
+      "text": "YOUR SPACE IS WAITING",
+      "above": "Start with one thing.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 3523
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#000000",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 0
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#000000",
+       "top": 0,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+       }
+      },
+      {
+       "color": "#050506",
+       "top": 544,
+       "hsl": {
+        "h": 240,
+        "s": 0.09,
+        "l": 0.02
+       }
+      },
+      {
+       "color": "#111210",
+       "top": 573,
+       "hsl": {
+        "h": 90,
+        "s": 0.06,
+        "l": 0.07
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b0b0b0",
+       "share": 0.21
+      },
+      {
+       "color": "#f5f5f5",
+       "share": 0.15
+      },
+      {
+       "color": "#bcbcbc",
+       "share": 0.13
+      },
+      {
+       "color": "#bbb2a7",
+       "share": 0.08
+      },
+      {
+       "color": "#f2f2f2",
+       "share": 0.04
+      }
+     ],
+     "button": {
+      "bg": "#e07a45",
+      "hsl": {
+       "h": 21,
+       "s": 0.71,
+       "l": 0.57
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": [
+      {
+       "text": "💛 2",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#f2f2f2",
+       "bg": "#ffffff"
+      },
+      {
+       "text": "kinda",
+       "ratio": 1.8,
+       "need": 4.5,
+       "size": 17,
+       "fg": "#44362d",
+       "bg": "#000000"
+      },
+      {
+       "text": "Morgan",
+       "ratio": 2.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#aaaaaa",
+       "bg": "#f4f1ec"
+      },
+      {
+       "text": "Today’s leaderboard",
+       "ratio": 2.3,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#504943",
+       "bg": "#080808"
+      },
+      {
+       "text": "New task",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      },
+      {
+       "text": "Install",
+       "ratio": 2.6,
+       "need": 4.5,
+       "size": 9,
+       "fg": "#ffffff",
+       "bg": "#e58a5b"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 12,
+     "inHero": 3,
+     "radius": 5,
+     "height": 35,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Get started",
+      "Start your space",
+      "New task"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 11,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "section#demo.landing-demo → rgba(0, 0, 0, 0.533) 0px 22px 70px 0px",
+      "div.device-frame → rgba(0, 0, 0, 0.733) 0px 26px 70px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0p",
+      "div.device-screen → rgba(65, 54, 41, 0.125) 0px 22px 65px 0px",
+      "article.feature-panel.feature-leaderboard → rgba(0, 0, 0, 0.2) 0px 12px 38px 0px"
+     ],
+     "gradients": 1,
+     "scrims": 0,
+     "gradientSamples": [
+      "section.landing-close → linear-gradient(115deg, rgb(48, 41, 33), rgb(46, 41, 37) 55%, rgb(51, 39, 37))"
+     ],
+     "gradientText": 0,
+     "hairlines": 10,
+     "hairlineSamples": [
+      "nav.landing-nav 390px",
+      "div.landing-real-top 286px",
+      "section.day-glance 266px",
+      "article.task-row.priority-normal 266px",
+      "article.task-row.priority-normal 266px"
+     ],
+     "outlinedBoxes": 11,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 15,
+     "boxRadius": 22,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": true,
+       "rounded": true,
+       "top": 1633
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 66,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm mono",
+     "dm sans",
+     "fraunces",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 3821,
+    "margins": {
+     "left": 18,
+     "right": 20
+    },
+    "sections": [
+     {
+      "sel": "section.landing-intro",
+      "tag": "section",
+      "top": 66,
+      "height": 369,
+      "words": 23,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Make room for",
+       "size": 55,
+       "tag": "h1"
+      },
+      "left": 29,
+      "right": 29,
+      "textLeft": 34,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#demo.landing-demo",
+      "tag": "section",
+      "top": 435,
+      "height": 935,
+      "words": 90,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Come on in.",
+       "size": 30,
+       "tag": "h2"
+      },
+      "left": 27,
+      "right": 62,
+      "textLeft": 27,
+      "textRight": 63,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.feature-story-heading",
+      "tag": "div",
+      "top": 1431,
+      "height": 168,
+      "words": 18,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Small steps.",
+       "size": 42,
+       "tag": "h2"
+      },
+      "left": 20,
+      "right": 34,
+      "textLeft": 20,
+      "textRight": 34,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "article.feature-panel.feature-leaderboard",
+      "tag": "article",
+      "top": 1633,
+      "height": 410,
+      "words": 38,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Cheer each other on.",
+       "size": 30,
+       "tag": "h3"
+      },
+      "left": 20,
+      "right": 20,
+      "textLeft": 44,
+      "textRight": 62,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "article.feature-panel.feature-circles",
+      "tag": "article",
+      "top": 2057,
+      "height": 442,
+      "words": 49,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Make room for your people.",
+       "size": 22,
+       "tag": "h3"
+      },
+      "left": 20,
+      "right": 20,
+      "textLeft": 44,
+      "textRight": 46,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "article.feature-panel.feature-chat",
+      "tag": "article",
+      "top": 2948,
+      "height": 472,
+      "words": 42,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Good company, built in.",
+       "size": 30,
+       "tag": "h3"
+      },
+      "left": 20,
+      "right": 20,
+      "textLeft": 44,
+      "textRight": 52,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "article.feature-panel.feature-streak",
+      "tag": "article",
+      "top": 2513,
+      "height": 421,
+      "words": 49,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Keep a rhythm, not a streak of perfection.",
+       "size": 22,
+       "tag": "h3"
+      },
+      "left": 20,
+      "right": 20,
+      "textLeft": 44,
+      "textRight": 57,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.landing-close",
+      "tag": "section",
+      "top": 3482,
+      "height": 230,
+      "words": 16,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Start with one thing.",
+       "size": 34,
+       "tag": "h2"
+      },
+      "left": 35,
+      "right": 69,
+      "textLeft": 35,
+      "textRight": 69,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Make room for what moves you.",
+      "size": 55,
+      "top": 125,
+      "firstScreen": true
+     },
+     {
+      "text": "Good afternoon, You",
+      "size": 18,
+      "top": 644,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 35,
+      "n": 5
+     },
+     {
+      "x": 20,
+      "n": 3
+     },
+     {
+      "x": 62,
+      "n": 3
+     }
+    ],
+    "leftBlocks": 11,
+    "bodySize": 13,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 1440,
+   "message": "1 headline(s) wrap past two lines at 1440px: \"Good company, built in.\" → 3 lines (4 words, 39px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 36px or less."
+  },
+  {
+   "level": "WARN",
+   "id": "mixed-font-headline",
+   "width": 1440,
+   "message": "2 headline(s) switch typeface or to italic mid-line (the \"one italic serif word\" move).",
+   "fix": "Set the whole headline in one face. Emphasis comes from the words.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "eyebrow",
+   "width": 1440,
+   "message": "7 eyebrow/kicker label(s) above headings: \"A LITTLE TOUR\" above \"Come on in.\"; \"A LITTLE BETTER, TOGETHER\" above \"Small steps. Shared momentum.\"; \"A FRIENDLY PUSH\" (pill) above \"Cheer each other on.\"; \"YOUR PEOPLE\" (pill) above \"Make room for your people.\"; \"YOUR OWN PACE\" (pill) above \"Keep a rhythm, not a streak of perfectio\"",
+   "fix": "Delete them. If the label carried real information, fold it into the headline or the supporting sentence.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "mono",
+   "width": 1440,
+   "message": "Monospace type outside code: DM Mono — e.g. \"Product walkthrough · interactive previe\"",
+   "fix": "Set it in the text face. Monospace is for literal code inside <pre>/<code> only.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "micro-label",
+   "width": 1440,
+   "message": "12 tiny uppercase letter-spaced labels (e.g. \"A LITTLE TOUR\", \"SAMPLE CONTENT\", \"Up next\", \"CIRCLE STANDINGS\").",
+   "fix": "Use sentence-case text at a readable size, or delete the label.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "emoji",
+   "width": 1440,
+   "message": "Emoji in the page: 🌿 💛 ✓ ✳",
+   "fix": "Remove. Use words or real imagery.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "width": 1440,
+   "message": "1 gradient fill(s): section.landing-close → linear-gradient(115deg, rgb(48, 41, 33), rgb(46, 41, 37) 55%, rgb(51, 39, 37))",
+   "fix": "Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "width": 1440,
+   "message": "12 box-shadow(s) on elements at rest: section#demo.landing-demo → rgba(0, 0, 0, 0.533) 0px 22px 70px 0px | button.selected → rgba(71, 55, 44, 0.125) 0px 1px 4px 0px | div.device-frame → rgba(0, 0, 0, 0.733) 0px 26px 70px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0p",
+   "fix": "Remove. Separate surfaces with a tone step or space. Shadows are for things that really float (menus, dialogs, sticky bars).",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "button-fx",
+   "width": 1440,
+   "message": "Buttons with shadow/glow.",
+   "fix": "Flat fill, one colour.",
+   "alsoAt": [
+    768
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "width": 1440,
+   "message": "11 thin rule(s)/divider line(s): nav.landing-nav 1320px | aside.landing-real-sidebar 145px | div.landing-real-top 975px | section.day-glance 931px",
+   "fix": "Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "outlined-box",
+   "width": 1440,
+   "message": "13 boxes drawn with a 1px outline.",
+   "fix": "Define a surface by its fill (one tone step from the page) or leave the content unboxed.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "palette-terracotta",
+   "width": 1440,
+   "message": "Terracotta / rust-orange accent (button #e07a45).",
+   "fix": "Use the accent from the drawn palette.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "contrast",
+   "width": 1440,
+   "message": "Unreadable text: \"💛 2\" 1.1:1 (#f2f2f2 on #ffffff); \"kinda\" 1.8:1 (#44362d on #000000); \"Morgan\" 2.1:1 (#aaaaaa on #f4f1ec); \"Today’s leaderboard\" 2.3:1 (#504943 on #080808)",
+   "fix": "Raise contrast to at least 4.5:1 for text, 3:1 for large display.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "font-count",
+   "width": 1440,
+   "message": "5 typefaces in use (DM Sans, Georgia, Fraunces, Manrope, DM Mono).",
+   "fix": "Two at most: one display, one text. Often one is enough.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "size-count",
+   "width": 1440,
+   "message": "18 different font sizes (8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 23, 27, 29, 33, 39, 40, 68, 112).",
+   "fix": "A page needs about five: display, heading, lead, body, small.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "body-size",
+   "width": 1440,
+   "message": "Body text is 13px (the size most of the running text is set in).",
+   "fix": "Body copy 16–20px. Map small sizes from blueprints onto your body step.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "few-pictures",
+   "width": 1440,
+   "message": "Only 0 picture(s) on the page (0 photographs, footage or raster images, 0 interface fragments). Drawings in SVG do not count.",
+   "fix": "Find real pictures of the subject's world with scripts/assets.mjs (photographs, archival images, maps, engravings, footage), download them to assets/ and give them room: a hero picture, one per section that has a subject, a full-width band. At least four, usually six to twelve."
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1440,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "FAIL",
+   "id": "small-text",
+   "width": 1440,
+   "message": "22 text blocks under 13px.",
+   "fix": "Nothing meant to be read goes below 13px.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "dev-server",
+   "width": 1440,
+   "message": "This page is served by a development server (Vite, webpack or Next in dev mode).",
+   "fix": "Run the last gate on the production build too (vite build && vite preview, next build && next start, or the built index.html): minifiers and bundlers change the CSS a visitor receives.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "many-h1",
+   "width": 1440,
+   "message": "2 h1 elements.",
+   "fix": "One h1 per page; section titles are h2.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "ragged-edges",
+   "width": 1440,
+   "message": "Left-aligned text starts at 8 different lines (199px, 170px, 327px, 971px, 99px, 269px, 706px); the three most used hold only 54% of it.",
+   "fix": "Pick two or three anchor lines from the grid and start every heading and paragraph on one of them."
+  },
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 390,
+   "message": "1 headline(s) wrap past two lines at 390px: \"Make room for what moves you.\" → 3 lines (6 words, 55px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 24px or less."
+  },
+  {
+   "level": "FAIL",
+   "id": "icon-cards",
+   "width": 390,
+   "message": "1 row(s) of identical cards each topped with a small icon (4 cards).",
+   "fix": "Replace with one composed section from the direction: a narrative split, a list set in large type, or real imagery per item."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\desktop-fold.jpg",
+   "pages": [
+    "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\tablet-fold.jpg",
+   "pages": [
+    "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\mobile-fold.jpg",
+   "pages": [
+    "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\before-page\\mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

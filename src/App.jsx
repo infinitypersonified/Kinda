@@ -1,3 +1,4 @@
+import Kindle, { KindleToast, KINDLE_MOODS } from "./Kindle.jsx";
 import React, {
   createContext,
   useCallback,
@@ -1169,6 +1170,8 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   const [filter, setFilter] = useState("Today");
   const [toast, setToast] = useState("");
   const [celebrationType, setCelebrationType] = useState(null);
+  const [kindleToast, setKindleToast] = useState(null);
+  const seenDoneRef = useRef(null);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [seen, setSeen] = useState({ chat: {}, activity: null, shared: null });
@@ -1516,6 +1519,30 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     ]);
     return () => unsubs.forEach((stop) => stop());
   }, [user?.id, groupIds, live]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      seenDoneRef.current = null;
+      return;
+    }
+    const previous = seenDoneRef.current;
+    const next = {};
+    let fresh = null;
+    for (const [groupId, list] of Object.entries(goalsByGroup)) {
+      const items = Array.isArray(list) ? list : [];
+      next[groupId] = new Set(items.filter((item) => item.done).map((item) => item.id));
+      if (previous && previous[groupId] && !fresh) {
+        fresh = items.find(
+          (item) => item.done && item.ownerId !== user.id && !previous[groupId].has(item.id),
+        );
+      }
+    }
+    seenDoneRef.current = next;
+    if (fresh) {
+      const name = String(fresh.ownerName || "Someone").split(" ")[0];
+      setKindleToast({ key: Date.now(), mood: "cheer", text: `${name} just finished one!` });
+    }
+  }, [goalsByGroup, user?.id]);
 
   useEffect(() => {
     if (!user || !activeGroup) return undefined;
@@ -2335,6 +2362,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         ),
       );
     };
+    const openTodayAfter = tasks.filter(
+      (item) => item.id !== task.id && !item.done && taskDay(item) === localDate(),
+    ).length;
     const wasLeading = sharedGroupIds.some((groupId) =>
       leadsGroup(groups.find((group) => group.id === groupId)),
     );
@@ -2430,6 +2460,14 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         loadActivity().catch((error) => notify(error.message));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
         if (nextCelebration) setCelebrationType(nextCelebration);
+        else if (body.done && !task.done) {
+          const cheers = ["Nice one. Another down.", "That's one off the list.", "Look at you go.", "Steady wins it."];
+          setKindleToast({
+            key: Date.now(),
+            mood: openTodayAfter === 1 ? "enc" : "proud",
+            text: openTodayAfter === 1 ? "Just one left. You've got this." : cheers[Math.floor(Math.random() * cheers.length)],
+          });
+        }
         try {
           const nextStreak = await api(
             `/streak?tz=${new Date().getTimezoneOffset()}`,
@@ -2459,6 +2497,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           }
         }
         if (nextCelebration === "leaderboard") setCelebrationType(nextCelebration);
+        if (nextCelebration) setKindleToast(null);
         if (willFinishAllTasks) {
           if (soundReady) {
             soundReady
@@ -3029,7 +3068,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             className="wordmark wordmark-button"
             onClick={() => navigate("home")}
           >
-            kinda<span>.</span>
+            kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
           </button>
           <nav className="side-nav" aria-label="Main navigation">
             {[
@@ -3140,7 +3179,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
               {totalBadges > 0 && <i className="nav-dot" />}
             </button>
             <span className="wordmark">
-              kinda<span>.</span>
+              kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
             </span>
           </header>
           {page === "home" && (
@@ -3474,6 +3513,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         {showWhatsNew && !reminderQueue[0] && (
           <WhatsNewDialog onClose={closeWhatsNew} />
         )}
+        {kindleToast && !celebrationType && (
+          <KindleToast toast={kindleToast} onDone={() => setKindleToast(null)} />
+        )}
         {celebrationType && (
           <CelebrationDialog
             type={celebrationType}
@@ -3750,9 +3792,12 @@ function CelebrationDialog({ type, onClose }) {
             <span key={index} style={{ "--confetti-index": index }} />
           ))}
         </div>
-        <span className="celebration-icon">
-          <Sparkles size={28} />
-        </span>
+        <Kindle
+          mood={type === "leaderboard" ? "cheer" : "celebrate"}
+          size={128}
+          animate
+          className="celebration-kindle"
+        />
         <p className="eyebrow">{celebration.eyebrow}</p>
         <h2 id="celebration-title">{celebration.title}</h2>
         <p>{celebration.body}</p>
@@ -3792,8 +3837,22 @@ function StreakLine({ streak, done, total, onShare }) {
   const needed = total
     ? Math.max(0, Math.ceil((total * threshold) / 100) - done)
     : 0;
+  const atRisk = !reached && current > 0 && new Date().getHours() >= 18;
+  const lost = current === 0 && Number(streak.best) > 0 && done === 0;
+  let mood = "happy";
+  if (reached) mood = "proud";
+  else if (atRisk) mood = "sleepy";
+  else if (lost) mood = "sad";
+  else if (total >= minTasks && needed === 1) mood = "enc";
   let message;
-  if (reached)
+  if (atRisk)
+    message =
+      total < minTasks
+        ? `Don’t let me fade out! Plan ${minTasks} tasks and finish ${threshold}% to keep your ${current}-day streak.`
+        : `Don’t let me fade out! ${needed} more ${needed === 1 ? "task" : "tasks"} to keep your ${current}-day streak.`;
+  else if (lost)
+    message = "Your streak ended. Let’s relight it today with one small task.";
+  else if (reached)
     message = `You’ve done ${percentDone}% of today’s tasks, so your streak is saved.`;
   else if (total < minTasks)
     message = `Plan at least ${minTasks} tasks today, then finish ${threshold}% of them to keep your streak alive.`;
@@ -3805,7 +3864,9 @@ function StreakLine({ streak, done, total, onShare }) {
     message = `${needed} more tasks to reach ${threshold}%. Keep going, you’re building something.`;
   return (
     <p className="streak-line" role="status">
-      <Flame size={15} />
+      <span className="streak-kindle">
+        <Kindle mood={mood} size={34} animate={mood !== "sleepy" && mood !== "sad"} />
+      </span>
       <b>{current > 0 ? `${current}-day streak` : "Start a streak"}</b>
       <span>{message}</span>
       {current > 0 && (
@@ -6903,7 +6964,7 @@ function InviteScreen({ invitation, error, onSignup, onLogin, onHome }) {
   return (
     <main className="invite-screen">
       <button className="wordmark wordmark-button" onClick={onHome}>
-        kinda<span>.</span>
+        kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
       </button>
       <section className="invite-card">
         <span className="invite-icon">
@@ -7418,11 +7479,12 @@ function Landing({ onStart, onLogin }) {
       )}
       <nav className="landing-nav">
         <button className="wordmark wordmark-button" onClick={onStart}>
-          kinda<span>.</span>
+          kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
         </button>
         <div className="landing-nav-links">
           <a href="#demo">Take a look</a>
           <a href="#little-things">The little things</a>
+          <a href="#meet-kindle">Meet Kindle</a>
         </div>
         <div className="landing-nav-actions">
           <button
@@ -7761,7 +7823,7 @@ function Landing({ onStart, onLogin }) {
                         <div className="mock-share-card">
                           <div className="share-card-top">
                             <span>
-                              kinda<span>.</span>
+                              kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
                             </span>
                             <span>THIS WEEK ✳</span>
                           </div>
@@ -8125,6 +8187,45 @@ function Landing({ onStart, onLogin }) {
         </button>
         <span className="close-doodle">✳</span>
       </section>
+      <section className="meet-kindle" id="meet-kindle">
+        <div className="meet-kindle-head">
+          <p className="eyebrow">MEET KINDLE</p>
+          <h2>
+            A small flame
+            <br />
+            <em>that grows with you.</em>
+          </h2>
+          <p>
+            Kindle lives inside Kinda and reacts to what you do. Finish a task and
+            he cheers. Keep your streak and he lights up. Slip a day and he’s
+            gentle about it.
+          </p>
+        </div>
+        <div className="meet-kindle-name">
+          <div>
+            <b>Kinda</b>
+            <span>Casual and low pressure. A little each day still counts.</span>
+          </div>
+          <div>
+            <b>Kindle</b>
+            <span>To light a fire. A small spark that grows with every streak day.</span>
+          </div>
+          <div>
+            <b>Kind</b>
+            <span>Circles are friends cheering each other on, so the tone stays warm.</span>
+          </div>
+        </div>
+        <ul className="meet-kindle-grid" aria-label="Kindle’s moods">
+          {KINDLE_MOODS.map((item) => (
+            <li key={item.mood}>
+              <Kindle mood={item.mood} size={96} />
+              <b>{item.name}</b>
+              <small>{item.when}</small>
+              <p>“{item.say}”</p>
+            </li>
+          ))}
+        </ul>
+      </section>
       <footer className="landing-footer">
         <span>
           kinda<span className="footer-period">.</span>
@@ -8314,7 +8415,7 @@ function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
     <div className="landing-real-app">
       <aside className="landing-real-sidebar">
         <b className="landing-real-logo">
-          kinda<span>.</span>
+          kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
         </b>
         <span className={scene === "tasks" ? "selected" : ""}>
           <CheckSquare2 size={14} /> Today
@@ -8590,7 +8691,7 @@ function AuthScreen({
           className="wordmark wordmark-button"
           onClick={() => setMode("landing")}
         >
-          kinda<span>.</span>
+          kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
         </button>
         <div className="auth-photo">
           <img src={photoOne} alt="Friends working on their goals together" />
