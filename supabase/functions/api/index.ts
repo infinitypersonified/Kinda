@@ -4,17 +4,6 @@ import type { ApiDatabase, ApiRow } from "../_shared/database.ts";
 
 const supabaseProjectUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
 
-// The live site is always allowed. Local development (localhost or 127.0.0.1 on
-// any port) is allowed too so the app can be tested before it is pushed.
-function allowedOrigin(origin: string | null) {
-  const site = (Deno.env.get("SITE_URL") || "").replace(/\/+$/, "");
-  if (!site) return "*";
-  if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-    return origin;
-  }
-  return site;
-}
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("SITE_URL") || "*",
   "Access-Control-Allow-Headers":
@@ -25,13 +14,11 @@ const corsHeaders = {
 const TASK_COLUMNS = "id,title,description,category,due_date,priority,visibility,target_minutes,elapsed_seconds,timer_started_at,done,completed_at,repeat,reminder_time,created_at,assignment_id,assigned_by_name,shared_with,series_id,moved_from";
 const TASK_RECORD_COLUMNS = `${TASK_COLUMNS},reminder_at,reminder_sent_for,tz_offset`;
 
-function jsonResponse(status: number, body: unknown, origin: string | null = null) {
+function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders,
-      "Access-Control-Allow-Origin": allowedOrigin(origin),
-      "Vary": "Origin",
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     },
@@ -155,16 +142,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     } else if (status >= 200 && status < 400 && responseMethod && responseMethod !== "GET") {
       await redisCommand(["INCR", "kinda:api:cache-generation"]);
     }
-    return jsonResponse(status, body, request.headers.get("Origin"));
+    return jsonResponse(status, body);
   };
   if (request.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        ...corsHeaders,
-        "Access-Control-Allow-Origin": allowedOrigin(request.headers.get("Origin")),
-        "Vary": "Origin",
-      },
-    });
+    return new Response("ok", { headers: corsHeaders });
   }
   try {
     const db = getServiceClient();
