@@ -408,11 +408,29 @@ function entryLabel(entry) {
   return entry.status === "moved" ? `Moved to ${weekdayShort(entry.movedTo)}` : "";
 }
 
-export function WeeklyPage({ tasks, userName, onError = () => {} }) {
+export function WeeklyPage({ tasks, userName, onError = () => {}, api = null }) {
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState({});
   const startKey = weekStartKey(offset);
-  const summary = useMemo(() => summarizeWeek(tasks, startKey), [tasks, startKey]);
+  // The app only keeps the last ~35 days of tasks in memory to save data, so
+  // older weeks are fetched one at a time when someone navigates back to them.
+  const needsHistory = startKey < addDays(ymd(new Date()), -30);
+  useEffect(() => {
+    if (!api || !needsHistory || history[startKey]) return undefined;
+    let cancelled = false;
+    api(`/tasks?since=${startKey}&until=${addDays(startKey, 42)}`)
+      .then(rows => { if (!cancelled) setHistory(current => ({ ...current, [startKey]: rows })); })
+      .catch(error => { if (!cancelled) onError(error.message || "Couldn't load that week."); });
+    return () => { cancelled = true; };
+  }, [api, needsHistory, startKey]);
+  const weekTasks = useMemo(() => {
+    const older = history[startKey];
+    if (!older) return tasks;
+    const known = new Set(tasks.map(task => task.id));
+    return [...tasks, ...older.filter(task => !known.has(task.id))];
+  }, [tasks, history, startKey]);
+  const summary = useMemo(() => summarizeWeek(weekTasks, startKey), [weekTasks, startKey]);
   const maxCount = Math.max(1, ...summary.days.map(day => day.done + day.open));
   const todayKey = ymd(new Date());
 
