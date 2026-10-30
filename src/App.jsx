@@ -3365,7 +3365,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           )}
           {page === "weekly" && (
             <React.Suspense fallback={<p className="quiet-empty">Loading your weekly report…</p>}>
-              <WeeklyPage tasks={tasks} userName={user.name} onError={notify} api={api} />
+              <WeeklyPage tasks={tasks} userName={user.name} onError={notify} />
             </React.Suspense>
           )}
           {page === "profile" && (
