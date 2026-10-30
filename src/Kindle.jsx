@@ -1,4 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
+import "./kindle.css";
+import { POSES, confettiHtml, pickPose, pickStreakScene, poseHtml, streakSceneHtml, thinkingHtml } from "./kindleArt.js";
 
 const BODY = "M0-118C14-86 62-62 62-2C62 52 32 88 0 88C-32 88-62 52-62-2C-62-26-48-44-36-58C-33-36-20-26-12-30C-22-62-10-96 0-118Z";
 const MID = "M0-40C8-22 44-6 44 28C44 62 24 82 0 82C-24 82-44 62-44 28C-44-6-8-22 0-40Z";
@@ -129,3 +131,58 @@ export const KINDLE_MOODS = [
   { mood: "cheer", name: "Cheering", when: "A friend finishes a task", say: "Sam just finished one!" },
   { mood: "think", name: "Thinking", when: "You’re adding a task", say: "Ooh, what’s next?" },
 ];
+
+const Html = ({ html, className, style }) => (
+  <div className={className} style={style} dangerouslySetInnerHTML={{ __html: html }} />
+);
+
+// Big cheer when a task is ticked: a random pose with its own words.
+export function KindleCheer({ cheer, onDone }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 2600);
+    return () => window.clearTimeout(timer);
+  }, [cheer.key, onDone]);
+  const confetti = useMemo(() => confettiHtml(14), [cheer.key]);
+  return (
+    <div className="kd-ov kd-ov-soft kd-jump" role="status" key={cheer.key} onClick={onDone}>
+      <Html html={confetti} />
+      <Html className="kd-enter" html={poseHtml(cheer.pose, 230)} />
+      <div className="kd-bubble">{cheer.text || POSES[cheer.pose]?.say}</div>
+    </div>
+  );
+}
+
+// Full-screen cheer when a task has been created.
+export function KindleCreated({ created, onDone }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 2800);
+    return () => window.clearTimeout(timer);
+  }, [created.key, onDone]);
+  const confetti = useMemo(() => confettiHtml(30), [created.key]);
+  return (
+    <div className="kd-ov kd-ov-full kd-jump" role="status" key={created.key} onClick={onDone}>
+      <Html html={confetti} />
+      <Html className="kd-enter" html={poseHtml(created.pose, 280)} />
+      <h2>Task added!</h2>
+      <p>You’ve got this.</p>
+    </div>
+  );
+}
+
+// Thinking Kindle at the top of the new-task form.
+export function KindleThinking() {
+  return (
+    <div className="kd-think-row" aria-hidden="true">
+      <Html html={thinkingHtml(104)} />
+      <div className="kd-bubble">Ooh, what’s next?</div>
+    </div>
+  );
+}
+
+// Calm streak animation. The number comes from the app; this only draws it.
+export function KindleStreak({ to, scene }) {
+  const html = useMemo(() => streakSceneHtml(scene, to), [scene, to]);
+  return <Html html={html} />;
+}
+
+export { pickPose, pickStreakScene };

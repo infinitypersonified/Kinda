@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, FileSpreadsheet, FileText, Share } from "lucide-react";
-import { shareProgressCard } from "./share.js";
+import { shareProgressCard, kindleDataUrl } from "./share.js";
 
 // ---- date helpers (all local time, week runs Monday to Sunday) ----
 function ymd(date) {
@@ -127,15 +127,28 @@ function pdfFrame(doc, subtitle, rangeText) {
   doc.setFontSize(28);
   doc.setTextColor(...INK);
   doc.text("kinda", margin, y + 20);
-  doc.setTextColor(...ACCENT);
-  doc.text(".", margin + doc.getTextWidth("kinda"), y + 20);
+  const wordWidth = doc.getTextWidth("kinda");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(...MUTED);
   doc.text(subtitle, width - margin, y + 8, { align: "right" });
+  const subtitleWidth = doc.getTextWidth(subtitle);
   doc.setFontSize(11);
   doc.setTextColor(...INK);
   doc.text(rangeText, width - margin, y + 24, { align: "right" });
+  const rangeWidth = doc.getTextWidth(rangeText);
+  try {
+    // Kindle replaces the dot after "kinda" and waves from the corner.
+    const dot = kindleDataUrl("happy", 160);
+    if (dot) doc.addImage(dot, "PNG", margin + wordWidth + 2, y - 3, 22, 25);
+    const mascot = kindleDataUrl("cheer", 240);
+    if (mascot) doc.addImage(mascot, "PNG", width - margin - Math.max(subtitleWidth, rangeWidth) - 52, y - 2, 40, 46);
+  } catch {
+    doc.setTextColor(...ACCENT);
+    doc.setFontSize(28);
+    doc.setFont("helvetica", "bold");
+    doc.text(".", margin + wordWidth, y + 20);
+  }
   y += 44;
   doc.setDrawColor(...RULE);
   doc.line(margin, y, width - margin, y);
@@ -415,6 +428,7 @@ export function WeeklyPage({ tasks, userName, onError = () => {} }) {
         title: "My week, in progress",
         subtitle: rangeLabel(startKey),
         filename: `kinda-week-${startKey}.png`,
+        mood: "proud",
         stats: [
           { value: `${summary.completion}%`, label: "weekly completion" },
           { value: summary.done.length, label: "tasks completed" },

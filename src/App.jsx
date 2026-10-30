@@ -1,4 +1,13 @@
-import Kindle, { KindleToast, KINDLE_MOODS } from "./Kindle.jsx";
+import Kindle, {
+  KindleToast,
+  KindleCheer,
+  KindleCreated,
+  KindleThinking,
+  KindleStreak,
+  KINDLE_MOODS,
+  pickPose,
+  pickStreakScene,
+} from "./Kindle.jsx";
 import React, {
   createContext,
   useCallback,
@@ -947,6 +956,8 @@ function WhatsNewDialog({ onClose }) {
   );
 }
 
+let toastTimeout = 0;
+
 function WorkspaceApp({ authClient, backendClient, backend }) {
   const convexClient = backendClient;
   const api = useMemo(() => {
@@ -1171,6 +1182,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   const [toast, setToast] = useState("");
   const [celebrationType, setCelebrationType] = useState(null);
   const [kindleToast, setKindleToast] = useState(null);
+  const [kindleCheer, setKindleCheer] = useState(null);
+  const [kindleCreated, setKindleCreated] = useState(null);
+  const [celebrationStreak, setCelebrationStreak] = useState(null);
   const seenDoneRef = useRef(null);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2102,10 +2116,14 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   }
 
   function notify(message) {
-    if (/unauthenticated|not authenticated/i.test(String(message))) return;
+    const text = String(message || "");
+    if (/unauthenticated|not authenticated/i.test(text)) return;
+    // Live-update connection notices fire once per open screen and the app
+    // already falls back to refreshing every minute, so they only add noise.
+    if (/live updates could not connect/i.test(text)) return;
     setToast(message);
-    window.clearTimeout(notify.timeout);
-    notify.timeout = window.setTimeout(() => setToast(""), 3200);
+    window.clearTimeout(toastTimeout);
+    toastTimeout = window.setTimeout(() => setToast(""), 2600);
   }
 
   function navigate(nextPage) {
@@ -2315,6 +2333,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       return;
     }
     const { tzOffset, ...fields } = body;
+    setKindleCreated({ key: Date.now(), pose: pickPose() });
     const draft = {
       id: `tmp-${Date.now()}`,
       ...fields,
@@ -2461,11 +2480,11 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
         if (nextCelebration) setCelebrationType(nextCelebration);
         else if (body.done && !task.done) {
-          const cheers = ["Nice one. Another down.", "That's one off the list.", "Look at you go.", "Steady wins it."];
-          setKindleToast({
+          const pose = pickPose();
+          setKindleCheer({
             key: Date.now(),
-            mood: openTodayAfter === 1 ? "enc" : "proud",
-            text: openTodayAfter === 1 ? "Just one left. You've got this." : cheers[Math.floor(Math.random() * cheers.length)],
+            pose,
+            text: openTodayAfter === 1 ? "Just one left. You’ve got this!" : undefined,
           });
         }
         try {
@@ -2479,7 +2498,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             nextStreak.current > previousStreak
           )
             nextCelebration = "streak";
-          if (nextCelebration === "streak") setCelebrationType("streak");
+          if (nextCelebration === "streak") {
+            setCelebrationStreak({
+              to: Number(nextStreak.current) || 1,
+              scene: pickStreakScene(Number(nextStreak.current) || 1),
+            });
+            setCelebrationType("streak");
+          }
         } catch (error) {
           notify(error.message);
         }
@@ -2497,7 +2522,10 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           }
         }
         if (nextCelebration === "leaderboard") setCelebrationType(nextCelebration);
-        if (nextCelebration) setKindleToast(null);
+        if (nextCelebration) {
+          setKindleToast(null);
+          setKindleCheer(null);
+        }
         if (willFinishAllTasks) {
           if (soundReady) {
             soundReady
@@ -2966,6 +2994,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         title: `${streak.current} day streak`,
         subtitle: `${user.name} is building a little momentum.`,
         filename: `kinda-streak-${streak.current}.png`,
+        mood: "celebrate",
         stats: [
           { value: `${streak.current} days`, label: "current streak" },
           { value: `${streak.best} days`, label: "personal best" },
@@ -3513,12 +3542,19 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         {showWhatsNew && !reminderQueue[0] && (
           <WhatsNewDialog onClose={closeWhatsNew} />
         )}
-        {kindleToast && !celebrationType && (
+        {kindleToast && !celebrationType && !kindleCheer && !kindleCreated && (
           <KindleToast toast={kindleToast} onDone={() => setKindleToast(null)} />
+        )}
+        {kindleCheer && !celebrationType && !kindleCreated && (
+          <KindleCheer cheer={kindleCheer} onDone={() => setKindleCheer(null)} />
+        )}
+        {kindleCreated && (
+          <KindleCreated created={kindleCreated} onDone={() => setKindleCreated(null)} />
         )}
         {celebrationType && (
           <CelebrationDialog
             type={celebrationType}
+            streakInfo={celebrationStreak}
             onClose={() => setCelebrationType(null)}
           />
         )}
@@ -3755,7 +3791,29 @@ function GroupLeaderboard({
   );
 }
 
-function CelebrationDialog({ type, onClose }) {
+function CelebrationDialog({ type, streakInfo, onClose }) {
+  if (type === "streak" && streakInfo) {
+    return (
+      <div
+        className="celebration-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <section
+          className="kd-streak-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Streak continued"
+        >
+          <KindleStreak to={streakInfo.to} scene={streakInfo.scene} />
+          <button className="kd-go" onClick={onClose}>
+            Keep going
+          </button>
+        </section>
+      </div>
+    );
+  }
   const celebration =
     type === "streak"
       ? {
@@ -6696,6 +6754,7 @@ function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialS
       onClose={onClose}
     >
       <form className="modal-form" onSubmit={onSave}>
+        {!task && <KindleThinking />}
         <label>
           Task
           <input
