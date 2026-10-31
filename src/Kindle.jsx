@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import "./kindle.css";
 import { POSES, confettiHtml, pickPose, pickStreakScene, poseHtml, streakSceneHtml, thinkingHtml } from "./kindleArt.js";
 
@@ -108,11 +108,19 @@ export default function Kindle({ mood = "happy", size = 48, animate = false, cla
   );
 }
 
-export function KindleToast({ toast, onDone }) {
+// Calls onDone after `ms`, once per `key`. The app re-renders often, so the
+// latest onDone is kept in a ref instead of restarting the timer every render.
+function useAutoDismiss(key, onDone, ms) {
+  const latest = useRef(onDone);
+  latest.current = onDone;
   useEffect(() => {
-    const timer = window.setTimeout(onDone, 3200);
+    const timer = window.setTimeout(() => latest.current && latest.current(), ms);
     return () => window.clearTimeout(timer);
-  }, [toast.key, onDone]);
+  }, [key, ms]);
+}
+
+export function KindleToast({ toast, onDone }) {
+  useAutoDismiss(toast.key, onDone, 3200);
   return (
     <div className="kindle-toast" role="status" key={toast.key}>
       <Kindle mood={toast.mood} size={52} animate />
@@ -138,10 +146,7 @@ const Html = ({ html, className, style }) => (
 
 // Big cheer when a task is ticked: a random pose with its own words.
 export function KindleCheer({ cheer, onDone }) {
-  useEffect(() => {
-    const timer = window.setTimeout(onDone, 2600);
-    return () => window.clearTimeout(timer);
-  }, [cheer.key, onDone]);
+  useAutoDismiss(cheer.key, onDone, 2600);
   const confetti = useMemo(() => confettiHtml(14), [cheer.key]);
   return (
     <div className="kd-ov kd-ov-soft kd-jump" role="status" key={cheer.key} onClick={onDone}>
@@ -154,10 +159,7 @@ export function KindleCheer({ cheer, onDone }) {
 
 // Full-screen cheer when a task has been created.
 export function KindleCreated({ created, onDone }) {
-  useEffect(() => {
-    const timer = window.setTimeout(onDone, 2800);
-    return () => window.clearTimeout(timer);
-  }, [created.key, onDone]);
+  useAutoDismiss(created.key, onDone, 2800);
   const confetti = useMemo(() => confettiHtml(30), [created.key]);
   return (
     <div className="kd-ov kd-ov-full kd-jump" role="status" key={created.key} onClick={onDone}>

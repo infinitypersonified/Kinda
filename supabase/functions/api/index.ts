@@ -615,13 +615,25 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const offset = Number.isSafeInteger(requestedOffset)
         ? Math.max(0, requestedOffset)
         : 0;
-      const { data: tasks, error } = await db.from("tasks").select(TASK_COLUMNS).eq(
-        "user_id",
-        userId,
-      ).order("created_at", { ascending: false }).order("id", { ascending: true }).range(
-        offset,
-        offset + pageSize - 1,
-      );
+      // Only send a recent window by default. Sending a person's whole history on
+      // every refresh used up the free egress quota. Older weeks are requested
+      // on demand with ?since=YYYY-MM-DD&until=YYYY-MM-DD.
+      const dateKey = (value: unknown) => {
+        const text = String(value ?? "");
+        return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+      };
+      const since = dateKey(query.since) ||
+        new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10);
+      const until = dateKey(query.until);
+      let taskQuery = db.from("tasks").select(TASK_COLUMNS).eq("user_id", userId);
+      if (until) {
+        taskQuery = taskQuery.gte("due_date", since).lte("due_date", until);
+      } else {
+        taskQuery = taskQuery.or(`due_date.gte.${since},due_date.is.null`);
+      }
+      const { data: tasks, error } = await taskQuery
+        .order("created_at", { ascending: false }).order("id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
       if (error) throw error;
       return response(200, await tasksWithGroups(tasks || []));
     }
@@ -1723,10 +1735,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       }
       if (method === "GET" && feature === "goals") {
         const [linksResult, membersResult] = await Promise.all([
-          // Newest first: the database returns at most 1000 rows, and without
+          // Newest first and capped at 300 to save data: without
           // an order a circle with many tasks could drop the one just added.
           db.from("circle_tasks").select("task_id").eq("circle_id", circleId)
-            .order("created_at", { ascending: false }).limit(1000),
+            .order("created_at", { ascending: false }).limit(300),
           db.from("circle_members").select("user_id").eq(
             "circle_id",
             circleId,
