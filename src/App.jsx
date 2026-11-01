@@ -24,6 +24,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  TrendingUp,
   Bell,
   CalendarDays,
   Check,
@@ -74,6 +75,7 @@ import { capturePageview } from "./analytics.js";
 import { shareProgressCard, socialShareUrl } from "./share.js";
 import { emojiGroups } from "./emoji.js";
 
+const GrowthPage = React.lazy(() => import("./Growth.jsx"));
 const WeeklyPage = React.lazy(() =>
   import("./weekly.jsx").then((module) => ({ default: module.WeeklyPage })),
 );
@@ -178,6 +180,7 @@ const pages = [
   { id: "circles", label: "Circles", icon: Users },
   { id: "activity", label: "Activity", icon: Heart },
   { id: "weekly", label: "Weekly", icon: BarChart3 },
+  { id: "growth", label: "Growth", icon: TrendingUp },
   { id: "chat", label: "Chat", icon: MessageCircle },
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "settings", label: "Settings", icon: Settings },
@@ -1179,7 +1182,21 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   const [sendingMessage, setSendingMessage] = useState(false);
   const sendingMessageRef = useRef(false);
   const [filter, setFilter] = useState("Today");
-  const [toast, setToast] = useState("");
+  const [toast, setToastRaw] = useState("");
+  // Every message goes through here so it always clears itself, and the
+  // "live updates" connection notice (the app already refreshes every minute
+  // without it) is never shown.
+  const setToast = (message) => {
+    const text = String(message || "");
+    window.clearTimeout(toastTimeout);
+    if (!text) {
+      setToastRaw("");
+      return;
+    }
+    if (/live updates could not connect/i.test(text)) return;
+    setToastRaw(text);
+    toastTimeout = window.setTimeout(() => setToastRaw(""), 3500);
+  };
   const [celebrationType, setCelebrationType] = useState(null);
   const [kindleToast, setKindleToast] = useState(null);
   const [kindleCheer, setKindleCheer] = useState(null);
@@ -2120,10 +2137,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     if (/unauthenticated|not authenticated/i.test(text)) return;
     // Live-update connection notices fire once per open screen and the app
     // already falls back to refreshing every minute, so they only add noise.
-    if (/live updates could not connect/i.test(text)) return;
     setToast(message);
-    window.clearTimeout(toastTimeout);
-    toastTimeout = window.setTimeout(() => setToast(""), 2600);
   }
 
   function navigate(nextPage) {
@@ -2295,6 +2309,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         Math.max(1, Math.round(Number(form.get("targetMinutes")) || 25)),
       ),
       repeat: String(form.get("repeat") || "none"),
+      applyTo: String(form.get("applyTo") || "one"),
       reminderTime: String(form.get("reminderTime") || ""),
       tzOffset: new Date().getTimezoneOffset(),
     };
@@ -3101,7 +3116,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           </button>
           <nav className="side-nav" aria-label="Main navigation">
             {[
-              ["Plan", ["home", "tasks", "weekly"]],
+              ["Plan", ["home", "tasks", "weekly", "growth"]],
               ["Together", ["circles", "chat", "activity"]],
               ["You", ["profile", "settings"]],
             ].map(([heading, ids]) => (
@@ -3362,6 +3377,11 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
                   : null
               }
             />
+          )}
+          {page === "growth" && (
+            <React.Suspense fallback={<p className="quiet-empty">Loading your patterns…</p>}>
+              <GrowthPage tasks={tasks} />
+            </React.Suspense>
           )}
           {page === "weekly" && (
             <React.Suspense fallback={<p className="quiet-empty">Loading your weekly report…</p>}>
@@ -3738,9 +3758,25 @@ function GroupLeaderboard({
           )}
         </div>
       </div>
+      {!compact && ranked.length >= 2 && (
+        <div className="podium" role="img" aria-label="Top three in this circle today">
+          {[1, 0, 2].filter((slot) => ranked[slot]).map((slot) => {
+            const member = ranked[slot];
+            return (
+              <div className={`podium-slot podium-${slot + 1}`} key={member.id}>
+                {slot === 0 && <Trophy size={22} className="podium-trophy" />}
+                <Avatar name={member.name} avatar={member.avatar} large={slot === 0} />
+                <b>{member.id === userId ? "You" : member.name.split(" ")[0]}</b>
+                <small>{member.doneCount} done</small>
+                <div className="podium-block"><span>{slot + 1}</span></div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {ranked.length ? (
         <ol className="leaderboard-list">
-          {ranked.map((member) => (
+          {(!compact && ranked.length >= 2 ? ranked.slice(3) : ranked).map((member) => (
             <li
               className={`leaderboard-row ${member.rank === 1 ? "leaderboard-first" : ""}`}
               key={member.id}
@@ -3886,6 +3922,90 @@ function PageHeader({ eyebrow, title, description, action }) {
   );
 }
 
+function HelpTip({ title, children }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (box.current && !box.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+  return (
+    <span className="help-tip" ref={box}>
+      <button
+        type="button"
+        className="help-tip-button"
+        aria-label={`How this works: ${title}`}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        ?
+      </button>
+      {open && (
+        <span className="help-tip-card" role="note">
+          <b>{title}</b>
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
+const HELP_ITEMS = [
+  [
+    "What counts for my streak?",
+    "A day counts when you plan at least 5 tasks for it and finish at least 80% of them. Plan 5 and finish 4, and the day counts. Today can still be saved until the day ends.",
+  ],
+  [
+    "Why did my streak end?",
+    "A past day had fewer than 5 tasks, or you finished less than 80% of them. Start again today with a full day and the count builds back up.",
+  ],
+  [
+    "What does moved mean?",
+    "If you move a task to another day, it counts as not done on the day you first planned it. It shows up on the new day too, where finishing it counts.",
+  ],
+  [
+    "How do repeating tasks work?",
+    "A repeating task makes its next copy for you. Pick every day, weekdays, every week, or choose the exact days you want, like Monday, Wednesday and Friday.",
+  ],
+  [
+    "What are circles?",
+    "A circle is a small group that shares tasks. Owners and admins can assign one task to everyone, and the leaderboard shows who has finished the most today.",
+  ],
+  [
+    "What do others in my circle see?",
+    "Only the tasks you choose to share with a circle. Everything else stays on your own list.",
+  ],
+  [
+    "Who is Kindle?",
+    "Kindle is your flame. He cheers when you finish a task and grows with your streak.",
+  ],
+];
+
+function HelpSection() {
+  return (
+    <section className="settings-section">
+      <div className="section-title-row">
+        <div>
+          <p className="eyebrow">HELP</p>
+          <h2>How Kinda works</h2>
+        </div>
+      </div>
+      <div className="help-list">
+        {HELP_ITEMS.map(([question, answer]) => (
+          <details key={question}>
+            <summary>{question}</summary>
+            <p>{answer}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StreakLine({ streak, done, total, onShare }) {
   const threshold = Number(streak.percent) || 80;
   const minTasks = Number(streak.minTasks) || 5;
@@ -3926,6 +4046,12 @@ function StreakLine({ streak, done, total, onShare }) {
         <Kindle mood={mood} size={34} animate={mood !== "sleepy" && mood !== "sad"} />
       </span>
       <b>{current > 0 ? `${current}-day streak` : "Start a streak"}</b>
+      <HelpTip title="How streaks work">
+        <span>
+          A day counts when you plan at least {minTasks} tasks and finish at
+          least {threshold}% of them. Today stays open until the day ends.
+        </span>
+      </HelpTip>
       <span>{message}</span>
       {current > 0 && (
         <button type="button" className="streak-share" onClick={onShare}>
@@ -4321,19 +4447,28 @@ function TaskHistory({ tasks, onMove }) {
     .sort((a, b) => b.localeCompare(a))
     .map((day) => ({
       day,
-      done: history.filter((entry) => entry.day === day && entry.task.done).map((entry) => entry.task),
-      unfinished: history.filter((entry) => entry.day === day && !entry.task.done).map((entry) => entry.task),
+      // A task that was moved on from this day is shown as moved, not as
+      // unfinished, so "Move to today" only appears for tasks still stuck here.
+      done: history.filter((entry) => entry.day === day && taskDay(entry.task) === day && entry.task.done).map((entry) => entry.task),
+      unfinished: history.filter((entry) => entry.day === day && taskDay(entry.task) === day && !entry.task.done).map((entry) => entry.task),
+      moved: history.filter((entry) => entry.day === day && taskDay(entry.task) !== day).map((entry) => entry.task),
     }));
   return (
     <section className="task-history" aria-label="Tasks from the previous three days">
       <div className="section-title-row"><h2>Previous 3 days</h2></div>
-      {days.map(({ day, done, unfinished }) => (
+      {days.map(({ day, done, unfinished, moved }) => (
         <section className="earlier-day-group" key={day}>
           <h4>{dayLabel(day)}</h4>
           {done.length > 0 && <div className="earlier-status-group">
             <small className="eyebrow">COMPLETED</small>
             {done.map((task) => <div className="earlier-row" key={task.id}>
               <span><b>{task.title}</b><small>Done at {task.completedAt ? dateTime(task.completedAt) : "time unavailable"}</small></span>
+            </div>)}
+          </div>}
+          {moved.length > 0 && <div className="earlier-status-group">
+            <small className="eyebrow">MOVED</small>
+            {moved.map((task) => <div className="earlier-row" key={task.id}>
+              <span><b>{task.title}</b><small>Moved to {dayLabel(taskDay(task))}{task.done ? " · done" : ""}</small></span>
             </div>)}
           </div>}
           {unfinished.length > 0 && <div className="earlier-status-group">
@@ -4615,6 +4750,7 @@ function CirclesPage({
   onRemoveMember,
   onWeeklyReport,
 }) {
+  const [circleTab, setCircleTab] = useState("today");
   const myRole =
     activeGroup?.myRole ||
     (activeGroup?.ownerId === user.id ? "owner" : "member");
@@ -4859,6 +4995,29 @@ function CirclesPage({
                     </button>
                   </div>
                 </div>
+                <div className="circle-tabs" role="tablist" aria-label="Circle sections">
+                  {[
+                    ["today", "Today"],
+                    ["board", "Leaderboard"],
+                    ["members", "Members"],
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={circleTab === key}
+                      className={circleTab === key ? "active" : ""}
+                      onClick={() => setCircleTab(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={onOpenChat}>
+                    Chat
+                  </button>
+                </div>
+                {circleTab === "today" && (
+                <>
                 <div className="circle-progress">
                   {earlierCount > 0 && (
                     <small className="quiet-note">
@@ -4919,7 +5078,12 @@ function CirclesPage({
                   onAssign={onAssign}
                   onDelete={onDeleteAssignment}
                 />
-                <GroupLeaderboard group={activeGroup} userId={user.id} />
+                </>
+                )}
+                {circleTab === "board" && (
+                  <GroupLeaderboard group={activeGroup} userId={user.id} />
+                )}
+                {circleTab === "members" && (
                 <div className="circle-members">
                   <div className="section-title-row">
                     <div>
@@ -5029,6 +5193,8 @@ function CirclesPage({
                     </div>
                   )}
                 </div>
+                )}
+                {circleTab === "today" && (
                 <div className="circle-tasks">
                   <div className="section-title-row">
                     <div>
@@ -5110,6 +5276,7 @@ function CirclesPage({
                     </p>
                   )}
                 </div>
+                )}
               </section>
             )}
           </div>
@@ -5205,6 +5372,13 @@ function MemberRow({ member, index, you, myRole, onSetAdmin, onRemove }) {
 }
 
 function AssignmentsSection({ assignments, canManage, onAssign, onDelete }) {
+  const [showFinished, setShowFinished] = useState(false);
+  // Finished work moves out of the way: a member's own finished tasks, or an
+  // assignment everyone has completed (for owners and admins).
+  const isFinished = (item) =>
+    canManage ? item.total > 0 && item.doneCount === item.total : item.mineDone === true;
+  const activeItems = assignments.filter((item) => !isFinished(item));
+  const finishedItems = assignments.filter(isFinished);
   return (
     <section
       className="assignments"
@@ -5224,9 +5398,9 @@ function AssignmentsSection({ assignments, canManage, onAssign, onDelete }) {
           </button>
         )}
       </div>
-      {assignments.length ? (
+      {activeItems.length ? (
         <div className="assignment-list">
-          {assignments.map((item) => {
+          {activeItems.map((item) => {
             const percent = item.total
               ? Math.round((item.doneCount / item.total) * 100)
               : 0;
@@ -5286,10 +5460,34 @@ function AssignmentsSection({ assignments, canManage, onAssign, onDelete }) {
         </div>
       ) : (
         <p className="quiet-empty">
-          {canManage
-            ? "Assign one task to everyone in this circle, then see who has finished it."
-            : "Your circle owner has not assigned any tasks yet."}
+          {assignments.length
+            ? "All caught up. Nothing is waiting on you."
+            : canManage
+              ? "Assign one task to everyone in this circle, then see who has finished it."
+              : "Your circle owner has not assigned any tasks yet."}
         </p>
+      )}
+      {finishedItems.length > 0 && (
+        <div className="assignment-finished">
+          <button
+            type="button"
+            className="button button-secondary small-button"
+            aria-expanded={showFinished}
+            onClick={() => setShowFinished((open) => !open)}
+          >
+            {showFinished ? "Hide" : "Show"} finished ({finishedItems.length})
+          </button>
+          {showFinished && (
+            <ul className="assignment-members">
+              {finishedItems.map((item) => (
+                <li key={item.id} className="done">
+                  <span>{item.title}</span>
+                  <b>{canManage ? "Everyone done" : "You finished this"}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </section>
   );
@@ -6349,6 +6547,7 @@ function SettingsPage({
         title="Settings"
         description="A few useful things about your account."
       />
+      <HelpSection />
       <section className="settings-section">
         <p className="eyebrow">ACCOUNT</p>
         <div className="settings-row">
@@ -6739,6 +6938,90 @@ function SettingsPage({
   );
 }
 
+const REPEAT_DAYS = [
+  ["1", "M", "Monday"],
+  ["2", "T", "Tuesday"],
+  ["3", "W", "Wednesday"],
+  ["4", "T", "Thursday"],
+  ["5", "F", "Friday"],
+  ["6", "S", "Saturday"],
+  ["7", "S", "Sunday"],
+];
+
+function RepeatField({ defaultValue = "none" }) {
+  const startsCustom = String(defaultValue).startsWith("custom:");
+  const [mode, setMode] = useState(startsCustom ? "custom" : defaultValue);
+  const [days, setDays] = useState(
+    startsCustom ? String(defaultValue).slice(7).split(",") : ["1", "3", "5"],
+  );
+  const toggle = (key) =>
+    setDays((list) =>
+      list.includes(key) ? list.filter((item) => item !== key) : [...list, key],
+    );
+  const value =
+    mode === "custom"
+      ? days.length
+        ? `custom:${[...days].sort().join(",")}`
+        : "none"
+      : mode;
+  const upcoming = [];
+  if (mode === "custom" && days.length) {
+    const start = new Date();
+    for (let step = 0; step < 21 && upcoming.length < 3; step += 1) {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + step);
+      const iso = String(((date.getDay() + 6) % 7) + 1);
+      if (days.includes(iso)) {
+        upcoming.push(
+          `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+        );
+      }
+    }
+  }
+  return (
+    <div className="repeat-field">
+      <label>
+        Repeat <span className="optional-label">needs a due date</span>
+        <select value={mode} onChange={(event) => setMode(event.target.value)}>
+          <option value="none">Does not repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekdays">Weekdays</option>
+          <option value="weekly">Every week</option>
+          <option value="custom">Choose days</option>
+        </select>
+      </label>
+      <input type="hidden" name="repeat" value={value} />
+      {mode === "custom" && (
+        <div className="repeat-days">
+          <div className="repeat-shortcuts">
+            <button type="button" onClick={() => setDays(["1", "2", "3", "4", "5", "6", "7"])}>Every day</button>
+            <button type="button" onClick={() => setDays(["1", "2", "3", "4", "5"])}>Weekdays</button>
+            <button type="button" onClick={() => setDays(["6", "7"])}>Weekends</button>
+          </div>
+          <div className="repeat-chips">
+            {REPEAT_DAYS.map(([key, short, full]) => (
+              <button
+                key={key}
+                type="button"
+                aria-label={full}
+                aria-pressed={days.includes(key)}
+                className={days.includes(key) ? "on" : ""}
+                onClick={() => toggle(key)}
+              >
+                {short}
+              </button>
+            ))}
+          </div>
+          <small className="repeat-preview">
+            {days.length
+              ? `Next: ${upcoming.map((day) => dayLabel(day)).join(", ")}`
+              : "Pick at least one day, or this task won’t repeat."}
+          </small>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
   const selectedFriendIds = task?.sharedWith || initialSharedWith;
@@ -6827,15 +7110,20 @@ function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialS
           </div>
           <FocusTimeField defaultValue={task?.targetMinutes || 25} />
           <div className="form-grid">
-            <label>
-              Repeat <span className="optional-label">needs a due date</span>
-              <select name="repeat" defaultValue={task?.repeat || "none"}>
-                <option value="none">Does not repeat</option>
-                <option value="daily">Every day</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekly">Every week</option>
-              </select>
-            </label>
+            <RepeatField defaultValue={task?.repeat || "none"} />
+            {task && (task.repeat !== "none" || task.seriesId) && (
+              <fieldset className="apply-to">
+                <legend>Apply changes to</legend>
+                <label>
+                  <input type="radio" name="applyTo" value="one" defaultChecked />
+                  Only this task
+                </label>
+                <label>
+                  <input type="radio" name="applyTo" value="future" />
+                  This and all future ones
+                </label>
+              </fieldset>
+            )}
             <label>
               Reminder <span className="optional-label">Optional</span>
               <input

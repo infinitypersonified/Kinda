@@ -22,6 +22,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
 };
 
+// "custom:1,3,5" repeats on those weekdays (1 = Monday ... 7 = Sunday).
+function validRepeat(repeat: string) {
+  return /^(none|daily|weekdays|weekly|custom:[1-7](,[1-7]){0,6})$/.test(repeat) &&
+    (!repeat.startsWith("custom:") ||
+      new Set(repeat.slice(7).split(",")).size === repeat.slice(7).split(",").length);
+}
+
 const TASK_COLUMNS = "id,title,description,category,due_date,priority,visibility,target_minutes,elapsed_seconds,timer_started_at,done,completed_at,repeat,reminder_time,created_at,assignment_id,assigned_by_name,shared_with,series_id,moved_from";
 const TASK_RECORD_COLUMNS = `${TASK_COLUMNS},reminder_at,reminder_sent_for,tz_offset`;
 
@@ -660,7 +667,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         if (!data) fail("Choose only people who are already your friends.");
       }
       const repeat = String(body.repeat || "none");
-      if (!["none", "daily", "weekdays", "weekly"].includes(repeat)) {
+      if (!validRepeat(repeat)) {
         fail("Choose a valid repeat option.");
       }
       const reminderTime = String(body.reminderTime || "");
@@ -840,7 +847,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         }
         const repeat = String(body.repeat || "none");
         const reminderTime = String(body.reminderTime || "");
-        if (!["none", "daily", "weekdays", "weekly"].includes(repeat)) {
+        if (!validRepeat(repeat)) {
           fail("Choose a valid repeat option.");
         }
         if (reminderTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderTime)) {
@@ -901,6 +908,20 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             }).eq("id", taskId);
             if (clearSeriesError) throw clearSeriesError;
           } else if (fields.dueDate) updated.series_id = seriesId;
+          // "This and future tasks": copy the wording and settings to the
+          // upcoming, unfinished copies. Dates and finished tasks are left alone.
+          if (body.applyTo === "future" && repeat !== "none" && task.due_date) {
+            const { error: futureError } = await db.from("tasks").update({
+              title: fields.title,
+              description: String(body.description || "").trim(),
+              category: String(body.category || "Personal"),
+              priority: fields.priority,
+              target_minutes: fields.targetMinutes,
+              reminder_time: reminderTime,
+            }).eq("user_id", userId).eq("series_id", seriesId).eq("done", false)
+              .gt("due_date", task.due_date).neq("id", taskId);
+            if (futureError) throw futureError;
+          }
         }
         const { error: unlinkError } = await db.from("circle_tasks").delete()
           .eq("task_id", taskId).eq("shared_by", userId);
@@ -1395,9 +1416,19 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           .limit(30);
         if (error) throw error;
         const result = [];
+        // One paged query for every assignment instead of one query each.
+        const taskRows: Array<{ assignment_id: string; user_id: string; done: boolean }> = [];
+        const assignmentIds = (rows || []).map((row) => row.id);
+        for (let from = 0; assignmentIds.length; from += 1000) {
+          const { data: page, error: pageError } = await db.from("tasks")
+            .select("assignment_id,user_id,done").in("assignment_id", assignmentIds)
+            .order("id", { ascending: true }).range(from, from + 999);
+          if (pageError) throw pageError;
+          taskRows.push(...(page || []));
+          if (!page || page.length < 1000) break;
+        }
         for (const row of rows || []) {
-          const { data: tasks } = await db.from("tasks").select("user_id,done")
-            .eq("assignment_id", row.id);
+          const tasks = taskRows.filter((task) => task.assignment_id === row.id);
           const mine = tasks?.find((task) => task.user_id === userId);
           if (!canManage && !mine) continue;
           const [{ data: creator }, { data: profiles }] = await Promise.all([
@@ -1734,18 +1765,26 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         );
       }
       if (method === "GET" && feature === "goals") {
-        const [linksResult, membersResult] = await Promise.all([
-          // Newest first and capped at 300 to save data: without
-          // an order a circle with many tasks could drop the one just added.
-          db.from("circle_tasks").select("task_id").eq("circle_id", circleId)
-            .order("created_at", { ascending: false }).limit(300),
-          db.from("circle_members").select("user_id").eq(
-            "circle_id",
-            circleId,
-          ),
-        ]);
-        if (linksResult.error) throw linksResult.error;
+        // Pick tasks by their due date, not by when they were shared. Repeating
+        // tasks are created several days ahead, so their links are newer than
+        // today's, and a "newest links" cap pushed today's tasks out of the list.
+        const linkCutoff = new Date(Date.now() - 45 * 86400000).toISOString();
+        const linkRows: Array<{ task_id: string }> = [];
+        for (let from = 0;; from += 1000) {
+          const { data: page, error: pageError } = await db.from("circle_tasks")
+            .select("task_id").eq("circle_id", circleId)
+            .gte("created_at", linkCutoff).order("task_id", { ascending: true })
+            .range(from, from + 999);
+          if (pageError) throw pageError;
+          linkRows.push(...(page || []));
+          if (!page || page.length < 1000 || from >= 9000) break;
+        }
+        const linksResult = { data: linkRows, error: null };
+        const membersResult = await db.from("circle_members").select("user_id")
+          .eq("circle_id", circleId);
         if (membersResult.error) throw membersResult.error;
+        const dueSince = new Date(Date.now() - 7 * 86400000).toISOString()
+          .slice(0, 10);
         type GoalLinkRow = { task_id: string };
         type GoalMemberRow = { user_id: string };
         type GoalTaskRow = {
@@ -1770,7 +1809,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             "id,user_id,title,category,due_date,created_at,done",
             "id",
             taskIds,
-            (query) => query.order("created_at", { ascending: false }).order("id"),
+            (query) =>
+              query.or(`due_date.gte.${dueSince},due_date.is.null`)
+                .order("created_at", { ascending: false }).order("id"),
           ).then((result) => ({
             ...result,
             data: result.data.sort((a, b) =>

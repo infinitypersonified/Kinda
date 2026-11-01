@@ -147,6 +147,16 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     return date.toISOString().slice(0, 10);
   };
   const nextDate = (key: string, repeat: string) => {
+    if (repeat.startsWith("custom:")) {
+      const wanted = repeat.slice(7).split(",").map(Number);
+      let candidate = addDays(key, 1);
+      for (let step = 0; step < 7; step++) {
+        const day = new Date(`${candidate}T00:00:00Z`).getUTCDay();
+        if (wanted.includes((day + 6) % 7 + 1)) return candidate;
+        candidate = addDays(candidate, 1);
+      }
+      return addDays(key, 7);
+    }
     let date = addDays(key, repeat === "weekly" ? 7 : 1);
     if (repeat === "weekdays") {
       while ([0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay())) {
