@@ -10652,3 +10652,140 @@ html body .cwm-count {
 .apply-to { display: grid; gap: 6px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
 .apply-to legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
 .apply-to label { display: flex; align-items: center; gap: 8px; }
+
+.quick-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.quick-add:focus-within { border-color: var(--accent); }
+.quick-add input[name="title"] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.quick-add kbd {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+.fab-add {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: none;
+  width: 54px;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+@media (max-width: 780px) {
+  .fab-add { display: inline-flex; }
+}
+@media (hover: none) {
+  .quick-add kbd { display: none; }
+}
+
+/* Home: one card for today's progress and the streak */
+.day-glance {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 16px;
+  gap: 12px 16px;
+}
+.day-glance .progress-ring { width: 76px; height: 76px; }
+.day-glance .streak-line {
+  flex: 1 1 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.streak-share {
+  margin-left: auto;
+  padding: 6px;
+  border-radius: 50%;
+}
+.streak-share:hover { background: var(--tint); }
+@media (max-width: 780px) {
+  .home-new-task { display: none; }
+}
+
+/* Kindle inside the ring: stay centred, don't inherit the ring's svg positioning */
+.progress-ring .ring-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.progress-ring .ring-label svg {
+  position: static;
+  inset: auto;
+}
+
+/* Home on wide screens: tasks on the left, progress card and circles on the right */
+@media (min-width: 1000px) {
+  .page-content.home-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-auto-flow: row dense;
+    column-gap: 40px;
+    align-items: start;
+    width: min(100%, 1320px);
+  }
+  .home-page > * { grid-column: 1 / -1; }
+  .home-page > .home-grid { display: contents; }
+  .home-page .home-tasks {
+    grid-column: 1;
+    grid-row: span 2;
+    margin-top: 0;
+  }
+  .home-page > .day-glance {
+    grid-column: 2;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 18px;
+    text-align: center;
+  }
+  .home-page .day-glance .progress-ring { width: 112px; height: 112px; }
+  .home-page .day-glance .glance-copy { justify-items: center; }
+  .home-page .day-glance .streak-line { justify-content: center; text-align: center; }
+  .home-page .day-glance .streak-share { margin-left: 0; }
+  .home-page .home-social {
+    grid-column: 2;
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+.day-glance .progress-ring > svg { width: 100%; height: 100%; }
+
+.topbar-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--soft-accent);
+  color: var(--accent-deep);
+  font-size: 13px;
+  font-weight: 700;
+}

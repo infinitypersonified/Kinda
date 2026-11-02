@@ -1115,6 +1115,12 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     handleTimer(task, action),
   );
   const removeTask = useStableCallback((task) => deleteTask(task));
+  const moveTomorrow = useStableCallback((task) => {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+    return moveToToday([task], key, "tomorrow");
+  });
   const [friends, setFriends] = useState([]);
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
@@ -1173,6 +1179,22 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   const [searchResults, setSearchResults] = useState([]);
   const [profile, setProfile] = useState(cachedBoot?.user || null);
   const [taskDialog, setTaskDialog] = useState(null);
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== "n" && event.key !== "N") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      const tag = target && target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;
+      if (document.querySelector("[role=\"dialog\"]")) return;
+      event.preventDefault();
+      const quick = document.getElementById("quick-add");
+      if (quick) quick.focus();
+      else setTaskDialog({ task: null });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [friendDialog, setFriendDialog] = useState(false);
   const [circleDialog, setCircleDialog] = useState(false);
   const [inviteLinks, setInviteLinks] = useState({});
@@ -2635,10 +2657,10 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     }
   }
 
-  async function moveToToday(list) {
+  async function moveToToday(list, targetDate, label = "today") {
     const movable = list;
     if (!movable.length) return;
-    const dueDate = localDate();
+    const dueDate = typeof targetDate === "string" ? targetDate : localDate();
     const staged = movable.map((task) => ({
       task,
       opId: stageOp({
@@ -2656,8 +2678,8 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     );
     notify(
       movable.length === 1
-        ? "Moved to today."
-        : `Moved ${movable.length} tasks to today.`,
+        ? `Moved to ${label}.`
+        : `Moved ${movable.length} tasks to ${label}.`,
     );
     await Promise.all(
       staged.map(async ({ task, opId }) => {
@@ -3225,9 +3247,22 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             <span className="wordmark">
               kinda<span className="wordmark-flame"><Kindle mood="happy" size={22} /></span>
             </span>
+            {Number(streak?.current) > 0 && (
+              <span className="topbar-streak" title="Your streak">
+                <Flame size={14} aria-hidden="true" /> {streak.current}
+              </span>
+            )}
           </header>
           {page === "home" && (
             <HomePage
+              onDelete={removeTask}
+              onMoveTomorrow={moveTomorrow}
+              onQuickAdd={async (event) => {
+                const form = event.currentTarget;
+                event.preventDefault();
+                await saveTask({ preventDefault() {}, currentTarget: form });
+                form.reset();
+              }}
               user={user}
               tasks={todayTasks}
               done={todayDoneTasks.length}
@@ -3585,6 +3620,16 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             </span>
             {toast}
           </div>
+        )}
+        {!taskDialog && (
+          <button
+            type="button"
+            className="fab-add"
+            aria-label="New task"
+            onClick={() => setTaskDialog({ task: null })}
+          >
+            <Plus size={24} />
+          </button>
         )}
         {activeTimer && (
           <RunningTimer
@@ -4054,8 +4099,14 @@ function StreakLine({ streak, done, total, onShare }) {
       </HelpTip>
       <span>{message}</span>
       {current > 0 && (
-        <button type="button" className="streak-share" onClick={onShare}>
-          <Share size={13} /> Share
+        <button
+          type="button"
+          className="streak-share"
+          onClick={onShare}
+          aria-label="Share your streak"
+          title="Share your streak"
+        >
+          <Share size={15} />
         </button>
       )}
     </p>
@@ -4136,6 +4187,9 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
 }
 
 function HomePage({
+  onDelete,
+  onMoveTomorrow,
+  onQuickAdd,
   user,
   tasks,
   done,
@@ -4179,7 +4233,7 @@ function HomePage({
         }).format(new Date())}
         title={`${greeting()}, ${user.name.split(/\s+/)[0]}`}
         action={
-          <button className="button button-primary" onClick={onCreate}>
+          <button className="button button-primary home-new-task" onClick={onCreate}>
             <Plus size={16} /> New task
           </button>
         }
@@ -4198,11 +4252,8 @@ function HomePage({
         </section>
       ) : (
         <section className="day-glance" aria-label="Today at a glance">
-          <ProgressRing percent={completion} size={56} stroke={6}>
-            <b className="ring-number">
-              <CountUp value={completion} />
-              <small>%</small>
-            </b>
+          <ProgressRing percent={completion} size={76} stroke={7}>
+            <Kindle mood={completion >= 100 ? "proud" : "happy"} size={36} animate />
           </ProgressRing>
           <div className="glance-copy">
             <b>
@@ -4213,7 +4264,9 @@ function HomePage({
                 ? "Nothing planned yet."
                 : completion === 100
                   ? "Everything finished."
-                  : `${remainingTasks} left to go.`}
+                  : next
+                    ? `${completion}% done. Next up: ${next.title}`
+                    : `${remainingTasks} left to go.`}
             </span>
           </div>
           {streak &&
@@ -4237,6 +4290,22 @@ function HomePage({
               All tasks <ArrowRight size={15} />
             </button>
           </div>
+          {onQuickAdd && (
+            <form className="quick-add" onSubmit={onQuickAdd}>
+              <Plus size={16} aria-hidden="true" />
+              <input
+                id="quick-add"
+                name="title"
+                maxLength={120}
+                placeholder="Add a task and press Enter"
+                aria-label="Add a task for today"
+                autoComplete="off"
+                required
+              />
+              <input type="hidden" name="dueDate" value={localDate()} />
+              <kbd title="Press N to jump here">N</kbd>
+            </form>
+          )}
           {earlier.length > 0 && (
             <EarlierDays
               tasks={earlier}
@@ -4252,11 +4321,13 @@ function HomePage({
                 <TaskRow
                   key={task.id}
                   task={task}
+                  hideToday
                   justDone={justDoneId === task.id}
                   onComplete={onComplete}
                   onTimer={onTimer}
                   onEdit={onEdit}
-                  onDelete={null}
+                  onDelete={onDelete}
+                  onMoveTomorrow={onMoveTomorrow}
                 />
               ))}
             </div>
@@ -4279,7 +4350,7 @@ function HomePage({
         <aside className="home-social">
           <section className="home-feed">
             <div className="section-title-row">
-              <h2>Friends</h2>
+              <h2>Circle activity</h2>
               <button
                 className="icon-quiet"
                 onClick={() => onPage("activity")}
@@ -4297,8 +4368,8 @@ function HomePage({
               />
             ) : (
               <p className="quiet-empty">
-                Friend activity will appear when your friends share a task or
-                finish one.
+                Activity will appear here when people in your circles and
+                friends share a task or finish one.
               </p>
             )}
           </section>
@@ -4503,6 +4574,8 @@ const TaskRow = React.memo(function TaskRow({
   onEdit,
   onDelete,
   justDone,
+  hideToday = false,
+  onMoveTomorrow,
 }) {
   const locked = Boolean(task.assignmentId);
   const canDelete = Boolean(onDelete) && !locked;
@@ -4620,7 +4693,9 @@ const TaskRow = React.memo(function TaskRow({
             <span className="task-cat" data-cat={categorySlug(task.category)}>
               {task.category}
             </span>
-            <span className={`due ${due.tone}`}>{due.text}</span>
+            {!(hideToday && due.text === "Today") && (
+              <span className={`due ${due.tone}`}>{due.text}</span>
+            )}
             {task.priority === "high" && !task.done && (
               <span className="meta-flag">
                 <Flag size={12} /> High
@@ -4654,6 +4729,16 @@ const TaskRow = React.memo(function TaskRow({
                 aria-label="Edit task"
               >
                 <Pencil size={14} />
+              </button>
+            )}
+            {onMoveTomorrow && !locked && !task.done && (
+              <button
+                className="icon-quiet task-action"
+                onClick={() => onMoveTomorrow(task)}
+                aria-label="Move to tomorrow"
+                title="Move to tomorrow"
+              >
+                <ArrowRight size={14} />
               </button>
             )}
             {canDelete && (

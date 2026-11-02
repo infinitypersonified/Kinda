@@ -1,4 +1,4 @@
-KINDA UPDATE v8 (everything, including the repeating-task circle fix)
+KINDA UPDATE v12 (everything, mockup finished)
 
 STEP 1: Unzip into your project folder (the one with package.json). Say YES to replace files.
 STEP 2: In the Supabase SQL editor, run the file supabase/migrations/202610280001_custom_repeat_days.sql
@@ -42,3 +42,31 @@ REPEATING TASKS NOW SHOW IN CIRCLES (v8)
   re-sent it. The list now picks tasks by their due date (last 7 days and everything upcoming),
   so repeating tasks always appear.
 - Needs the server deploy: npx supabase functions deploy api
+
+QUICK ADD + ADD BUTTON (v9)
+- Home: a "Add a task and press Enter" box above Today. It adds a task for today.
+  Press N anywhere (not while typing or in a dialog) to jump to it.
+- On phones and small windows, a round Add button sits at the bottom right. It never
+  gets covered by notifications.
+- The side menu, the hamburger drawer on small screens, and the two-column home were already
+  in the app, so they are unchanged.
+
+HOME SCREEN (v10)
+- Today's progress and the streak are now one card: bigger ring with Kindle inside,
+  "x of y done today", the next task, then the streak line below.
+- Share is now a small icon button next to the streak.
+- Task rows on Home no longer repeat "Today" on every row.
+- On phones the header New task button is hidden because the round Add button is there.
+All colours come from the app's own theme.
+
+HOME SCREEN LAYOUT (v11)
+- Wide screens (1000px and up): Today's tasks on the left; the progress card (ring with
+  Kindle, streak, share) sits at the top of the right column, with Friends, Circles and
+  standings below it. The page is wider so there is less empty space.
+- Kindle is now centred inside the ring.
+- Small screens keep the single column with the progress card on top.
+
+MOCKUP FINISHED (v12)
+- Phones: your streak shows as a small flame chip in the top bar next to the logo.
+- Home task rows: hover (or tap a row) to edit, move to tomorrow, or delete.
+- The right column section is now called "Circle activity".
