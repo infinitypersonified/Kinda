@@ -247,6 +247,49 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     occurrencesCreated++;
   }
 
+  // Challenge days: make sure every member has today's challenge tasks.
+  // Runs every ten minutes, which is plenty and keeps database use low.
+  if (new Date(now).getUTCMinutes() % 10 === 0) {
+    try {
+      const todayKey = new Date(now).toISOString().slice(0, 10);
+      const oldest = new Date(now - 61 * 86400000).toISOString().slice(0, 10);
+      const { data: challenges } = await db.from("challenges").select(
+        "id,starts_on,days,daily_tasks",
+      ).lte("starts_on", todayKey).gte("starts_on", oldest);
+      for (const challenge of challenges || []) {
+        const day = Math.round(
+          (Date.parse(`${todayKey}T00:00:00Z`) -
+            Date.parse(`${challenge.starts_on}T00:00:00Z`)) / 86400000,
+        ) + 1;
+        if (day < 1 || day > challenge.days) continue;
+        const { data: members } = await db.from("challenge_members").select(
+          "user_id",
+        ).eq("challenge_id", challenge.id);
+        for (const member of members || []) {
+          const { data: have } = await db.from("tasks").select("title").eq(
+            "user_id",
+            member.user_id,
+          ).eq("challenge_id", challenge.id).eq("due_date", todayKey);
+          const titles = new Set((have || []).map((row) => row.title));
+          const missing = (challenge.daily_tasks as string[]).filter((title) =>
+            !titles.has(title)
+          );
+          if (missing.length) {
+            await db.from("tasks").insert(missing.map((title) => ({
+              user_id: member.user_id,
+              title,
+              category: "Personal",
+              due_date: todayKey,
+              challenge_id: challenge.id,
+            })));
+          }
+        }
+      }
+    } catch (_error) {
+      // Challenge tasks are retried on the next run.
+    }
+  }
+
   await releaseLock();
   return Response.json({ ok: true, remindersSent, occurrencesCreated });
 });

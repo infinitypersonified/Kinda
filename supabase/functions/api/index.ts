@@ -29,7 +29,7 @@ function validRepeat(repeat: string) {
       new Set(repeat.slice(7).split(",")).size === repeat.slice(7).split(",").length);
 }
 
-const TASK_COLUMNS = "id,title,description,category,due_date,priority,visibility,target_minutes,elapsed_seconds,timer_started_at,done,completed_at,repeat,reminder_time,created_at,assignment_id,assigned_by_name,shared_with,series_id,moved_from";
+const TASK_COLUMNS = "id,title,description,category,due_date,priority,visibility,target_minutes,elapsed_seconds,timer_started_at,done,completed_at,repeat,reminder_time,created_at,assignment_id,assigned_by_name,shared_with,series_id,moved_from,challenge_id";
 const TASK_RECORD_COLUMNS = `${TASK_COLUMNS},reminder_at,reminder_sent_for,tz_offset`;
 
 function jsonResponse(status: number, body: unknown, origin: string | null = null) {
@@ -515,6 +515,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       assignedByName: task.assigned_by_name,
       sharedWith: task.shared_with || [],
       seriesId: task.series_id,
+      challengeId: task.challenge_id || null,
       movedFrom: task.moved_from || [],
       groupIds,
     });
@@ -1264,11 +1265,211 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       return response(200, { ok: true });
     }
     const circleRoute = pathname.match(
-      /^\/groups\/([^/]+)\/(goals|messages|members|invite|leave|recap|weekly|assignments|typing)(?:\/([^/]+))?$/,
+      /^\/groups\/([^/]+)\/(goals|messages|members|invite|leave|recap|weekly|assignments|typing|challenge)(?:\/([^/]+))?$/,
     );
     if (circleRoute) {
       const [, circleId, feature, suffix] = circleRoute;
       await ensureCircleMember(circleId);
+      if (feature === "challenge") {
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const dayDiff = (from: string, to: string) =>
+          Math.round(
+            (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+              86400000,
+          );
+        const loadChallenge = async () => {
+          const { data, error } = await db.from("challenges").select("*")
+            .eq("circle_id", circleId).order("starts_on", { ascending: false })
+            .limit(1).maybeSingle();
+          if (error) throw error;
+          return data as ApiRow | null;
+        };
+        const isJoined = async (challengeId: string) => {
+          const { data, error } = await db.from("challenge_members")
+            .select("user_id").eq("challenge_id", challengeId)
+            .eq("user_id", userId).maybeSingle();
+          if (error) throw error;
+          return Boolean(data);
+        };
+        // Today's tasks for one member, created once and only if missing.
+        const ensureTasks = async (challenge: ApiRow, forUser: string) => {
+          const day = dayDiff(String(challenge.starts_on), todayKey) + 1;
+          if (day < 1 || day > Number(challenge.days)) return;
+          const { data: have, error } = await db.from("tasks").select("title")
+            .eq("user_id", forUser).eq("challenge_id", challenge.id)
+            .eq("due_date", todayKey);
+          if (error) throw error;
+          const titles = new Set((have || []).map((row: ApiRow) => String(row.title)));
+          const missing = (challenge.daily_tasks as string[]).filter((title) =>
+            !titles.has(title)
+          );
+          if (missing.length) {
+            const { error: insertError } = await db.from("tasks").insert(
+              missing.map((title) => ({
+                user_id: forUser,
+                title,
+                category: "Personal",
+                due_date: todayKey,
+                challenge_id: challenge.id,
+              })),
+            );
+            if (insertError) throw insertError;
+          }
+        };
+        const describe = async (challenge: ApiRow | null) => {
+          if (!challenge) return null;
+          const days = Number(challenge.days);
+          const day = dayDiff(String(challenge.starts_on), todayKey) + 1;
+          const status = day < 1 ? "upcoming" : day > days ? "ended" : "active";
+          if (status === "ended" && day > days + 7) return null;
+          const [membersResult, joinedResult] = await Promise.all([
+            db.from("circle_members").select("user_id").eq("circle_id", circleId),
+            db.from("challenge_members").select("user_id").eq(
+              "challenge_id",
+              challenge.id,
+            ),
+          ]);
+          if (membersResult.error) throw membersResult.error;
+          if (joinedResult.error) throw joinedResult.error;
+          const joinedIds = new Set(
+            (joinedResult.data || []).map((row: ApiRow) => String(row.user_id)),
+          );
+          const userIds = (membersResult.data || []).map((row: ApiRow) =>
+            String(row.user_id)
+          );
+          const { data: profiles, error: profileError } = await db.from("profiles")
+            .select("id,name,avatar").in("id", userIds);
+          if (profileError) throw profileError;
+          const doneRows: ApiRow[] = [];
+          for (let from = 0;; from += 1000) {
+            const { data: page, error: pageError } = await db.from("tasks")
+              .select("user_id,due_date").eq("challenge_id", challenge.id)
+              .eq("done", true).order("id", { ascending: true })
+              .range(from, from + 999);
+            if (pageError) throw pageError;
+            doneRows.push(...(page || []));
+            if (!page || page.length < 1000 || from >= 9000) break;
+          }
+          const doneBy = new Map<string, number>();
+          const todayBy = new Map<string, number>();
+          for (const row of doneRows) {
+            const id = String(row.user_id);
+            doneBy.set(id, (doneBy.get(id) || 0) + 1);
+            if (row.due_date === todayKey) todayBy.set(id, (todayBy.get(id) || 0) + 1);
+          }
+          const { data: mine, error: mineError } = await db.from("tasks")
+            .select("id,title,done").eq("user_id", userId)
+            .eq("challenge_id", challenge.id).eq("due_date", todayKey)
+            .order("created_at", { ascending: true });
+          if (mineError) throw mineError;
+          const perDay = (challenge.daily_tasks as string[]).length;
+          const names = new Map(
+            (profiles || []).map((row: ApiRow) => [String(row.id), row]),
+          );
+          return {
+            id: challenge.id,
+            title: challenge.title,
+            intro: challenge.intro,
+            startsOn: challenge.starts_on,
+            days,
+            dailyTasks: challenge.daily_tasks,
+            perDay,
+            status,
+            dayNumber: Math.min(Math.max(day, 0), days),
+            joined: joinedIds.has(userId),
+            totalDone: doneRows.length,
+            goal: Math.max(joinedIds.size, 1) * days * perDay,
+            members: userIds.filter((id) => joinedIds.has(id)).map((id) => {
+              const profile = names.get(id) as ApiRow | undefined;
+              return {
+                id,
+                name: profile?.name || "Member",
+                avatar: profile?.avatar || "",
+                done: doneBy.get(id) || 0,
+                todayDone: todayBy.get(id) || 0,
+              };
+            }),
+            todayTasks: mine || [],
+          };
+        };
+        const requireManager = async () => {
+          const { data: role, error: roleError } = await db.from("circle_members")
+            .select("role").eq("circle_id", circleId).eq("user_id", userId)
+            .single();
+          if (roleError) throw roleError;
+          if (role.role !== "owner" && role.role !== "admin") {
+            fail("Only the circle owner or an admin can do that.", 403);
+          }
+        };
+        if (method === "GET" && !suffix) {
+          const challenge = await loadChallenge();
+          if (challenge && await isJoined(String(challenge.id))) {
+            await ensureTasks(challenge, userId);
+          }
+          return response(200, { challenge: await describe(challenge) });
+        }
+        if (method === "POST" && !suffix) {
+          await requireManager();
+          const title = String(body.title || "").trim().slice(0, 60);
+          if (!title) fail("Give the challenge a name.");
+          const intro = String(body.intro || "").trim().slice(0, 500);
+          if (intro.length < 10) {
+            fail("Add a short intro so people know what it is about.");
+          }
+          const days = Math.round(Number(body.days));
+          if (!(days >= 3 && days <= 60)) fail("Pick between 3 and 60 days.");
+          const tasks = (Array.isArray(body.tasks) ? body.tasks : [])
+            .map((item: unknown) => String(item).trim().slice(0, 80))
+            .filter(Boolean).slice(0, 8);
+          if (!tasks.length) fail("Add at least one daily task.");
+          const existing = await loadChallenge();
+          if (existing && dayDiff(String(existing.starts_on), todayKey) < Number(existing.days)) {
+            fail("This circle already has a challenge running.");
+          }
+          const { data: created, error: createError } = await db.from("challenges")
+            .insert({
+              circle_id: circleId,
+              created_by: userId,
+              title,
+              intro,
+              starts_on: todayKey,
+              days,
+              daily_tasks: tasks,
+            }).select("*").single();
+          if (createError) throw createError;
+          await db.from("challenge_members").insert({
+            challenge_id: created.id,
+            user_id: userId,
+          });
+          await ensureTasks(created, userId);
+          return response(201, { challenge: await describe(created) });
+        }
+        if (method === "POST" && suffix === "join") {
+          const challenge = await loadChallenge();
+          if (!challenge) fail("There is no challenge to join.", 404);
+          const { error: joinError } = await db.from("challenge_members").upsert({
+            challenge_id: challenge!.id,
+            user_id: userId,
+          });
+          if (joinError) throw joinError;
+          await ensureTasks(challenge!, userId);
+          return response(200, { challenge: await describe(challenge) });
+        }
+        if (method === "POST" && suffix === "leave") {
+          const challenge = await loadChallenge();
+          if (!challenge) fail("There is no challenge to leave.", 404);
+          await db.from("challenge_members").delete().eq(
+            "challenge_id",
+            challenge!.id,
+          ).eq("user_id", userId);
+          await db.from("tasks").delete().eq("user_id", userId).eq(
+            "challenge_id",
+            challenge!.id,
+          ).eq("done", false).gte("due_date", todayKey);
+          return response(200, { challenge: await describe(challenge) });
+        }
+        fail("Not found.", 404);
+      }
       if (feature === "members" && method === "POST" && !suffix) {
         const { data: role, error: roleError } = await db.from("circle_members")
           .select("role").eq("circle_id", circleId).eq("user_id", userId)
@@ -1783,7 +1984,12 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const membersResult = await db.from("circle_members").select("user_id")
           .eq("circle_id", circleId);
         if (membersResult.error) throw membersResult.error;
-        const dueSince = new Date(Date.now() - 7 * 86400000).toISOString()
+        // The circle screen only shows today, so only today and its neighbours
+        // are sent. Sending every shared task for the next week and the last
+        // week (hundreds of rows, every minute) used up the free data allowance.
+        const dueSince = new Date(Date.now() - 86400000).toISOString()
+          .slice(0, 10);
+        const dueUntil = new Date(Date.now() + 86400000).toISOString()
           .slice(0, 10);
         type GoalLinkRow = { task_id: string };
         type GoalMemberRow = { user_id: string };
@@ -1810,7 +2016,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             "id",
             taskIds,
             (query) =>
-              query.or(`due_date.gte.${dueSince},due_date.is.null`)
+              query.or(
+                `and(due_date.gte.${dueSince},due_date.lte.${dueUntil}),due_date.is.null`,
+              )
                 .order("created_at", { ascending: false }).order("id"),
           ).then((result) => ({
             ...result,

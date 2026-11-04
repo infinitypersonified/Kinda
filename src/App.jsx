@@ -2,12 +2,14 @@ import Kindle, {
   KindleToast,
   KindleCheer,
   KindleCreated,
+  KindleWarrior,
   KindleThinking,
   KindleStreak,
   KINDLE_MOODS,
   pickPose,
   pickStreakScene,
 } from "./Kindle.jsx";
+import { ChallengeCard, ChallengeScreen } from "./Challenge.jsx";
 import React, {
   createContext,
   useCallback,
@@ -61,6 +63,7 @@ import {
   Trophy,
   UserRound,
   ChevronDown,
+  ChevronRight,
   FileText,
   Flag,
   Shield,
@@ -1179,6 +1182,16 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   const [searchResults, setSearchResults] = useState([]);
   const [profile, setProfile] = useState(cachedBoot?.user || null);
   const [taskDialog, setTaskDialog] = useState(null);
+  const [warrior, setWarrior] = useState(null);
+  const challengeApi = {
+    get: (groupId) => api(`/groups/${groupId}/challenge`),
+    create: (groupId, values) =>
+      api(`/groups/${groupId}/challenge`, { method: "POST", body: JSON.stringify(values) }),
+    join: (groupId) =>
+      api(`/groups/${groupId}/challenge/join`, { method: "POST", body: "{}" }),
+    leave: (groupId) =>
+      api(`/groups/${groupId}/challenge/leave`, { method: "POST", body: "{}" }),
+  };
   useEffect(() => {
     const onKey = (event) => {
       if (event.key !== "n" && event.key !== "N") return;
@@ -1195,6 +1208,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Like an app: every page opens at the top, never where the last one was scrolled.
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+    window.scrollTo({ top: 0 });
+    document.querySelector(".main-area")?.scrollTo?.({ top: 0 });
+    document.querySelectorAll(".page-content").forEach((el) => el.scrollTo?.({ top: 0 }));
+  }, [page]);
   const [friendDialog, setFriendDialog] = useState(false);
   const [circleDialog, setCircleDialog] = useState(false);
   const [inviteLinks, setInviteLinks] = useState({});
@@ -2516,7 +2536,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         loadActivity().catch((error) => notify(error.message));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
         if (nextCelebration) setCelebrationType(nextCelebration);
-        else if (body.done && !task.done) {
+        else if (body.done && !task.done && task.challengeId && !tasks.some((other) => other.id !== task.id && other.challengeId === task.challengeId && taskDay(other) === localDate() && !other.done)) {
+          setWarrior({ scene: "fire", title: "Day done!", line: "The circle’s flame just grew." });
+        } else if (body.done && !task.done) {
           const pose = pickPose();
           setKindleCheer({
             key: Date.now(),
@@ -3311,6 +3333,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
               justDoneId={justDoneId}
               tasks={filteredTasks}
               recentTasks={recentPastTasks}
+              todayPool={todayTasks}
               onMoveToToday={moveToToday}
               filter={filter}
               setFilter={setFilter}
@@ -3355,6 +3378,10 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
                 })
               }
               onOpenChat={() => navigate("chat")}
+              challengeApi={challengeApi}
+              onChallengeChanged={() => refreshTasks().catch(() => {})}
+              onWarrior={setWarrior}
+              onNotify={notify}
               recap={recap}
               onNudge={nudgeTask}
               onRevokeInvite={revokeInviteLink}
@@ -3603,6 +3630,14 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         {kindleCheer && !celebrationType && !kindleCreated && (
           <KindleCheer cheer={kindleCheer} onDone={() => setKindleCheer(null)} />
         )}
+        {warrior && (
+          <KindleWarrior
+            scene={warrior.scene}
+            title={warrior.title}
+            line={warrior.line}
+            onDone={() => setWarrior(null)}
+          />
+        )}
         {kindleCreated && (
           <KindleCreated created={kindleCreated} onDone={() => setKindleCreated(null)} />
         )}
@@ -3621,7 +3656,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
             {toast}
           </div>
         )}
-        {!taskDialog && (
+        {!taskDialog && (page === "home" || page === "tasks") && (
           <button
             type="button"
             className="fab-add"
@@ -4113,9 +4148,27 @@ function StreakLine({ streak, done, total, onShare }) {
   );
 }
 
-function EarlierDays({ tasks, onMove, onShowAll }) {
+// A past, unfinished repeating task doesn't need "Move to today" when today's
+// copy of it is already on the list.
+function hasCurrentCopy(task, pool) {
+  if (!pool?.length || task.done) return false;
+  const title = String(task.title || "").trim().toLowerCase();
+  return pool.some(
+    (other) =>
+      other.id !== task.id &&
+      taskDay(other) === localDate() &&
+      ((task.seriesId && other.seriesId === task.seriesId) ||
+        (task.repeat &&
+          task.repeat !== "none" &&
+          other.repeat &&
+          other.repeat !== "none" &&
+          String(other.title || "").trim().toLowerCase() === title)),
+  );
+}
+
+function EarlierDays({ tasks, onMove, onShowAll, current = [] }) {
   const [open, setOpen] = useState(false);
-  const movable = tasks.filter((task) => !task.done);
+  const movable = tasks.filter((task) => !task.done && !hasCurrentCopy(task, current));
   const days = [...new Set(tasks.map(taskDay))]
     .sort((left, right) => right.localeCompare(left))
     .map((day) => ({
@@ -4170,7 +4223,9 @@ function EarlierDays({ tasks, onMove, onShowAll }) {
                         <b>{task.title}</b>
                         <small>{task.assignmentId ? "Assigned · not completed" : "Not completed"}</small>
                       </span>
-                      <button className="text-link" onClick={() => onMove([task])}>Move to today</button>
+                      {hasCurrentCopy(task, current)
+                        ? <small>Already on today’s list</small>
+                        : <button className="text-link" onClick={() => onMove([task])}>Move to today</button>}
                     </div>
                   ))}
                 </div>
@@ -4309,6 +4364,7 @@ function HomePage({
           {earlier.length > 0 && (
             <EarlierDays
               tasks={earlier}
+              current={tasks}
               onMove={onMoveToToday}
               onShowAll={onShowEarlier}
             />
@@ -4432,6 +4488,7 @@ function HomePage({
 function TasksPage({
   tasks,
   recentTasks = [],
+  todayPool = [],
   onMoveToToday,
   filter,
   setFilter,
@@ -4472,7 +4529,7 @@ function TasksPage({
         )}
       </div>
       {filter === "Earlier" && recentTasks.length > 0 && (
-        <TaskHistory tasks={recentTasks} onMove={onMoveToToday} />
+        <TaskHistory tasks={recentTasks} current={todayPool} onMove={onMoveToToday} />
       )}
       {!loaded ? (
         <SkeletonList rows={4} />
@@ -4508,7 +4565,7 @@ function TasksPage({
   );
 }
 
-function TaskHistory({ tasks, onMove }) {
+function TaskHistory({ tasks, onMove, current = [] }) {
   const history = tasks.flatMap((task) => {
     const days = [...new Set([taskDay(task), ...(task.movedFrom || [])])]
       .filter((day) => day < localDate());
@@ -4546,7 +4603,9 @@ function TaskHistory({ tasks, onMove }) {
             <small className="eyebrow">NOT COMPLETED</small>
             {unfinished.map((task) => <div className="earlier-row" key={task.id}>
               <span><b>{task.title}</b><small>{task.assignmentId ? "Assigned · not completed" : "Not completed"}</small></span>
-              <button className="text-link" onClick={() => onMove(unfinished.filter((item) => item.id === task.id))}>Move to today</button>
+              {hasCurrentCopy(task, current)
+                ? <small>Already on today’s list</small>
+                : <button className="text-link" onClick={() => onMove(unfinished.filter((item) => item.id === task.id))}>Move to today</button>}
             </div>)}
           </div>}
         </section>
@@ -4693,6 +4752,11 @@ const TaskRow = React.memo(function TaskRow({
             <span className="task-cat" data-cat={categorySlug(task.category)}>
               {task.category}
             </span>
+            {task.challengeId && (
+              <span className="challenge-tag">
+                <Target size={11} /> Challenge
+              </span>
+            )}
             {!(hideToday && due.text === "Today") && (
               <span className={`due ${due.tone}`}>{due.text}</span>
             )}
@@ -4834,8 +4898,71 @@ function CirclesPage({
   onSetAdmin,
   onRemoveMember,
   onWeeklyReport,
+  challengeApi,
+  onChallengeChanged,
+  onWarrior,
+  onNotify,
 }) {
   const [circleTab, setCircleTab] = useState("today");
+  const [circleScreen, setCircleScreen] = useState(false);
+  const [circleMenu, setCircleMenu] = useState(false);
+  const [openMembers, setOpenMembers] = useState({});
+  const [challenge, setChallenge] = useState(null);
+  const [challengeOpen, setChallengeOpen] = useState(false);
+  const [challengeForm, setChallengeForm] = useState(false);
+  const [challengeBusy, setChallengeBusy] = useState(false);
+  const activeGroupId = activeGroup?.id;
+  useEffect(() => {
+    setChallenge(null);
+    setChallengeOpen(false);
+    if (!activeGroupId || !challengeApi) return undefined;
+    let cancelled = false;
+    challengeApi
+      .get(activeGroupId)
+      .then((result) => {
+        if (!cancelled) setChallenge(result.challenge || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGroupId]);
+  async function runChallenge(request, warriorLine) {
+    setChallengeBusy(true);
+    try {
+      const result = await request();
+      setChallenge(result.challenge || null);
+      onChallengeChanged?.();
+      if (warriorLine) {
+        onWarrior?.({ scene: "go", title: "Let’s go!", line: warriorLine });
+      }
+      return true;
+    } catch (error) {
+      onNotify?.(error.message || "Something went wrong.");
+      return false;
+    } finally {
+      setChallengeBusy(false);
+    }
+  }
+  const openChallenge = () => {
+    setChallengeOpen(true);
+    window.scrollTo({ top: 0 });
+    try {
+      const key = `kinda-ready-${challenge.id}`;
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, "1");
+        onWarrior?.({ scene: "ready", title: "Ready for battle", line: challenge.title });
+      }
+    } catch (_error) {
+      // Private browsing can block storage; the screen still opens.
+    }
+  };
+  const openCircle = (group) => {
+    onSelect(group);
+    setCircleScreen(true);
+    window.scrollTo({ top: 0 });
+    document.querySelector(".main-area, main")?.scrollTo?.({ top: 0 });
+  };
   const myRole =
     activeGroup?.myRole ||
     (activeGroup?.ownerId === user.id ? "owner" : "member");
@@ -4906,234 +5033,295 @@ function CirclesPage({
       </div>
     );
   return (
-    <div className="page-content">
-      <PageHeader
-        eyebrow="YOUR PEOPLE, YOUR SPACE"
-        title="Circles"
-        description="Create a circle, invite friends, share tasks, and follow progress together."
-        action={
-          <button className="button button-primary" onClick={onCreateCircle}>
-            <Plus size={16} /> Create circle
-          </button>
-        }
-      />
-      <label className="search-box">
-        <Search size={17} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          type="email"
-          placeholder="Find someone by email"
-          autoComplete="off"
-        />
-      </label>
-      {query.trim().length >= 2 && (
-        <section className="search-results">
-          <p className="eyebrow">PEOPLE</p>
-          {results.length ? (
-            results.map((person, index) => {
-              const isMember = activeGroup?.members?.some(
-                (member) => member.id === person.id,
-              );
-              return (
-                <div className="friend-card search-person" key={person.id}>
-                  <Avatar
-                    name={person.name}
-                    index={index}
-                    avatar={person.avatar}
-                  />
+    <div className={`page-content circles-page ${circleScreen ? "show-circle" : ""}`}>
+      <header className="circles-head">
+        <h1>Circles</h1>
+        <button className="button button-primary" onClick={onCreateCircle}>
+          <Plus size={16} /> New circle
+        </button>
+      </header>
+      <div className="circles-layout">
+        <div className="circles-side">
+          <div className="circles-list">
+            {groups.length ? (
+              groups.map((group, index) => {
+                const doneToday = (group.members || []).reduce(
+                  (sum, member) => sum + (Number(member.doneCount) || 0),
+                  0,
+                );
+                return (
                   <button
-                    className="friend-person-name"
-                    onClick={() => person.isFriend && onOpen(person)}
+                    className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`}
+                    key={group.id}
+                    onClick={() => openCircle(group)}
                   >
-                    <b>{person.name}</b>
-                    <small>{person.bio || "Kinda member"}</small>
+                    <Avatar name={group.name} index={index} />
+                    <span>
+                      <b>{group.name}</b>
+                      <small>
+                        {group.memberCount}{" "}
+                        {group.memberCount === 1 ? "member" : "members"}
+                        {group.members ? ` · ${doneToday} done today` : ""}
+                      </small>
+                    </span>
+                    <ChevronRight size={18} />
                   </button>
-                  {person.isFriend ? (
-                    <button
-                      className="button button-secondary small-button"
-                      disabled={!activeGroup || isMember || !canManage}
-                      onClick={() => onAddMember(activeGroup, person)}
-                    >
-                      {isMember ? "In circle" : "Add to circle"}
-                    </button>
-                  ) : (
-                    <button
-                      className="button button-secondary small-button"
-                      onClick={() => onAdd({ friendId: person.id })}
-                    >
-                      Add friend
-                    </button>
-                  )}
-                </div>
-              );
-            })
-          ) : (
-            <div className="quiet-empty">
-              <p>No account found for this exact email.</p>
-              {query.includes("@") && (
-                <button className="text-link" onClick={() => onAdd(query.trim())}>
-                  Add this email as a friend
-                </button>
-              )}
+                );
+              })
+            ) : (
+              <p className="quiet-empty">
+                Create a circle to share tasks and progress with your people.
+              </p>
+            )}
+          </div>
+          <section className="people-section">
+            <div className="people-head">
+              <h2>Your people</h2>
+              <button className="button button-secondary small-button" onClick={onInvite}>
+                <Plus size={14} /> Add a friend
+              </button>
             </div>
-          )}
-        </section>
-      )}
-      <section className="circles-directory friends-directory">
-        <div className="section-title-row">
-          <div>
-            <p className="eyebrow">YOUR PEOPLE</p>
-            <h2>{friends.length ? `${friends.length} friends` : "Your friends"}</h2>
-          </div>
-          <button className="button button-secondary small-button" onClick={onInvite}>
-            <Plus size={14} /> Add a friend
-          </button>
+            {friends.length ? (
+              <div className="people-card">
+                {friends.map((friend, index) => (
+                  <div className="people-row" key={friend.id}>
+                    <Avatar name={friend.name} index={index} avatar={friend.avatar} />
+                    <button className="people-name" onClick={() => onOpen(friend)}>
+                      {friend.name}
+                    </button>
+                    <button className="text-link" onClick={() => onShareTask(friend)}>
+                      Share a task
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="quiet-empty">Add a friend to share tasks with them directly.</p>
+            )}
+          </section>
         </div>
-        {friends.length ? (
-          <div className="friend-list">
-            {friends.map((friend, index) => (
-              <article className="friend-card" key={friend.id}>
-                <Avatar name={friend.name} index={index} avatar={friend.avatar} />
-                <button className="friend-person-name" onClick={() => onOpen(friend)}>
-                  <b>{friend.name}</b>
-                  <small>{friend.email}</small>
-                </button>
-                <button className="button button-secondary small-button" onClick={() => onShareTask(friend)}>
-                  Share a task
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="quiet-empty">Add a friend to share tasks with them directly.</p>
-        )}
-      </section>
-      <section className="circles-directory">
-        <div className="section-title-row">
-          <div>
-            <p className="eyebrow">YOUR CIRCLES</p>
-            <h2>
-              {groups.length
-                ? `${groups.length} ${groups.length === 1 ? "circle" : "circles"}`
-                : "Start a circle"}
-            </h2>
-          </div>
-        </div>
-        {groups.length ? (
-          <div className="circles-layout">
-            <div className="circles-list">
-              {groups.map((group, index) => (
+        {activeGroup && (
+          <section className="circle-detail">
+            {challengeOpen && challenge ? (
+              <ChallengeScreen
+                challenge={challenge}
+                Avatar={Avatar}
+                busy={challengeBusy}
+                onBack={() => setChallengeOpen(false)}
+                onJoin={() =>
+                  runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
+                }
+                onLeave={() => runChallenge(() => challengeApi.leave(activeGroup.id))}
+              />
+            ) : (
+              <>
+            <header className="cd-top">
+              <button
+                type="button"
+                className="cd-back"
+                onClick={() => setCircleScreen(false)}
+                aria-label="Back to circles"
+              >
+                <ArrowLeft size={22} />
+              </button>
+              <Avatar
+                name={activeGroup.name}
+                index={Math.max(0, groups.findIndex((group) => group.id === activeGroup.id))}
+              />
+              <div className="cd-title">
+                <h2>{activeGroup.name}</h2>
+                <p>{activeGroup.memberNames}</p>
+              </div>
+              <div className="cd-menu">
                 <button
-                  className={`circle-tile ${activeGroup?.id === group.id ? "selected" : ""}`}
-                  key={group.id}
-                  onClick={() => onSelect(group)}
+                  type="button"
+                  className="cd-icon"
+                  aria-label="More options"
+                  aria-expanded={circleMenu}
+                  onClick={() => setCircleMenu((value) => !value)}
                 >
-                  <Avatar name={group.name} index={index} />
-                  <span>
-                    <b>{group.name}</b>
-                    <small>
-                      {group.memberCount}{" "}
-                      {group.memberCount === 1 ? "member" : "members"} ·{" "}
-                      {group.taskCount}{" "}
-                      {group.taskCount === 1 ? "task" : "tasks"}
-                    </small>
-                  </span>
-                  <ArrowRight size={15} />
+                  <MoreHorizontal size={20} />
+                </button>
+                {circleMenu && (
+                  <>
+                    <button
+                      type="button"
+                      className="cd-scrim"
+                      aria-label="Close menu"
+                      onClick={() => setCircleMenu(false)}
+                    />
+                    <div className="cd-pop" role="menu">
+                      {canManage && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setCircleMenu(false);
+                            onWeeklyReport(activeGroup);
+                          }}
+                        >
+                          <FileText size={15} /> Weekly report
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="danger"
+                        onClick={() => {
+                          setCircleMenu(false);
+                          onLeave(activeGroup);
+                        }}
+                      >
+                        <LogOut size={15} /> Leave circle
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </header>
+            <div className="cd-actions">
+              <button className="button button-primary" onClick={onCreateTask}>
+                <Plus size={16} /> Post a task
+              </button>
+              <button className="button button-secondary" onClick={onOpenChat}>
+                <MessageCircle size={16} /> Chat
+              </button>
+            </div>
+            <div className="circle-tabs" role="tablist" aria-label="Circle sections">
+              <span
+                className="circle-tabs-pill"
+                aria-hidden="true"
+                style={{ "--i": ["today", "board", "members"].indexOf(circleTab) }}
+              />
+              {[
+                ["today", "Today"],
+                ["board", "Leaderboard"],
+                ["members", "Members"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={circleTab === key}
+                  className={circleTab === key ? "active" : ""}
+                  onClick={() => setCircleTab(key)}
+                >
+                  {label}
                 </button>
               ))}
             </div>
-            {activeGroup && (
-              <section className="circle-detail">
-                <div className="circle-detail-heading">
-                  <div>
-                    <p className="eyebrow">YOUR CIRCLE</p>
-                    <h2>{activeGroup.name}</h2>
-                    <p>{activeGroup.memberNames}</p>
-                  </div>
-                  <div className="circle-detail-actions">
+            {circleTab === "today" && (
+              <>
+                {challenge && (
+                  <ChallengeCard
+                    challenge={challenge}
+                    busy={challengeBusy}
+                    onOpen={openChallenge}
+                    onJoin={() =>
+                      runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
+                    }
+                  />
+                )}
+                {canManage &&
+                  challengeApi &&
+                  (!challenge || challenge.status === "ended") && (
                     <button
-                      className="button button-secondary small-button"
-                      onClick={onOpenChat}
-                    >
-                      <MessageCircle size={14} /> Group chat
-                    </button>
-                    <button
-                      className="button button-primary small-button"
-                      onClick={onCreateTask}
-                    >
-                      <Plus size={14} /> Post a task
-                    </button>
-                    {canManage && (
-                      <button
-                        className="button button-secondary small-button"
-                        onClick={() => onWeeklyReport(activeGroup)}
-                      >
-                        <FileText size={14} /> Weekly report
-                      </button>
-                    )}
-                    <button
-                      className="button button-secondary small-button danger-button"
-                      onClick={() => onLeave(activeGroup)}
-                    >
-                      <LogOut size={14} /> Leave
-                    </button>
-                  </div>
-                </div>
-                <div className="circle-tabs" role="tablist" aria-label="Circle sections">
-                  {[
-                    ["today", "Today"],
-                    ["board", "Leaderboard"],
-                    ["members", "Members"],
-                  ].map(([key, label]) => (
-                    <button
-                      key={key}
                       type="button"
-                      role="tab"
-                      aria-selected={circleTab === key}
-                      className={circleTab === key ? "active" : ""}
-                      onClick={() => setCircleTab(key)}
+                      className="ch-start"
+                      onClick={() => setChallengeForm(true)}
                     >
-                      {label}
+                      <Target size={16} /> Start a challenge
                     </button>
-                  ))}
-                  <button type="button" onClick={onOpenChat}>
-                    Chat
-                  </button>
-                </div>
-                {circleTab === "today" && (
-                <>
-                <div className="circle-progress">
-                  {earlierCount > 0 && (
-                    <small className="quiet-note">
-                      Showing today only · {earlierCount} from earlier days
-                      hidden
-                    </small>
                   )}
-                  <div>
-                    <b>
-                      {sharedTasks.filter((task) => task.done).length} of{" "}
-                      {sharedTasks.length} tasks done
-                    </b>
-                    <span>
-                      {sharedTasks.length
-                        ? Math.round(
-                            (sharedTasks.filter((task) => task.done).length /
-                              sharedTasks.length) *
-                              100,
-                          )
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                  <div className="summary-progress">
-                    <span
-                      style={{
-                        width: `${sharedTasks.length ? (sharedTasks.filter((task) => task.done).length / sharedTasks.length) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
+                <div className="cd-section-head">
+                  <h3>Circle tasks</h3>
                 </div>
+                {memberTaskGroups.length ? (
+                  <div className="member-task-groups">
+                    {memberTaskGroups.map(({ member, tasks: memberTasks, done }) => {
+                      const open = openMembers[member.id] ?? member.id === user.id;
+                      return (
+                        <section className="member-task-group" key={member.id}>
+                          <button
+                            type="button"
+                            className="mtg-head"
+                            aria-expanded={open}
+                            onClick={() =>
+                              setOpenMembers((current) => ({ ...current, [member.id]: !open }))
+                            }
+                          >
+                            <Avatar name={member.name} avatar={member.avatar} />
+                            <span>
+                              <b>{member.id === user.id ? "You" : member.name}</b>
+                              <small>
+                                {done} of {memberTasks.length} done
+                              </small>
+                            </span>
+                            <ChevronDown size={18} className={open ? "open" : ""} />
+                          </button>
+                          {open && (
+                            <div className="mtg-body">
+                              {memberTasks.length ? (
+                              <div className="task-list">
+                                {memberTasks.map((task) => (
+                                  <article
+                                    className={`shared-task-row ${task.done ? "task-complete" : ""}`}
+                                    key={`${task.ownerId}-${task.id}`}
+                                  >
+                                    <span
+                                      className={`task-check ${task.done ? "checked" : ""}`}
+                                    >
+                                      {task.done && <Check size={14} />}
+                                    </span>
+                                    <div>
+                                      <h4>{task.title}</h4>
+                                      <p>
+                                        {task.category} ·{" "}
+                                        {dayLabel(task.dueDate)}
+                                        {task.done && <b> · Done</b>}
+                                      </p>
+                                    </div>
+                                    {task.ownerId !== user.id &&
+                                      !task.done &&
+                                      task.dueDate &&
+                                      task.dueDate < localDate() && (
+                                        <button
+                                          className="nudge-button"
+                                          onClick={() => onNudge(task)}
+                                        >
+                                          <Bell size={13} /> Nudge
+                                        </button>
+                                      )}
+                                  </article>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="quiet-empty">
+                                No tasks shared by this member yet.
+                              </p>
+                            )}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="quiet-empty">
+                    No tasks shared here yet. Post one to get started.
+                  </p>
+                )}
+                <AssignmentsSection
+                  assignments={assignments}
+                  canManage={canManage}
+                  onAssign={onAssign}
+                  onDelete={onDeleteAssignment}
+                />
+              </>
+            )}
+            {circleTab === "board" && (
+              <>
+                <GroupLeaderboard group={activeGroup} userId={user.id} />
                 {recap && (
                   <div className="circle-recap">
                     <p className="eyebrow">THIS WEEK</p>
@@ -5157,19 +5345,10 @@ function CirclesPage({
                     </div>
                   </div>
                 )}
-                <AssignmentsSection
-                  assignments={assignments}
-                  canManage={canManage}
-                  onAssign={onAssign}
-                  onDelete={onDeleteAssignment}
-                />
-                </>
-                )}
-                {circleTab === "board" && (
-                  <GroupLeaderboard group={activeGroup} userId={user.id} />
-                )}
-                {circleTab === "members" && (
-                <div className="circle-members">
+              </>
+            )}
+            {circleTab === "members" && (
+                              <div className="circle-members">
                   <div className="section-title-row">
                     <div>
                       <p className="eyebrow">THE PEOPLE</p>
@@ -5278,100 +5457,96 @@ function CirclesPage({
                     </div>
                   )}
                 </div>
-                )}
-                {circleTab === "today" && (
-                <div className="circle-tasks">
-                  <div className="section-title-row">
-                    <div>
-                      <p className="eyebrow">SHARED PROGRESS</p>
-                      <h3>Tasks by member</h3>
-                    </div>
-                    <span>{sharedTasks.length}</span>
-                  </div>
-                  {memberTaskGroups.length ? (
-                    <div className="member-task-groups">
-                      {memberTaskGroups.map(
-                        ({ member, tasks: memberTasks, done, percent }) => (
-                          <section
-                            className="member-task-group"
-                            key={member.id}
-                          >
-                            <div className="member-progress-heading">
-                              <span>
-                                <Avatar
-                                  name={member.name}
-                                  avatar={member.avatar}
-                                />
-                                <b>{member.name}</b>
-                                {member.id === user.id && <small>You</small>}
-                              </span>
-                              <strong>
-                                {done}/{memberTasks.length} done · {percent}%
-                              </strong>
-                            </div>
-                            <div className="summary-progress">
-                              <span style={{ width: `${percent}%` }} />
-                            </div>
-                            {memberTasks.length ? (
-                              <div className="task-list">
-                                {memberTasks.map((task) => (
-                                  <article
-                                    className={`shared-task-row ${task.done ? "task-complete" : ""}`}
-                                    key={`${task.ownerId}-${task.id}`}
-                                  >
-                                    <span
-                                      className={`task-check ${task.done ? "checked" : ""}`}
-                                    >
-                                      {task.done && <Check size={14} />}
-                                    </span>
-                                    <div>
-                                      <h4>{task.title}</h4>
-                                      <p>
-                                        {task.category} ·{" "}
-                                        {dayLabel(task.dueDate)}
-                                        {task.done && <b> · Done</b>}
-                                      </p>
-                                    </div>
-                                    {task.ownerId !== user.id &&
-                                      !task.done &&
-                                      task.dueDate &&
-                                      task.dueDate < localDate() && (
-                                        <button
-                                          className="nudge-button"
-                                          onClick={() => onNudge(task)}
-                                        >
-                                          <Bell size={13} /> Nudge
-                                        </button>
-                                      )}
-                                  </article>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="quiet-empty">
-                                No tasks shared by this member yet.
-                              </p>
-                            )}
-                          </section>
-                        ),
-                      )}
-                    </div>
-                  ) : (
-                    <p className="quiet-empty">
-                      No tasks shared here yet. Post one to get started.
-                    </p>
-                  )}
-                </div>
-                )}
-              </section>
             )}
-          </div>
-        ) : (
-          <p className="quiet-empty">
-            Create a circle to share tasks and progress with your people.
-          </p>
+              </>
+            )}
+          </section>
         )}
-      </section>
+      </div>
+      {challengeForm && (
+        <ChallengeDialog
+          onClose={() => setChallengeForm(false)}
+          onSave={(values) =>
+            runChallenge(
+              () => challengeApi.create(activeGroup.id, values),
+              values.title,
+            )
+          }
+        />
+      )}
     </div>
+  );
+}
+
+function ChallengeDialog({ onClose, onSave }) {
+  const [days, setDays] = useState(7);
+  const [busy, setBusy] = useState(false);
+  async function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    const ok = await onSave({
+      title: String(form.get("title") || ""),
+      intro: String(form.get("intro") || ""),
+      days,
+      tasks: String(form.get("tasks") || "").split("\n"),
+    });
+    setBusy(false);
+    if (ok) onClose();
+  }
+  return (
+    <Modal
+      title="New challenge"
+      subtitle="Everyone in the circle can join. You set the daily plan."
+      onClose={onClose}
+    >
+      <form className="modal-form" onSubmit={submit}>
+        <label>
+          Name
+          <input name="title" maxLength={60} placeholder="Quiet Mornings" required />
+        </label>
+        <label>
+          What it’s about
+          <textarea
+            name="intro"
+            rows={3}
+            maxLength={500}
+            minLength={10}
+            placeholder="Seven days of starting slowly. Pray, read a little, and write one line before you open your phone."
+            required
+          />
+        </label>
+        <div className="repeat-days">
+          <small className="repeat-preview">How long</small>
+          <div className="repeat-shortcuts">
+            {[7, 14, 30].map((count) => (
+              <button
+                type="button"
+                key={count}
+                aria-pressed={days === count}
+                className={days === count ? "on" : ""}
+                onClick={() => setDays(count)}
+              >
+                {count} days
+              </button>
+            ))}
+          </div>
+        </div>
+        <label>
+          Each day, everyone does
+          <textarea
+            name="tasks"
+            rows={4}
+            placeholder={"Pray for 10 minutes\nRead one chapter\nWrite one line"}
+            required
+          />
+          <small className="repeat-preview">One task per line, up to 8.</small>
+        </label>
+        <button className="button button-primary full-button" disabled={busy}>
+          {busy ? "Starting…" : "Start challenge"}
+        </button>
+      </form>
+    </Modal>
   );
 }
 
@@ -6297,12 +6472,13 @@ function ChatPage({
                   disabled={sending}
                 />
                 <button
-                  className="button button-primary"
+                  className="chat-send"
                   type="submit"
+                  aria-label="Send message"
+                  title="Send"
                   disabled={!value.trim() || sending}
                 >
-                  <Send size={15} />
-                  <span>{sending ? "Sending…" : "Send"}</span>
+                  <Send size={18} />
                 </button>
               </form>
             </>
@@ -7127,7 +7303,7 @@ function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialS
           Task
           <input
             name="title"
-            autoFocus
+            autoFocus={!window.matchMedia("(pointer: coarse)").matches}
             defaultValue={task?.title || ""}
             placeholder="What would you like to do?"
             required
@@ -7364,8 +7540,32 @@ function FriendDialog({ onClose, onSubmit }) {
 }
 
 function Modal({ title, subtitle, onClose, children }) {
+  const backdrop = useRef(null);
+  // On phones the keyboard covers the bottom of the screen without resizing
+  // the page. Follow the visible area so the sheet sits above the keyboard
+  // and its Save button stays reachable.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = backdrop.current;
+    if (!vv || !el) return undefined;
+    const fit = () => {
+      el.style.top = `${vv.offsetTop}px`;
+      el.style.height = `${vv.height}px`;
+      el.style.bottom = "auto";
+      el.dataset.keyboard =
+        window.innerHeight - vv.height - vv.offsetTop > 120 ? "open" : "";
+    };
+    fit();
+    vv.addEventListener("resize", fit);
+    vv.addEventListener("scroll", fit);
+    return () => {
+      vv.removeEventListener("resize", fit);
+      vv.removeEventListener("scroll", fit);
+    };
+  }, []);
   return (
     <div
+      ref={backdrop}
       className="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();

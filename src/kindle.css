@@ -121,3 +121,77 @@
   .kd-a { opacity: 0; }
   .kd-seg { transform: none; }
 }
+
+/* ---- Warrior Kindle (challenges) ---- */
+.kw{display:block}
+.kw .breathe{transform-box:fill-box;transform-origin:50% 100%;animation:kwbr 2.6s ease-in-out infinite}
+@keyframes kwbr{0%,100%{transform:scale(1,1) skewX(0)}50%{transform:scale(1.02,1.035) skewX(1.5deg)}}
+.kw .tip{transform-box:fill-box;transform-origin:50% 100%;animation:kwtip .7s ease-in-out infinite alternate}
+@keyframes kwtip{from{transform:scale(1,.92) skewX(-5deg)}to{transform:scale(.95,1.1) skewX(6deg)}}
+.kw .lid{transform-box:fill-box;transform-origin:50% 0;transform:scaleY(0);animation:kwblink 4.2s infinite}
+.kw .lid.sq{transform:scaleY(.38);animation-name:kwblinkq}
+@keyframes kwblink{0%,90%,100%{transform:scaleY(0)}93%{transform:scaleY(1)}}
+@keyframes kwblinkq{0%,90%,100%{transform:scaleY(.38)}93%{transform:scaleY(1)}}
+.kw .ua{transform-origin:-56px 40px}.kw .fa{transform-origin:-92px 40px}
+.kw .t1{transform-origin:62px 3px;animation:kwtl .6s ease-in-out infinite alternate}
+.kw .t2{transform-origin:62px 3px;animation:kwtl .6s .18s ease-in-out infinite alternate}
+@keyframes kwtl{from{transform:rotate(-8deg)}to{transform:rotate(10deg)}}
+.kw .aura{transform-box:fill-box;transform-origin:50% 100%}
+.kw .mouth{transform-box:fill-box;transform-origin:50% 40%;animation:kwmo .4s ease-in-out infinite alternate}
+@keyframes kwmo{from{transform:scale(1,.7)}to{transform:scale(1.08,1.08)}}
+.kw .spark{opacity:0}
+.kw .s1b{transform-origin:0 88px;animation:s1b 4s infinite}
+@keyframes s1b{0%,12%{transform:scale(1,1)}22%{transform:scale(1.07,.9);animation-timing-function:cubic-bezier(.2,1,.3,1.4)}30%{transform:scale(.95,1.1)}38%{transform:scale(1.02,.98)}46%,100%{transform:scale(1,1)}}
+.kw .s1u{animation:s1u 4s infinite}
+@keyframes s1u{0%,14%{transform:rotate(-62deg)}22%{transform:rotate(-70deg);animation-timing-function:cubic-bezier(.2,1,.3,1.3)}31%{transform:rotate(6deg)}39%{transform:rotate(-1deg)}46%,86%{transform:rotate(0)}100%{transform:rotate(-62deg)}}
+.kw .s1f{animation:s1f 4s infinite}
+@keyframes s1f{0%,14%{transform:rotate(-120deg)}22%{transform:rotate(-128deg);animation-timing-function:cubic-bezier(.2,1,.3,1.3)}31%{transform:rotate(9deg)}39%,86%{transform:rotate(0)}100%{transform:rotate(-120deg)}}
+.kw .s1a{animation:s1a 4s infinite}
+@keyframes s1a{0%,20%{transform:scale(1);opacity:.14}32%{transform:scale(1.35);opacity:.4}60%{transform:scale(1.12);opacity:.24}100%{transform:scale(1);opacity:.14}}
+.kw .s1sh{transform-box:fill-box;transform-origin:50% 50%;animation:s1sh 4s infinite}
+@keyframes s1sh{0%,12%{transform:scale(1)}22%{transform:scale(1.1)}30%{transform:scale(.82)}40%,100%{transform:scale(1)}}
+.kw .s1bump{transform-box:fill-box;transform-origin:50% 50%;animation:s1k 4s infinite}
+@keyframes s1k{0%,30%{transform:scale(.6)}38%{transform:scale(1.35)}46%,56%{transform:scale(1.1)}62%{transform:scale(1.3)}70%,100%{transform:scale(.6)}}
+.kw .s1sp{animation:s1sp 4s ease-out infinite}
+@keyframes s1sp{0%,28%{opacity:0;transform:translate(0,0)}31%{opacity:1}62%{opacity:0;transform:translate(var(--dx),var(--dy))}100%{opacity:0}}
+.kw .s2b{transform-origin:0 88px;animation:s2b 3.6s infinite}
+@keyframes s2b{0%,50%{transform:scale(1,1)}53%{transform:scale(.96,1.04) translateX(4px)}62%{transform:scale(1.01,.99)}70%,100%{transform:scale(1,1)}}
+.kw .s2a{animation:s2a 3.6s infinite}
+@keyframes s2a{0%{transform:scale(1);opacity:.14}50%{transform:scale(1.2);opacity:.34}54%{transform:scale(1.32);opacity:.42}68%,100%{transform:scale(1);opacity:.14}}
+.kw .s2tr{animation:s2tr .09s linear infinite alternate}
+@keyframes s2tr{from{transform:translate(0,.4px)}to{transform:translate(.5px,-.4px)}}
+.kw .s2bow{transform-origin:-118px 18px;animation:s2bow 3.6s infinite}
+@keyframes s2bow{0%,50%{transform:rotate(0)}53%{transform:rotate(-3.5deg)}58%{transform:rotate(2deg)}64%,100%{transform:rotate(0)}}
+.kw .s2ar{animation:s2ar 3.6s linear infinite}
+@keyframes s2ar{0%{transform:translateX(-161px);opacity:1}10%{transform:translateX(0);opacity:1;animation-timing-function:ease-in}52%{transform:translateX(0);opacity:1}69%{transform:translateX(-330px);opacity:1}70%,100%{transform:translateX(-330px);opacity:0}}
+.kw .s2sl{opacity:0;animation:s2sl 3.6s linear infinite}
+@keyframes s2sl{0%,52%{opacity:0}56%{opacity:.8}68%,100%{opacity:0}}
+.kw .s2fl{transform-box:fill-box;transform-origin:100% 50%;animation:s2fl .12s ease-in-out infinite alternate}
+@keyframes s2fl{from{transform:scale(1,.85)}to{transform:scale(1.2,1.1)}}
+.kw .s2ring{transform-box:fill-box;transform-origin:50% 50%;opacity:0;animation:s2ring 3.6s ease-out infinite}
+@keyframes s2ring{0%,51%{opacity:0;transform:scale(.2)}54%{opacity:1;transform:scale(1)}72%{opacity:0;transform:scale(2.6)}100%{opacity:0}}
+.kw .s2ring.b{animation-delay:.12s}
+.kw .s3b{transform-origin:0 88px;animation:s3b 3s infinite}
+@keyframes s3b{0%,6%{transform:translateY(0) scale(1,1)}16%{transform:translateY(0) scale(1.08,.88);animation-timing-function:cubic-bezier(.2,.9,.3,1)}28%{transform:translateY(-34px) scale(.93,1.12)}38%{transform:translateY(-34px) scale(.95,1.08);animation-timing-function:cubic-bezier(.6,0,.9,.4)}44%{transform:translateY(0) scale(1.1,.86)}52%{transform:translateY(0) scale(.98,1.03)}58%,100%{transform:translateY(0) scale(1,1)}}
+.kw .s3u{animation:s3u 3s infinite}
+@keyframes s3u{0%,8%{transform:rotate(-62deg)}16%{transform:rotate(-74deg);animation-timing-function:cubic-bezier(.2,1,.3,1.3)}28%{transform:rotate(48deg)}44%{transform:rotate(26deg)}54%,88%{transform:rotate(40deg)}100%{transform:rotate(-62deg)}}
+.kw .s3f{animation:s3f 3s infinite}
+@keyframes s3f{0%,8%{transform:rotate(-120deg)}16%{transform:rotate(-130deg);animation-timing-function:cubic-bezier(.2,1,.3,1.3)}28%{transform:rotate(-50deg)}44%{transform:rotate(-20deg)}54%,88%{transform:rotate(-40deg)}100%{transform:rotate(-120deg)}}
+.kw .s3sh{transform-box:fill-box;transform-origin:50% 50%;animation:s3sh 3s infinite}
+@keyframes s3sh{0%,6%{transform:scale(1);opacity:.28}16%{transform:scale(1.12)}28%,38%{transform:scale(.6);opacity:.14}44%{transform:scale(1.15);opacity:.34}58%,100%{transform:scale(1);opacity:.28}}
+.kw .s3a{animation:s3a 3s infinite}
+@keyframes s3a{0%{transform:scale(1);opacity:.14}28%{transform:scale(1.4);opacity:.42}60%{transform:scale(1.1);opacity:.22}100%{transform:scale(1);opacity:.14}}
+.kw .s3sp{animation:s3sp 3s ease-out infinite}
+@keyframes s3sp{0%,40%{opacity:0;transform:translate(0,0)}44%{opacity:1}76%{opacity:0;transform:translate(var(--dx),var(--dy))}100%{opacity:0}}
+.kw .s3ring{transform-box:fill-box;transform-origin:50% 50%;opacity:0;animation:s3ring 3s ease-out infinite}
+@keyframes s3ring{0%,42%{opacity:0;transform:scale(.3)}45%{opacity:.9;transform:scale(1)}74%{opacity:0;transform:scale(3)}100%{opacity:0}}
+.kw-ov {
+  position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; align-content: center; gap: 8px;
+  padding: 24px; background: rgba(0, 0, 0, 0.82); animation: kwov 0.25s ease-out both; cursor: pointer;
+}
+@keyframes kwov { from { opacity: 0; } to { opacity: 1; } }
+.kw-ov-art { width: min(380px, 92vw); }
+.kw-ov h2 { margin: 0; color: #f97316; font-size: 28px; text-align: center; animation: kwpop 0.5s ease-out both; }
+.kw-ov p { margin: 0; color: #efeae4; text-align: center; }
+@keyframes kwpop { 0% { transform: scale(0.7); opacity: 0; } 70% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .kw *, .kw-ov, .kw-ov h2 { animation: none !important; } }

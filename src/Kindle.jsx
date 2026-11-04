@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import "./kindle.css";
+import { warriorSvg } from "./kindleWarrior.js";
 import { POSES, confettiHtml, pickPose, pickStreakScene, poseHtml, streakSceneHtml, thinkingHtml } from "./kindleArt.js";
 
 const BODY = "M0-118C14-86 62-62 62-2C62 52 32 88 0 88C-32 88-62 52-62-2C-62-26-48-44-36-58C-33-36-20-26-12-30C-22-62-10-96 0-118Z";
@@ -188,3 +189,17 @@ export function KindleStreak({ to, scene }) {
 }
 
 export { pickPose, pickStreakScene };
+
+// Full-screen warrior moment for challenges. Tap anywhere to close.
+export function KindleWarrior({ scene, title, line, onDone }) {
+  useAutoDismiss(`${scene}-${title}`, onDone, scene === "fire" ? 4200 : 3400);
+  return (
+    <div className="kw-ov" role="dialog" aria-label={title} onClick={onDone}>
+      <div className="kw-ov-art">
+        <Html html={warriorSvg(scene)} />
+      </div>
+      <h2>{title}</h2>
+      {line && <p>{line}</p>}
+    </div>
+  );
+}
