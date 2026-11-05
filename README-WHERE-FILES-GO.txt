@@ -1,4 +1,17 @@
-KINDA UPDATE v17 (v16 plus the badge shape fix)
+KINDA UPDATE v19 (everything: challenges with delete, data-use fixes, streak record)
+
+INSTALL ORDER
+1. Unzip into your project folder (the one with package.json). Say YES to replace files.
+2. In the Supabase SQL editor run these, in this order, BEFORE step 4 (skip any you already ran):
+      supabase/migrations/202610280001_custom_repeat_days.sql
+      supabase/migrations/202610290001_challenges.sql
+      supabase/migrations/202610300001_streak_log.sql
+3. git add -A  ->  git commit -m "v19"  ->  git push
+4. npx supabase functions deploy api
+   npx supabase functions deploy scheduler
+5. Change the schedule that runs the scheduler from every 1 minute to every 5 minutes
+   (wherever you set it up: Supabase Cron, or the outside cron service). See "Log ingestion" below.
+6. Vercel: newest deployment must be Production (no rollback warning).
 
 INSTALL ORDER MATTERS THIS TIME
 1. Unzip into your project folder (the one with package.json). Say YES to replace files.
@@ -126,3 +139,34 @@ V16: DATA USE (Supabase egress)
 
 V17: the round initials badges in the circle cards, member rows and challenge screens were
 stretched into ovals by a styling rule that caught them. They are round again.
+
+
+V18: STREAK RECORD (monitoring)
+New table streak_log, filled in automatically whenever the app works out someone's streak.
+One row per person per day: the streak, best streak, whether the day counted, tasks planned and
+finished, and, when the streak FELL, the day that broke it and why (for example
+"2026-11-04: 3 of 7 done (43%, needs 80%); 2 moved to another day").
+It only records. It never changes any streak number.
+
+To watch it: Supabase > SQL editor, run any of these.
+  Everyone's latest rows:        select * from streak_monitor limit 100;
+  Streaks that dropped (today):  select * from streak_monitor where dropped_from is not null order by updated_at desc;
+  One person's history:          select * from streak_monitor where email = 'their@email.com';
+  Who is at 0 right now:         select * from streak_monitor where streak_current = 0 and day = current_date;
+
+STREAK FIX: the streak calculation read tasks in one query that stops at 1,000 rows. A person with a
+long task history could lose days from the count and see a streak of zero. It now reads all rows,
+page by page. Streak rules (5 tasks, 80%) are unchanged.
+
+DATA USE
+- Egress: the circle screen now only gets yesterday, today and tomorrow (v16).
+- Log ingestion: it follows the same traffic, so the egress fix lowers it. The scheduler also runs
+  5 times less often (every 5 minutes). Reminders can arrive up to 5 minutes later; the scheduler
+  now looks back 7 minutes so none are missed.
+
+
+V19: DELETE A CHALLENGE
+The person who started a challenge (and the circle owner) sees "Delete challenge" at the bottom of
+the challenge screen. It asks first. Unfinished challenge tasks (today and later) are removed for
+everyone. Finished tasks and past days stay as normal tasks, so nobody's history or streak changes.
+Needs: npx supabase functions deploy api

@@ -10993,3 +10993,5 @@ button.ch-card { cursor: pointer; }
 .ch-note { margin: 0; color: var(--quiet); font-size: 12px; }
 .ch-center { text-align: center; justify-self: center; }
 .challenge-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: var(--soft-accent); color: var(--accent-deep); font-size: 11px; font-weight: 600; }
+
+.ch-danger { color: #e5484d; }

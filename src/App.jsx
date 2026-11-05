@@ -1191,6 +1191,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       api(`/groups/${groupId}/challenge/join`, { method: "POST", body: "{}" }),
     leave: (groupId) =>
       api(`/groups/${groupId}/challenge/leave`, { method: "POST", body: "{}" }),
+    remove: (groupId) => api(`/groups/${groupId}/challenge`, { method: "DELETE" }),
   };
   useEffect(() => {
     const onKey = (event) => {
@@ -5112,6 +5113,17 @@ function CirclesPage({
                   runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
                 }
                 onLeave={() => runChallenge(() => challengeApi.leave(activeGroup.id))}
+                onDelete={async () => {
+                  if (
+                    !window.confirm(
+                      "Delete this challenge? Unfinished challenge tasks are removed for everyone. Finished ones stay in your history.",
+                    )
+                  ) {
+                    return;
+                  }
+                  const ok = await runChallenge(() => challengeApi.remove(activeGroup.id));
+                  if (ok) setChallengeOpen(false);
+                }}
               />
             ) : (
               <>

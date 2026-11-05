@@ -1363,6 +1363,8 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             .order("created_at", { ascending: true });
           if (mineError) throw mineError;
           const perDay = (challenge.daily_tasks as string[]).length;
+          const { data: myRole } = await db.from("circle_members").select("role")
+            .eq("circle_id", circleId).eq("user_id", userId).maybeSingle();
           const names = new Map(
             (profiles || []).map((row: ApiRow) => [String(row.id), row]),
           );
@@ -1377,6 +1379,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             status,
             dayNumber: Math.min(Math.max(day, 0), days),
             joined: joinedIds.has(userId),
+            canDelete: challenge.created_by === userId || myRole?.role === "owner",
             totalDone: doneRows.length,
             goal: Math.max(joinedIds.size, 1) * days * perDay,
             members: userIds.filter((id) => joinedIds.has(id)).map((id) => {
@@ -1454,6 +1457,25 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           if (joinError) throw joinError;
           await ensureTasks(challenge!, userId);
           return response(200, { challenge: await describe(challenge) });
+        }
+        if (method === "DELETE" && !suffix) {
+          const challenge = await loadChallenge();
+          if (!challenge) fail("There is no challenge to delete.", 404);
+          const { data: roleRow } = await db.from("circle_members").select("role")
+            .eq("circle_id", circleId).eq("user_id", userId).maybeSingle();
+          if (challenge!.created_by !== userId && roleRow?.role !== "owner") {
+            fail("Only the person who started this challenge can delete it.", 403);
+          }
+          // Remove what is still to do. Finished tasks and past days stay as
+          // normal tasks, so nobody's history (or streak) changes.
+          await db.from("tasks").delete().eq("challenge_id", challenge!.id)
+            .eq("done", false).gte("due_date", todayKey);
+          const { error: deleteError } = await db.from("challenges").delete().eq(
+            "id",
+            challenge!.id,
+          );
+          if (deleteError) throw deleteError;
+          return response(200, { challenge: null });
         }
         if (method === "POST" && suffix === "leave") {
           const challenge = await loadChallenge();
@@ -2850,13 +2872,26 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const tzOffset = Number(query.tz || 0);
       const now = Date.now();
       const dayMs = 86400000;
-      const { data: tasks, error } = await db.from("tasks").select(
-        "due_date,created_at,done,moved_from",
-      ).eq("user_id", userId).gte(
-        "created_at",
-        new Date(now - 400 * dayMs).toISOString(),
-      );
-      if (error) throw error;
+      // Read every task, page by page. A single query stops at 1,000 rows, so a
+      // person with a long history could silently lose days and see a streak of zero.
+      const tasks: Array<{
+        due_date: string | null;
+        created_at: string;
+        done: boolean;
+        moved_from: string[] | null;
+      }> = [];
+      for (let from = 0;; from += 1000) {
+        const { data: page, error } = await db.from("tasks").select(
+          "due_date,created_at,done,moved_from",
+        ).eq("user_id", userId).gte(
+          "created_at",
+          new Date(now - 400 * dayMs).toISOString(),
+        ).order("id", { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        tasks.push(...(page || []));
+        if (!page || page.length < 1000 || from >= 49000) break;
+      }
+      const movedAway = new Map<string, number>();
       const dayKey = (time: number) =>
         new Date(time - tzOffset * 60000).toISOString().slice(0, 10);
       const perDay = new Map<string, { total: number; done: number }>();
@@ -2871,6 +2906,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             const prior = perDay.get(moved) || { total: 0, done: 0 };
             prior.total++;
             perDay.set(moved, prior);
+            movedAway.set(moved, (movedAway.get(moved) || 0) + 1);
           }
         }
       }
@@ -2920,6 +2956,51 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         prev = key;
       }
       const todayStat = perDay.get(today) || { total: 0, done: 0 };
+      // Monitoring only: keep a record of what the streak was and, when it
+      // fell, which day broke it and why. Never affects the numbers above.
+      try {
+        const { data: last } = await db.from("streak_log").select(
+          "streak_current,qualified,total,done",
+        ).eq("user_id", userId).eq("day", today).maybeSingle();
+        const changed = !last || last.streak_current !== current ||
+          last.qualified !== qualifies(today) || last.total !== todayStat.total ||
+          last.done !== todayStat.done;
+        if (changed) {
+          const { data: prev } = await db.from("streak_log").select(
+            "day,streak_current",
+          ).eq("user_id", userId).lt("day", today).order("day", {
+            ascending: false,
+          }).limit(1).maybeSingle();
+          let reason: string | null = null;
+          if (prev && current < prev.streak_current) {
+            const failKey = dayKey(now - ((qualifies(today) ? 0 : 1) + current) * dayMs);
+            const stat = perDay.get(failKey) || { total: 0, done: 0 };
+            const moved = movedAway.get(failKey) || 0;
+            reason = stat.total < 5
+              ? `${failKey}: only ${stat.total} tasks planned (needs 5)`
+              : `${failKey}: ${stat.done} of ${stat.total} done (${
+                Math.round((stat.done / stat.total) * 100)
+              }%, needs 80%)`;
+            if (moved) reason += `; ${moved} moved to another day`;
+          }
+          await db.from("streak_log").upsert({
+            user_id: userId,
+            day: today,
+            streak_current: current,
+            streak_best: best,
+            qualified: qualifies(today),
+            total: todayStat.total,
+            done: todayStat.done,
+            tasks_loaded: tasks.length,
+            tz_offset: tzOffset,
+            dropped_from: prev && current < prev.streak_current ? prev.streak_current : null,
+            reason,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id,day" });
+        }
+      } catch (_error) {
+        // Monitoring must never break the streak itself.
+      }
       const needed = todayStat.total < 5
         ? 5 - todayStat.total
         : Math.max(0, Math.ceil(todayStat.total * 0.8) - todayStat.done);

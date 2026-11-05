@@ -85,7 +85,7 @@ export function ChallengeCard({ challenge, onOpen, onJoin, busy }) {
   );
 }
 
-export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, busy }) {
+export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, onDelete, busy }) {
   const percent = percentOf(challenge);
   const circumference = 2 * Math.PI * 44;
   const ended = challenge.status === "ended";
@@ -191,6 +191,13 @@ export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, bu
               Join challenge
             </button>
           )}
+        </div>
+      )}
+      {challenge.canDelete && (
+        <div className="ch-center">
+          <button type="button" className="text-link ch-danger" onClick={onDelete} disabled={busy}>
+            Delete challenge
+          </button>
         </div>
       )}
     </div>

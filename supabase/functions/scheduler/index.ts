@@ -102,7 +102,7 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     ).not("reminder_at", "is", null).lte(
       "reminder_at",
       new Date(now).toISOString(),
-    ).gte("reminder_at", new Date(now - 120000).toISOString()).eq("done", false)
+    ).gte("reminder_at", new Date(now - 420000).toISOString()).eq("done", false)
       .order("reminder_at", { ascending: true }).order("id", { ascending: true })
       .range(offset, offset + 499);
     if (error) {
