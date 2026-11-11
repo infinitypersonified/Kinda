@@ -1,5 +1,5 @@
 ﻿-- Kinda's Supabase schema. User-owned rows reference Supabase Auth UUIDs;
--- legacy_id columns preserve Convex document IDs for an idempotent import.
+-- legacy_id columns preserve imported source IDs for idempotent migration.
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 create schema if not exists private;

@@ -21,7 +21,6 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { useConvex } from "convex/react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -71,7 +70,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { createCloudApi, createCloudLive } from "./cloudApi.js";
 import { createSupabaseApi, createSupabaseLive } from "./supabaseApi.js";
 import { createSupabaseAuthClient } from "./supabaseAuth.js";
 import { capturePageview } from "./analytics.js";
@@ -964,12 +962,9 @@ function WhatsNewDialog({ onClose }) {
 
 let toastTimeout = 0;
 
-function WorkspaceApp({ authClient, backendClient, backend }) {
-  const convexClient = backendClient;
+function WorkspaceApp({ authClient, client }) {
   const api = useMemo(() => {
-    const base = backend === "supabase"
-      ? createSupabaseApi(convexClient)
-      : createCloudApi(convexClient);
+    const base = createSupabaseApi(client);
     return async (path, options) => {
       for (let attempt = 0; ; attempt += 1) {
         try {
@@ -977,7 +972,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         } catch (error) {
           if (!isAuthError(error) || attempt >= 3) throw error;
           try {
-            await authClient.convex.token();
+            await authClient.token();
           } catch {
             /* try again anyway */
           }
@@ -987,13 +982,8 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         }
       }
     };
-  }, [convexClient, authClient, backend]);
-  const live = useMemo(
-    () => backend === "supabase"
-      ? createSupabaseLive(convexClient, api)
-      : createCloudLive(convexClient),
-    [convexClient, backend, api],
-  );
+  }, [client, authClient]);
+  const live = useMemo(() => createSupabaseLive(client, api), [client, api]);
   const { data: authSession, isPending: authPending } = authClient.useSession();
   const inviteTokenFromUrl =
     window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]{32,})\/?$/)?.[1] ||
@@ -1266,6 +1256,19 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     );
     return { chat, shared };
   }, [messagesByGroup, goalsByGroup, user?.id]);
+  const groupIds = groups.map((group) => group.id).join(",");
+  const groupMemberIds = [
+    ...new Set([
+      user?.id,
+      ...groups.flatMap((group) => group.members.map((member) => member.id)),
+    ].filter(Boolean)),
+  ].join(",");
+  const friendIds = friends.map((friend) => friend.id).join(",");
+  const groupRealtimeKey = groups
+    .map((group) => `${group.id}:${group.members.map((member) => member.id).sort().join(",")}`)
+    .join("|");
+  const activeMemberIds = activeGroup?.members.map((member) => member.id).join(",") || "";
+  const activityIds = activity.map((item) => item.id).join(",");
 
   const loadWorkspace = useCallback(async () => {
     const taskRequest = api("/tasks").then((taskData) => {
@@ -1393,7 +1396,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       return;
     }
     let cancelled = false;
-    authClient.convex
+    authClient
       .token()
       .then(() => api("/me"))
       .then((value) => {
@@ -1424,7 +1427,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         setToast(`Your cloud session could not be verified: ${error.message}`);
       });
     if (inviteToken) {
-      authClient.convex
+      authClient
         .token()
         .then(() => api(`/invites/${inviteToken}/join`, { method: "POST" }))
         .then((joined) => {
@@ -1468,15 +1471,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     setActivity(saved.activity || []);
     setActivityLoaded(true);
     // Streak values are server-derived. Do not briefly restore a stale cached count
-    // after a shared reset while the live Convex query is connecting.
+    // after a shared reset while the live query is connecting.
     setStreak(null);
     setNudges(saved.nudges || []);
   }, [user?.id]);
 
   useEffect(() => {
     if (!user || authPending || !authSession?.user) return undefined;
-    let cancelled = false;
-    let unsubs = [];
     let errorShown = false;
     const onError = (error) => {
       if (isAuthError(error)) return;
@@ -1506,7 +1507,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           setFriendsLoaded(true);
         },
         onError,
-        { initialRefresh: false },
+        { initialRefresh: false, friendIds: friendIds ? friendIds.split(",") : [] },
       ),
       live(
         "/groups",
@@ -1530,31 +1531,52 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           });
         },
         onError,
-        { initialRefresh: false },
-      ),
-      live(
-        "/activity",
-        (data) => {
-          setActivity(data);
-          setActivityLoaded(true);
+        {
+          initialRefresh: false,
+          circleIds: groupIds ? groupIds.split(",") : [],
+          memberIds: groupMemberIds ? groupMemberIds.split(",") : [],
         },
-        onError,
-        { initialRefresh: false },
       ),
       live("/nudges", setNudges, onError),
       live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError),
     ];
-    authClient.convex
-      .token()
-      .catch(() => {})
-      .then(() => {
-        if (!cancelled) unsubs = subscribe();
-      });
-    return () => {
-      cancelled = true;
-      unsubs.forEach((stop) => stop());
-    };
-  }, [user?.id, live, authPending, authSession?.user?.id]);
+    const unsubs = subscribe();
+    return () => unsubs.forEach((stop) => stop());
+  }, [
+    user?.id,
+    live,
+    authPending,
+    authSession?.user?.id,
+    groupIds,
+    groupMemberIds,
+    friendIds,
+  ]);
+
+  useEffect(() => {
+    if (!user || authPending || !authSession?.user) return undefined;
+    return live(
+      "/activity",
+      (data) => {
+        setActivity(data);
+        setActivityLoaded(true);
+      },
+      (error) => {
+        if (!isAuthError(error)) setToast(error.message);
+      },
+      {
+        initialRefresh: false,
+        friendIds: friendIds ? friendIds.split(",") : [],
+        activityIds: activityIds ? activityIds.split(",") : [],
+      },
+    );
+  }, [
+    user?.id,
+    authPending,
+    authSession?.user?.id,
+    live,
+    friendIds,
+    activityIds,
+  ]);
 
   useEffect(() => {
     if (!user || !tasksLoaded) return undefined;
@@ -1572,7 +1594,6 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
     return () => window.clearTimeout(timer);
   }, [user?.id, tasks, groups, friends, activity, streak, nudges, tasksLoaded]);
 
-  const groupIds = groups.map((group) => group.id).join(",");
   useEffect(() => {
     if (!user || !groupIds) {
       setMessagesByGroup({});
@@ -1589,10 +1610,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         `/groups/${id}/goals`,
         (data) => setGoalsByGroup((current) => ({ ...current, [id]: data })),
         () => {},
+        {
+          memberIds: groups.find((group) => group.id === id)?.members.map((member) => member.id) || [],
+        },
       ),
     ]);
     return () => unsubs.forEach((stop) => stop());
-  }, [user?.id, groupIds, live]);
+  }, [user?.id, groupIds, groupRealtimeKey, live]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1619,7 +1643,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
   }, [goalsByGroup, user?.id]);
 
   useEffect(() => {
-    if (!user || !activeGroup) return undefined;
+    if (!user || page !== "chat" || !activeGroup) return undefined;
     const id = activeGroup.id;
     return live(
       `/groups/${id}/typing`,
@@ -1640,7 +1664,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         }),
       () => {},
     );
-  }, [user?.id, activeGroup?.id, live]);
+  }, [user?.id, page, activeGroup?.id, live]);
 
   useEffect(() => {
     if (!user || page !== "circles" || !activeGroup) {
@@ -1652,8 +1676,9 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       `/groups/${activeGroup.id}/assignments`,
       setAssignments,
       () => {},
+      { memberIds: activeMemberIds ? activeMemberIds.split(",") : [] },
     );
-  }, [user?.id, page, activeGroup?.id, live]);
+  }, [user?.id, page, activeGroup?.id, activeMemberIds, live]);
 
   useEffect(() => {
     if (!user || page !== "circles" || !activeGroup) {
@@ -1661,8 +1686,13 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
       return undefined;
     }
     setRecap(null);
-    return live(`/groups/${activeGroup.id}/recap`, setRecap, () => {});
-  }, [user?.id, page, activeGroup?.id, live]);
+    return live(
+      `/groups/${activeGroup.id}/recap`,
+      setRecap,
+      () => {},
+      { memberIds: activeMemberIds ? activeMemberIds.split(",") : [] },
+    );
+  }, [user?.id, page, activeGroup?.id, activeMemberIds, live]);
 
   // ---- Notification badges ----
   useEffect(() => {
@@ -2267,12 +2297,12 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         throw new Error(
           "Sign-in completed without an account. Please try again.",
         );
-      if (backend === "supabase" && screen === "signup" && !response.data?.session) {
+      if (screen === "signup" && !response.data?.session) {
         setAuthNotice("Check your email to confirm your account, then log in.");
         setScreen("login");
         return;
       }
-      await authClient.convex.token();
+      await authClient.token();
       setPage("home");
     } catch (error) {
       setAuthError(error.message);
@@ -2524,7 +2554,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
           !/unauthenticated|not authenticated/i.test(firstError.message || "")
         )
           throw firstError;
-        await authClient.convex.token();
+        await authClient.token();
         updated = await api(`/tasks/${task.id}/${action}`, {
           method: "POST",
           body: JSON.stringify(body),
@@ -2601,7 +2631,7 @@ function WorkspaceApp({ authClient, backendClient, backend }) {
         soundReady.then((context) => context.close()).catch(() => {});
       if (action === "complete") {
         try {
-          // A request can commit on Convex even if its response is interrupted.
+          // A request can commit on the server even if its response is interrupted.
           // Reconcile before rolling back the optimistic checkbox state.
           const latest = await api("/tasks");
           const confirmed = latest.find((item) => item.id === task.id);
@@ -6685,13 +6715,13 @@ function SettingsPage({
     lastError: null,
   });
   const [integrationBusy, setIntegrationBusy] = useState(false);
-  const calendarSite = import.meta.env.VITE_CONVEX_SITE_URL?.trim().replace(
+  const calendarSite = import.meta.env.VITE_SUPABASE_URL?.trim().replace(
     /\/+$/,
     "",
   );
   const calendarUrl =
     calendarToken && calendarSite
-      ? `${calendarSite}/calendar/${calendarToken}.ics`
+      ? `${calendarSite}/functions/v1/api/calendar/${calendarToken}.ics`
       : "";
 
   useEffect(() => {
@@ -6966,7 +6996,7 @@ function SettingsPage({
         )}
         {calendarToken && !calendarUrl && (
           <p className="settings-copy">
-            Set VITE_CONVEX_SITE_URL in the frontend environment to display the
+            Set VITE_SUPABASE_URL in the frontend environment to display the
             subscription link.
           </p>
         )}
@@ -9487,14 +9517,9 @@ function AuthScreen({
   );
 }
 
-function App({ authClient }) {
-  const convexClient = useConvex();
-  return <WorkspaceApp authClient={authClient} backendClient={convexClient} backend="convex" />;
-}
-
 export function SupabaseApp({ client }) {
   const authClient = useMemo(() => createSupabaseAuthClient(client), [client]);
-  return <WorkspaceApp authClient={authClient} backendClient={client} backend="supabase" />;
+  return <WorkspaceApp authClient={authClient} client={client} />;
 }
 
-export default App;
+export default SupabaseApp;

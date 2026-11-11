@@ -29,7 +29,7 @@ export function createSupabaseApi(client) {
 
     if (method === "GET") {
       if (canCache) {
-        const cached = cache.get(cacheKey);
+        const cached = cache.get(cacheKey); 
         if (cached && cached.expiresAt > Date.now()) return structuredClone(cached.data);
         if (cached) cache.delete(cacheKey);
       }
@@ -95,32 +95,87 @@ export function createSupabaseApi(client) {
   return api;
 }
 
-const tablesForPath = (path, userId) => {
-  // Only listen to this person's own rows where possible. Without a filter,
-  // every change by every user wakes every open app and makes it reload.
-  const mine = (table, column = "user_id") =>
-    userId ? [table, `${column}=eq.${userId}`] : [table];
+const tablesForPath = (path, userId, options = {}) => {
+  const idsFilter = (column, ids) => {
+    const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+    return uniqueIds.length ? `${column}=in.(${uniqueIds.join(",")})` : null;
+  };
+  const audienceIds = [...new Set([userId, ...(options.friendIds || [])].filter(Boolean))];
+  const memberIds = [...new Set((options.memberIds || []).filter(Boolean))];
+  const circleIds = [...new Set((options.circleIds || []).filter(Boolean))];
+  const filtered = (table, column, ids, fallbackColumn = column) => {
+    const filter = idsFilter(column, ids);
+    return filter ? [table, filter] : userId ? [table, `${fallbackColumn}=eq.${userId}`] : null;
+  };
+  const tables = [];
+  const add = (spec) => {
+    if (spec) tables.push(spec);
+  };
   if (path === "/tasks" || path.startsWith("/tasks/")) {
-    return [mine("tasks"), mine("circle_tasks", "shared_by")];
+    add(filtered("tasks", "user_id", [userId]));
+    add(filtered("circle_tasks", "shared_by", [userId]));
+    return tables;
   }
-  if (path === "/groups") return [["circles"], ["circle_members"], ["circle_tasks"], ["tasks"], ["profiles"]];
-  if (path === "/friends" || path.startsWith("/friends")) return [["friendships"], ["profiles"]];
-  if (path === "/activity" || path.startsWith("/activity/")) return [["activities"], ["reactions"], ["tasks"], ["profiles"]];
-  if (path === "/nudges") return [["nudges"]];
-  if (path === "/streak") return [mine("tasks")];
-  if (path === "/me") return [userId ? ["profiles", `id=eq.${userId}`] : ["profiles"]];
+  if (path === "/groups") {
+    add(filtered("circles", "id", circleIds, "owner_id"));
+    if (circleIds.length) add(filtered("circle_members", "circle_id", circleIds));
+    if (userId) add(["circle_members", `user_id=eq.${userId}`]);
+    add(filtered("circle_tasks", "circle_id", circleIds, "shared_by"));
+    add(filtered("tasks", "user_id", memberIds, "user_id"));
+    add(filtered("profiles", "id", memberIds, "id"));
+    return tables;
+  }
+  if (path === "/friends" || path.startsWith("/friends")) {
+    if (userId) {
+      add(["friendships", `user_id=eq.${userId}`]);
+      add(["friendships", `friend_id=eq.${userId}`]);
+    }
+    add(filtered("profiles", "id", options.friendIds, "id"));
+    return tables;
+  }
+  if (path === "/activity" || path.startsWith("/activity/")) {
+    add(filtered("activities", "user_id", audienceIds));
+    const reactionFilter = idsFilter("activity_id", options.activityIds);
+    if (reactionFilter) add(["reactions", reactionFilter]);
+    add(filtered("tasks", "user_id", audienceIds));
+    add(filtered("profiles", "id", audienceIds, "id"));
+    return tables;
+  }
+  if (path === "/nudges") {
+    if (userId) add(["nudges", `to_user_id=eq.${userId}`]);
+    return tables;
+  }
+  if (path === "/streak") {
+    add(filtered("tasks", "user_id", [userId]));
+    return tables;
+  }
+  if (path === "/me") {
+    add(filtered("profiles", "id", [userId], "id"));
+    return tables;
+  }
   const group = path.match(/^\/groups\/([^/]+)\/(goals|messages|typing|assignments|recap|weekly)/);
-  if (!group) return [];
+  if (!group) return tables;
   const [_, circleId, feature] = group;
   if (feature === "messages") return [["messages", `circle_id=eq.${circleId}`]];
   if (feature === "typing") return [["typing", `circle_id=eq.${circleId}`]];
-  if (feature === "assignments") return [["assignments", `circle_id=eq.${circleId}`], ["tasks"]];
-  if (feature === "goals") return [["circle_tasks", `circle_id=eq.${circleId}`], ["tasks"]];
-  return [["tasks"], ["activities"], ["circle_members", `circle_id=eq.${circleId}`]];
+  if (feature === "assignments") {
+    return [["assignments", `circle_id=eq.${circleId}`], filtered("tasks", "user_id", memberIds)];
+  }
+  if (feature === "goals") {
+    return [
+      ["circle_tasks", `circle_id=eq.${circleId}`],
+      filtered("tasks", "user_id", memberIds),
+    ].filter(Boolean);
+  }
+  return [
+    filtered("tasks", "user_id", memberIds),
+    filtered("activities", "user_id", memberIds),
+    ["circle_members", `circle_id=eq.${circleId}`],
+  ].filter(Boolean);
 };
 
-// Convex query subscriptions currently power multiple UI panels. Refresh the
-// matching edge-function query whenever a relevant Postgres change arrives.
+// Refresh the matching edge-function query whenever a relevant Postgres
+// change arrives.
 export function createSupabaseLive(client, api) {
   return function live(path, onData, onError = () => {}, options = {}) {
     let stopped = false;
@@ -186,7 +241,7 @@ export function createSupabaseLive(client, api) {
     const connect = (userId) => {
       if (stopped) return;
       channel = client.channel(`kinda:${crypto.randomUUID()}`);
-      for (const tableSpec of tablesForPath(pathname, userId)) {
+      for (const tableSpec of tablesForPath(pathname, userId, options)) {
         const [table, filter] = tableSpec;
         channel.on("postgres_changes", { event: "*", schema: "public", table, ...(filter ? { filter } : {}) }, refresh);
       }

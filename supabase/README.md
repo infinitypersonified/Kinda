@@ -1,202 +1,55 @@
-# Supabase migration
+# Supabase setup
 
-The production frontend is using Supabase. Keep the Convex project and its data
-available as a rollback/source copy until Supabase data and integrations have
-been verified.
+The application uses Supabase for authentication, data, realtime updates, and server-side API operations. Deploy the frontend on Vercel.
 
-## Database setup
+## Database and local configuration
 
-1. Open the Kinda project in Supabase and go to **SQL Editor**.
-2. Run migrations `202610260001_initial_schema.sql` through
-   `202610260005_reactions_realtime.sql` in order. The compatibility
-   migration safely adds reminder tracking to databases created from the
-   earlier schema.
-3. In **Project Settings > API**, copy the Project URL and publishable key into
-   the local `.env.local` as `VITE_SUPABASE_URL` and
-   `VITE_SUPABASE_PUBLISHABLE_KEY`.
-4. Keep any Supabase secret/service-role key on a trusted server only. Never
-   put it in a `VITE_*` variable or in the browser.
+1. In the Supabase SQL Editor, apply every SQL migration in `supabase/migrations/` in filename order.
+2. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from the Supabase project’s API settings.
+3. Keep secret/service-role keys on trusted servers only. Never put them in a `VITE_*` variable.
+4. In Supabase Auth settings, configure the local and production site URLs and allowed redirect URLs.
 
-The schema keeps `legacy_id` values so imported Convex document IDs can be
-mapped and the import can be retried safely. App data references Supabase Auth
-UUIDs. Existing accounts are provisioned first by the importer. A one-time
-server-side transition verifies existing Better Auth scrypt hashes and sets
-the same password in Supabase Auth at the user's first email/password login.
-Google can also be used with the same verified email address.
+## Edge Functions
 
-## Data import (only after the SQL schema is installed)
-
-1. Export a production snapshot from Convex and keep the ZIP unchanged as the
-   rollback/backup copy:
-
-   ```powershell
-   npx convex export --deployment outgoing-cuttlefish-138 --path .\convex-export-live.zip
-   Expand-Archive -LiteralPath .\convex-export-live.zip -DestinationPath .\convex-export-live
-   ```
-
-2. Confirm the extracted export includes the Better Auth `user` documents as
-   well as the app tables. The importer stops without writing app rows if the
-   user documents are absent.
-3. If you have not already created it, copy
-   `supabase/migration.env.example` to `supabase/env.migration`, then fill in
-   the project URL and a Supabase secret key. Keep this file private; it is
-   ignored by Git. Run:
-
-   ```powershell
-   npm run migrate:supabase -- .\convex-export-live
-   ```
-
-   The secret key is only used by this local migration script. Never use it as
-   a `VITE_*` variable or share it in chat.
-4. Import the credential hashes from the same Convex export into the protected
-   transition table:
-
-   ```powershell
-   npm run import:supabase-passwords -- .\convex-export-live
-   ```
-
-   Hashes are checked server-side at first login, upgraded into Supabase Auth,
-   and deleted after success. They are never printed or exposed to clients.
-5. The importer prints row counts and saves a local user-ID map for safe retries.
-   Compare those counts with Convex. Recheck what Supabase currently contains
-   at any time with:
-
-   ```powershell
-   npm run verify:supabase-import
-   ```
-
-The importer never deletes or modifies Convex. Configure Google sign-in only as
-an optional method, using the same verified email as the imported account.
-
-Do not switch the live site to Supabase until the import counts are checked,
-authentication is verified, and the app's API/realtime layer is ready.
-
-## Current migration status
-
-This migration has been deployed in stages. The frontend uses Supabase when
-`VITE_BACKEND=supabase` is set and falls back to Convex when the setting is
-empty. The API and scheduler cover the main account, task, circle, chat,
-activity, nudge, streak, push, reminder, recurrence, calendar, Google Calendar,
-and Telegram flows. Redeploy the API after changing its source and verify it
-against the imported snapshot before removing the Convex rollback copy.
-
-Deploying the Edge Functions requires the Supabase CLI and a Supabase access
-token entered through `npx supabase login` (do not put that token in this
-repository):
+Install/use the Supabase CLI, log in, and link the project:
 
 ```powershell
 npx supabase login
 npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy api
 npx supabase functions deploy scheduler
+npx supabase functions deploy migrate-legacy-password
 ```
 
-The deployed functions use the server-side key Supabase injects into the Edge
-Function runtime. The code reads the platform `SUPABASE_SECRET_KEYS` setting
-and supports the legacy runtime key too. Do not add a custom secret named
-`SUPABASE_SECRET_KEY`; Supabase reserves the `SUPABASE_` prefix. Never place
-server-side keys in Vite variables.
+The frontend invokes the `api` and `migrate-legacy-password` functions. Deploy the scheduler as well if scheduled reminders and recurring-task processing are enabled. The functions use the server-side credentials provided by Supabase; do not add those credentials to Vite settings.
 
-## Performance settings
+The API and scheduler validate requests in application code. See `supabase/config.toml` for the function JWT settings and do not weaken the endpoint-level checks when changing them.
 
-The API uses Supabase's HTTPS/PostgREST client, so it does not open direct
-Postgres connections from the Edge Function. Supabase manages the internal
-database API pool. The Edge Functions now reuse their Supabase client per warm
-runtime; only configure a transaction pooler if adding a direct Postgres
-driver. Supabase documents pool sizing under **Database > Settings > Connection
-pooling**; avoid raising pool sizes without connection usage evidence.
+## Optional integrations and background jobs
 
-API GET responses can use a short, user-scoped Redis cache. To enable it, create
-a persistent Upstash Redis database and set these secrets for the `api` Edge
-Function. Keep the standard token server-side:
+Configure only the integration secrets for features you use. For example:
 
 ```powershell
-npx supabase secrets set UPSTASH_REDIS_REST_URL="YOUR_REST_URL" UPSTASH_REDIS_REST_TOKEN="YOUR_STANDARD_TOKEN" API_CACHE_TTL_SECONDS="5"
+npx supabase secrets set SITE_URL="https://YOUR_SITE"
+npx supabase secrets set VAPID_PUBLIC_KEY="YOUR_PUBLIC_KEY" VAPID_PRIVATE_KEY="YOUR_PRIVATE_KEY" VAPID_SUBJECT="mailto:hello@example.com"
+npx supabase secrets set GOOGLE_CLIENT_ID="YOUR_CLIENT_ID" GOOGLE_CLIENT_SECRET="YOUR_CLIENT_SECRET"
+npx supabase secrets set TELEGRAM_BOT_USERNAME="YOUR_BOT_USERNAME" TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN" TELEGRAM_WEBHOOK_SECRET="YOUR_WEBHOOK_SECRET"
 ```
 
-The cache fails open if Redis is unavailable, expires quickly, and bumps a
-shared generation after successful API writes so one user's changes invalidate
-other users' cached views. Do not put the Redis token in a `VITE_*` variable.
-If no Redis database is configured, the app continues to use Postgres directly.
+Set `VITE_VAPID_PUBLIC_KEY` to the matching public key in local and Vercel build environments. Register the Google Calendar callback at `https://YOUR_PROJECT_REF.supabase.co/functions/v1/api/google-calendar/callback`. Configure the Telegram webhook at `https://YOUR_PROJECT_REF.supabase.co/functions/v1/api/telegram/webhook` and use the same webhook secret.
 
-The Edge Functions enable gzip/Brotli response compression when the client
-advertises support. Task lists are fetched in 500-row pages internally and
-combined for the existing UI, so pagination doesn't hide older tasks.
+For scheduled task reminders and recurrence, enable `pg_cron` and `pg_net`, set a random `KINDA_SCHEDULER_SECRET`, and store the scheduler URL and secret in Supabase Vault. Schedule a request to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/scheduler` every minute with the `x-kinda-scheduler-secret` header. Keep the secret in Vault; do not commit it or put it in a frontend variable.
 
-## Background jobs and integrations
+## Performance and diagnostics
 
-The scheduler sends due task reminders (web push and Telegram) and creates the
-next occurrence for repeating tasks. Deploying it is not enough; schedule it to
-run every minute. Enable `pg_cron` and `pg_net` in Database > Extensions, then
-set these Edge Function secrets. Reuse the existing Convex values when available
-so saved push subscriptions and provider connections keep working:
+The Edge Functions use Supabase’s HTTPS API rather than opening direct Postgres connections. The API can use a short-lived, user-scoped Upstash Redis cache when configured with server-side `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` secrets; without them it continues to read from Supabase directly.
 
-```powershell
-supabase secrets set KINDA_SCHEDULER_SECRET="YOUR_RANDOM_SECRET" SITE_URL="https://YOUR_SITE"
-supabase secrets set VAPID_PUBLIC_KEY="YOUR_EXISTING_PUBLIC_KEY" VAPID_PRIVATE_KEY="YOUR_EXISTING_PRIVATE_KEY" VAPID_SUBJECT="mailto:hello@kinda.app"
-supabase secrets set GOOGLE_CLIENT_ID="YOUR_GOOGLE_CLIENT_ID" GOOGLE_CLIENT_SECRET="YOUR_GOOGLE_CLIENT_SECRET"
-supabase secrets set TELEGRAM_BOT_USERNAME="YOUR_BOT_USERNAME" TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN" TELEGRAM_WEBHOOK_SECRET="YOUR_WEBHOOK_SECRET"
+Use the project’s focused checks when configured:
+
+```bash
+npm run typecheck
+npm run build
+npm run check:supabase-functions
 ```
 
-Set `VITE_VAPID_PUBLIC_KEY` to the same VAPID public key in local and Cloudflare
-build settings. Register
-`https://YOUR_PROJECT_REF.supabase.co/functions/v1/api/google-calendar/callback`
-as an authorized Google OAuth redirect URI. Point the Telegram bot webhook to
-`https://YOUR_PROJECT_REF.supabase.co/functions/v1/api/telegram/webhook` and set
-its webhook secret token to `TELEGRAM_WEBHOOK_SECRET`.
-
-Store the scheduler URL and the same random `KINDA_SCHEDULER_SECRET` in Supabase
-Vault. Then run this SQL in the Supabase SQL Editor, replacing the placeholders
-before running it. Do not commit the real secret:
-
-```sql
-select vault.create_secret('https://YOUR_PROJECT_REF.supabase.co/functions/v1/scheduler', 'kinda_scheduler_url');
-select vault.create_secret('YOUR_RANDOM_SECRET', 'kinda_scheduler_secret');
-select cron.schedule(
-  'kinda-background-jobs',
-  '* * * * *',
-  $$ select net.http_post(
-       url := (select decrypted_secret from vault.decrypted_secrets where name = 'kinda_scheduler_url'),
-       headers := jsonb_build_object('Content-Type', 'application/json', 'x-kinda-scheduler-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'kinda_scheduler_secret')),
-       body := '{}'::jsonb
-     ); $$
-);
-```
-
-Put the non-Supabase integration values in a private
-`supabase/functions/.env` file and upload them with
-`npx supabase secrets set --env-file .\supabase\functions\.env`. Do not include
-`SUPABASE_URL` or any `SUPABASE_*` keys in that file; Supabase provides its
-server credentials to deployed functions. The local `.env` file should contain
-the `SITE_URL`, VAPID pair, OAuth credentials, Telegram settings, and scheduler
-secret named above. `VITE_VAPID_PUBLIC_KEY` belongs in the frontend `.env.local`
-and Cloudflare build settings, not in this Edge Function secrets file.
-
-The scheduler validates its own secret header. `supabase/config.toml` disables
-platform JWT verification for the API and scheduler functions: user API calls
-validate their bearer token in code, while the public calendar feed, OAuth
-callback, Telegram webhook, and scheduler each validate their own token/state.
-
-To carry over the existing Convex site, push, and Google Calendar credentials
-without displaying them, run this once in PowerShell after the Supabase project
-is linked:
-
-```powershell
-.\scripts\copy-convex-integration-secrets.ps1
-```
-
-It uploads the settings as Edge Function secrets, updates the local
-`VITE_VAPID_PUBLIC_KEY` to match existing push subscriptions, and creates the
-ignored `supabase/scheduler-setup.local.sql` file. That SQL enables the
-background schedule; run it only after cutover. Existing Google Calendar
-connections were not present in the imported snapshot, so users will need to
-connect their calendars again. For Google sign-in, separately enable Google in
-**Authentication > Providers** using the same client credentials, then add
-`https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback` to the Google OAuth
-client's authorized redirect URIs. Imported accounts do not retain their old
-passwords; Google sign-in works when users use the matching verified email.
-
-Custom SMTP is not required for Google sign-in. Configure an email sender only
-if you want imported users to recover an email/password login or receive other
-Auth emails. Supabase's built-in email service has recipient and rate limits,
-so it is not a general production recovery sender.
+`check:supabase-functions` reads the private `supabase/env.migration` configuration and should only be run in an environment where that file is present and protected.

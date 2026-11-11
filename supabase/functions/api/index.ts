@@ -1440,12 +1440,13 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
               daily_tasks: tasks,
             }).select("*").single();
           if (createError) throw createError;
+            const createdChallenge = created as ApiRow;
           await db.from("challenge_members").insert({
-            challenge_id: created.id,
+              challenge_id: createdChallenge.id,
             user_id: userId,
           });
-          await ensureTasks(created, userId);
-          return response(201, { challenge: await describe(created) });
+            await ensureTasks(createdChallenge, userId);
+            return response(201, { challenge: await describe(createdChallenge) });
         }
         if (method === "POST" && suffix === "join") {
           const challenge = await loadChallenge();
@@ -2305,48 +2306,103 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         audience,
       ).order("created_at", { ascending: false }).limit(100);
       if (error) throw error;
-      const visible = [];
-      for (const row of rows || []) {
-        const { data: task } = await db.from("tasks").select(
+      type ActivityRow = NonNullable<typeof rows>[number];
+      type ActivityTask = {
+        id: string;
+        title: string;
+        visibility: string;
+        shared_with: string[] | null;
+      };
+      const activityRows = rows || [];
+      const taskResult = activityRows.length
+        ? await selectIn<ActivityTask>(
+          db,
+          "tasks",
           "id,title,visibility,shared_with",
-        ).eq("id", row.task_id).maybeSingle();
+          "id",
+          activityRows.map((row) => row.task_id),
+        )
+        : { data: [], error: null };
+      if (taskResult.error) throw taskResult.error;
+      const tasksById = new Map(
+        taskResult.data.map((task) => [task.id, task]),
+      );
+      const visibleRows: ActivityRow[] = [];
+      for (const row of activityRows) {
+        const task = tasksById.get(row.task_id);
         if (
           !task || task.visibility !== "friends" ||
           (row.user_id !== userId && task.shared_with?.length &&
             !task.shared_with.includes(userId))
         ) continue;
-        const [{ data: profile }, { data: reactions }] = await Promise.all([
-          db.from("profiles").select("name,avatar").eq("id", row.user_id)
-            .maybeSingle(),
-          db.from("reactions").select("user_id,emoji").eq(
+        visibleRows.push(row);
+        if (visibleRows.length === 50) break;
+      }
+
+      const actorIds = [...new Set(visibleRows.map((row) => row.user_id))];
+      const activityIds = visibleRows.map((row) => row.id);
+      const [profilesResult, reactionsResult] = await Promise.all([
+        actorIds.length
+          ? selectIn<{ id: string; name: string | null; avatar: string | null }>(
+            db,
+            "profiles",
+            "id,name,avatar",
+            "id",
+            actorIds,
+          )
+          : Promise.resolve({ data: [], error: null }),
+        activityIds.length
+          ? selectIn<{ activity_id: string; user_id: string; emoji: string | null }>(
+            db,
+            "reactions",
+            "activity_id,user_id,emoji",
             "activity_id",
-            row.id,
-          ),
-        ]);
-        const all = reactions || [];
-        const options = ["❤️", "🔥", "👏", "🎉", "💪"];
-        visible.push({
+            activityIds,
+          )
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (profilesResult.error) throw profilesResult.error;
+      if (reactionsResult.error) throw reactionsResult.error;
+
+      const profilesById = new Map(
+        profilesResult.data.map((profile) => [profile.id, profile]),
+      );
+      const reactionsByActivity = new Map<string, Array<{ user_id: string; emoji: string | null }>>();
+      for (const reaction of reactionsResult.data) {
+        const reactions = reactionsByActivity.get(reaction.activity_id) || [];
+        reactions.push(reaction);
+        reactionsByActivity.set(reaction.activity_id, reactions);
+      }
+      const options = ["❤️", "🔥", "👏", "🎉", "💪"];
+      return response(200, visibleRows.map((row) => {
+        const task = tasksById.get(row.task_id)!;
+        const reactions = reactionsByActivity.get(row.id) || [];
+        const counts = new Map<string, number>();
+        const mine = new Set<string>();
+        for (const reaction of reactions) {
+          if (reaction.emoji) {
+            counts.set(reaction.emoji, (counts.get(reaction.emoji) || 0) + 1);
+            if (reaction.user_id === userId) mine.add(reaction.emoji);
+          }
+        }
+        return {
           id: row.id,
           actorId: row.user_id,
-          actorName: profile?.name || "Member",
-          actorAvatar: profile?.avatar || "",
+          actorName: profilesById.get(row.user_id)?.name || "Member",
+          actorAvatar: profilesById.get(row.user_id)?.avatar || "",
           taskId: task.id,
           taskTitle: task.title,
           type: row.type,
           createdAt: row.created_at,
-          reactionCount: all.length,
-          reacted: all.some((item) => item.user_id === userId),
+          reactionCount: reactions.length,
+          reacted: reactions.some((reaction) => reaction.user_id === userId),
           reactions: options.map((emoji) => ({
             emoji,
-            count: all.filter((item) => item.emoji === emoji).length,
-            mine: all.some((item) =>
-              item.user_id === userId && item.emoji === emoji
-            ),
-          })).filter((item) => item.count),
-        });
-        if (visible.length >= 50) break;
-      }
-      return response(200, visible);
+            count: counts.get(emoji) || 0,
+            mine: mine.has(emoji),
+          })).filter((reaction) => reaction.count),
+        };
+      }));
     }
     const reactRoute = pathname.match(/^\/activity\/([^/]+)\/react$/);
     if (method === "POST" && reactRoute) {
@@ -2407,25 +2463,48 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         userId,
       ).order("created_at", { ascending: false }).limit(20);
       if (error) throw error;
-      const result = [];
-      for (const row of rows || []) {
-        const [{ data: task }, { data: profile }] = await Promise.all([
-          db.from("tasks").select("title").eq("id", row.task_id).maybeSingle(),
-          db.from("profiles").select("name,avatar").eq("id", row.from_user_id)
-            .maybeSingle(),
-        ]);
-        if (task) {
-          result.push({
-            id: row.id,
-            fromName: profile?.name || "A friend",
-            fromAvatar: profile?.avatar || "",
-            taskTitle: task.title,
-            seen: row.seen,
-            createdAt: row.created_at,
-          });
-        }
-      }
-      return response(200, result);
+      const nudgeRows = rows || [];
+      const taskIds = [...new Set(nudgeRows.map((row) => row.task_id))];
+      const senderIds = [...new Set(nudgeRows.map((row) => row.from_user_id))];
+      const [tasksResult, profilesResult] = await Promise.all([
+        taskIds.length
+          ? selectIn<{ id: string; title: string }>(
+            db,
+            "tasks",
+            "id,title",
+            "id",
+            taskIds,
+          )
+          : Promise.resolve({ data: [], error: null }),
+        senderIds.length
+          ? selectIn<{ id: string; name: string | null; avatar: string | null }>(
+            db,
+            "profiles",
+            "id,name,avatar",
+            "id",
+            senderIds,
+          )
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (tasksResult.error) throw tasksResult.error;
+      if (profilesResult.error) throw profilesResult.error;
+      const tasksById = new Map(tasksResult.data.map((task) => [task.id, task]));
+      const profilesById = new Map(
+        profilesResult.data.map((profile) => [profile.id, profile]),
+      );
+      return response(200, nudgeRows.flatMap((row) => {
+        const task = tasksById.get(row.task_id);
+        if (!task) return [];
+        const profile = profilesById.get(row.from_user_id);
+        return [{
+          id: row.id,
+          fromName: profile?.name || "A friend",
+          fromAvatar: profile?.avatar || "",
+          taskTitle: task.title,
+          seen: row.seen,
+          createdAt: row.created_at,
+        }];
+      }));
     }
     if (method === "POST" && pathname === "/nudges/seen") {
       const { error } = await db.from("nudges").update({ seen: true }).eq(

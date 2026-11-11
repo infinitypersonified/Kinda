@@ -85,12 +85,10 @@ export function createSupabaseAuthClient(supabase) {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       return { error };
     },
-    convex: {
-      token: async () => {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        return data.session?.access_token || null;
-      },
+    token: async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      return data.session?.access_token || null;
     },
   };
 }
