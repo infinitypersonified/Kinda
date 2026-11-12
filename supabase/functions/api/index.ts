@@ -588,6 +588,56 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         avatar: profile?.avatar || "",
       });
     }
+    if (pathname === "/onboarding-survey" && method === "GET") {
+      const { data, error } = await db.from("onboarding_surveys").select(
+        "user_id",
+      ).eq("user_id", userId).maybeSingle();
+      if (error) throw error;
+      return response(200, { completed: Boolean(data) });
+    }
+    if (pathname === "/onboarding-survey" && method === "POST") {
+      const validReasons = new Set([
+        "focus",
+        "habits",
+        "accountability",
+        "friends",
+        "circle",
+        "other",
+      ]);
+      const validSources = new Set([
+        "friend",
+        "social_media",
+        "search",
+        "community",
+        "other",
+        "prefer_not_to_say",
+      ]);
+      const skipped = body.skipped === true;
+      const reasons = skipped ? [] : body.reasons;
+      if (
+        !Array.isArray(reasons) ||
+        (!skipped &&
+          (reasons.length < 1 || reasons.length > validReasons.size)) ||
+        reasons.some((reason) => typeof reason !== "string" ||
+          !validReasons.has(reason))
+      ) {
+        fail("Choose at least one valid reason for using Kinda.");
+      }
+      const source = skipped || body.source === "" || body.source == null
+        ? null
+        : String(body.source);
+      if (source !== null && !validSources.has(source)) {
+        fail("Choose a valid answer for where you heard about Kinda.");
+      }
+      const { error } = await db.from("onboarding_surveys").insert({
+        user_id: userId,
+        reasons: [...new Set(reasons)],
+        referral_source: source,
+        skipped,
+      });
+      if (error && error.code !== "23505") throw error;
+      return response(200, { ok: true });
+    }
     if (method === "PATCH" && pathname === "/profile") {
       const name = String(body.name || "").trim();
       const bio = String(body.bio || "").trim();

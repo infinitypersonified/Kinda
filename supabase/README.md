@@ -9,6 +9,10 @@ The application uses Supabase for authentication, data, realtime updates, and se
 3. Keep secret/service-role keys on trusted servers only. Never put them in a `VITE_*` variable.
 4. In Supabase Auth settings, configure the local and production site URLs and allowed redirect URLs.
 
+## Optional onboarding survey
+
+The app shows a one-time, skippable survey after sign-in. It asks why someone uses Kinda and where they heard about it; it does not collect age. Before deploying the updated frontend or API, apply `supabase/migrations/202611120001_onboarding_survey.sql` in the SQL Editor. Responses are private to the server-side API and are not exposed through the client.
+
 ## Edge Functions
 
 Install/use the Supabase CLI, log in, and link the project:

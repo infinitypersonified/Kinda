@@ -145,9 +145,11 @@ const Html = ({ html, className, style }) => (
   <div className={className} style={style} dangerouslySetInnerHTML={{ __html: html }} />
 );
 
+const KINDLE_VOICE_ANIMATION_MS = 7000;
+
 // Big cheer when a task is ticked: a random pose with its own words.
 export function KindleCheer({ cheer, onDone }) {
-  useAutoDismiss(cheer.key, onDone, 2600);
+  useAutoDismiss(cheer.key, onDone, KINDLE_VOICE_ANIMATION_MS);
   const confetti = useMemo(() => confettiHtml(14), [cheer.key]);
   return (
     <div className="kd-ov kd-ov-soft kd-jump" role="status" key={cheer.key} onClick={onDone}>
@@ -160,7 +162,7 @@ export function KindleCheer({ cheer, onDone }) {
 
 // Full-screen cheer when a task has been created.
 export function KindleCreated({ created, onDone }) {
-  useAutoDismiss(created.key, onDone, 2800);
+  useAutoDismiss(created.key, onDone, KINDLE_VOICE_ANIMATION_MS);
   const confetti = useMemo(() => confettiHtml(30), [created.key]);
   return (
     <div className="kd-ov kd-ov-full kd-jump" role="status" key={created.key} onClick={onDone}>
@@ -192,7 +194,7 @@ export { pickPose, pickStreakScene };
 
 // Full-screen warrior moment for challenges. Tap anywhere to close.
 export function KindleWarrior({ scene, title, line, onDone }) {
-  useAutoDismiss(`${scene}-${title}`, onDone, scene === "fire" ? 4200 : 3400);
+  useAutoDismiss(`${scene}-${title}`, onDone, KINDLE_VOICE_ANIMATION_MS);
   return (
     <div className="kw-ov" role="dialog" aria-label={title} onClick={onDone}>
       <div className="kw-ov-art">

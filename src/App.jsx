@@ -68,6 +68,9 @@ import {
   Shield,
   Smile,
   Users,
+  Volume2,
+  VolumeX,
+  WifiOff,
   X,
 } from "lucide-react";
 import { createSupabaseApi, createSupabaseLive } from "./supabaseApi.js";
@@ -276,33 +279,6 @@ function dateTime(value) {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
-}
-
-function prepareCelebrationSound() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext)
-    throw new Error("this browser does not support audio playback");
-  const context = new AudioContext();
-  return context.resume().then(() => context);
-}
-
-function playCelebrationSound(context) {
-  const notes = [523.25, 659.25, 783.99, 1046.5];
-  notes.forEach((frequency, index) => {
-    const start = context.currentTime + index * 0.16;
-    const oscillator = context.createOscillator();
-    const volume = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(frequency, start);
-    volume.gain.setValueAtTime(0.0001, start);
-    volume.gain.exponentialRampToValueAtTime(0.13, start + 0.025);
-    volume.gain.exponentialRampToValueAtTime(0.0001, start + 0.55);
-    oscillator.connect(volume);
-    volume.connect(context.destination);
-    oscillator.start(start);
-    oscillator.stop(start + 0.56);
-  });
-  window.setTimeout(() => context.close(), 1100);
 }
 
 const WHATS_NEW_VERSION = "2026-10-17";
@@ -552,6 +528,14 @@ function renderMessageContent(text, members, userId) {
   });
 }
 
+function soundEffectsEnabled() {
+  try {
+    return localStorage.getItem("kinda:sound-effects") !== "off";
+  } catch {
+    return true;
+  }
+}
+
 function InAppBanner({ banner, onOpen, onClose }) {
   return (
     <div className="in-app-banner" role="status" key={banner.id}>
@@ -713,39 +697,74 @@ function FocusMode({ task, onClose, onToggle, onDone, onExtend }) {
   );
 }
 
-let chimeContext = null;
-function audioContext() {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return null;
-  chimeContext = chimeContext || new AudioCtx();
-  return chimeContext;
+const kindleVoiceBase = "/Kindle%20voice/";
+const kindleVoiceFiles = {
+  thumbs: "Nailed it.mp3",
+  peace: "peace out task.mp3",
+  dab: "too easy.mp3",
+  pump: "Yes let's go.mp3",
+  flex: "Strong work.mp3",
+  spin: "Whoa, look at you go.mp3",
+  salute: "Task complete, boss.mp3",
+  clap: "Bravo bravo.mp3",
+  shimmy: "Do the done dance.mp3",
+  wave: "Strong work.mp3",
+  taskAdded: "Task added! you've got this.mp3",
+  oneLeft: "Just one left you've got this.mp3",
+};
+
+function preloadKindleSound() {
+  const sound = new Audio(`${kindleVoiceBase}sound.mp3`);
+  sound.preload = "auto";
+  sound.load();
+}
+
+function playKindleMoment(voiceKey) {
+  if (!soundEffectsEnabled()) return;
+  try {
+    const sound = new Audio(`${kindleVoiceBase}sound.mp3`);
+    sound.preload = "auto";
+    sound.volume = 0.85;
+    const voice = voiceKey
+      ? new Audio(
+          `${kindleVoiceBase}${encodeURIComponent(kindleVoiceFiles[voiceKey])}`,
+        )
+      : null;
+    if (voice) {
+      voice.preload = "auto";
+      voice.load();
+    }
+    let voiceStarted = false;
+    let voiceTimer = null;
+    const startVoice = () => {
+      if (voiceStarted || !voiceKey) return;
+      voiceStarted = true;
+      window.clearTimeout(voiceTimer);
+      voice?.play().catch(() => {});
+    };
+    const scheduleVoice = () => {
+      if (!Number.isFinite(sound.duration) || sound.duration <= 0) return;
+      const delay = Math.max(0, sound.duration - sound.currentTime - 0.3);
+      window.clearTimeout(voiceTimer);
+      voiceTimer = window.setTimeout(startVoice, delay * 1000);
+    };
+    sound.addEventListener("loadedmetadata", scheduleVoice, { once: true });
+    sound.addEventListener("timeupdate", scheduleVoice);
+    sound.addEventListener("ended", startVoice, { once: true });
+    sound.addEventListener("error", startVoice, { once: true });
+    sound.play().catch(() => {});
+    scheduleVoice();
+  } catch {
+    /* Audio is optional; never block task actions. */
+  }
 }
 
 function playChime() {
-  try {
-    const context = audioContext();
-    if (!context) return;
-    if (context.state === "suspended") context.resume().catch(() => {});
-    const start = context.currentTime + 0.02;
-    [
-      [880, 0],
-      [1318.5, 0.2],
-      [1760, 0.4],
-    ].forEach(([frequency, offset]) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(0.0001, start + offset);
-      gain.gain.exponentialRampToValueAtTime(0.22, start + offset + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 1.1);
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start(start + offset);
-      oscillator.stop(start + offset + 1.2);
-    });
-  } catch {
-    /* sound is a nicety, never block the reminder */
-  }
+  playKindleMoment(null);
+}
+
+function voiceForPose(pose) {
+  return kindleVoiceFiles[pose] ? pose : "flex";
 }
 
 function ReminderDialog({ reminder, onDismiss, onDone }) {
@@ -1133,6 +1152,7 @@ function WorkspaceApp({ authClient, client }) {
       return "system";
     }
   });
+  const [soundEnabled, setSoundEnabled] = useState(soundEffectsEnabled);
   const [notifPermission, setNotifPermission] = useState(
     typeof Notification === "undefined"
       ? "unsupported"
@@ -1140,6 +1160,7 @@ function WorkspaceApp({ authClient, client }) {
   );
   const typingSentRef = useRef(0);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showOnboardingSurvey, setShowOnboardingSurvey] = useState(false);
   const [reminderQueue, setReminderQueue] = useState([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
@@ -1579,6 +1600,36 @@ function WorkspaceApp({ authClient, client }) {
   ]);
 
   useEffect(() => {
+    if (!user?.id || authPending) {
+      setShowOnboardingSurvey(false);
+      return undefined;
+    }
+    let cancelled = false;
+    api("/onboarding-survey")
+      .then(({ completed }) => {
+        if (!cancelled && !completed) setShowOnboardingSurvey(true);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          notify(
+            `Could not check the optional welcome questions: ${error.message}`,
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authPending, api]);
+
+  async function saveOnboardingSurvey(answer) {
+    await api("/onboarding-survey", {
+      method: "POST",
+      body: JSON.stringify(answer),
+    });
+    setShowOnboardingSurvey(false);
+  }
+
+  useEffect(() => {
     if (!user || !tasksLoaded) return undefined;
     const timer = window.setTimeout(() => {
       writeJson(`kinda:data:${user.id}`, {
@@ -1975,23 +2026,6 @@ function WorkspaceApp({ authClient, client }) {
   }, [badges.chat, nudges, notifPermission, user?.id]);
 
   useEffect(() => {
-    const unlock = () => {
-      try {
-        const context = audioContext();
-        if (context && context.state === "suspended") context.resume();
-      } catch {
-        /* ignore */
-      }
-    };
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!user) return undefined;
     const check = () => {
       const now = new Date();
@@ -2031,6 +2065,17 @@ function WorkspaceApp({ authClient, client }) {
       /* ignore */
     }
   }, [accent]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "kinda:sound-effects",
+        soundEnabled ? "on" : "off",
+      );
+    } catch {
+      /* Sound preferences are optional. */
+    }
+  }, [soundEnabled]);
 
   useEffect(() => {
     if (!("setAppBadge" in navigator)) return;
@@ -2422,6 +2467,7 @@ function WorkspaceApp({ authClient, client }) {
     }
     const { tzOffset, ...fields } = body;
     setKindleCreated({ key: Date.now(), pose: pickPose() });
+    playKindleMoment("taskAdded");
     const draft = {
       id: `tmp-${Date.now()}`,
       ...fields,
@@ -2532,12 +2578,42 @@ function WorkspaceApp({ authClient, client }) {
       !task.done &&
       tasks.length > 0 &&
       tasks.every((item) => item.id === task.id || item.done);
-    let soundReady = null;
-    if (willFinishAllTasks) {
-      try {
-        soundReady = prepareCelebrationSound();
-      } catch (error) {
-        notify(`The celebration sound couldn't play: ${error.message}`);
+    const completesTask = action === "complete" && body.done && !task.done;
+    const finishesChallenge = Boolean(
+      completesTask &&
+        task.challengeId &&
+        !tasks.some(
+          (other) =>
+            other.id !== task.id &&
+            other.challengeId === task.challengeId &&
+            taskDay(other) === localDate() &&
+            !other.done,
+        ),
+    );
+    if (completesTask) {
+      if (willFinishAllTasks) {
+        setCelebrationType("tasks");
+        playKindleMoment("pump");
+      } else if (finishesChallenge) {
+        setWarrior({
+          scene: "fire",
+          title: "Day done!",
+          line: "The circle’s flame just grew.",
+        });
+        playKindleMoment("flex");
+      } else {
+        const pose = pickPose();
+        const hasOneLeft = openTodayAfter === 1;
+        setKindleCheer({
+          key: Date.now(),
+          pose,
+          text: hasOneLeft
+            ? "Just one left. You’ve got this!"
+            : pose === "wave"
+              ? "Strong work."
+              : undefined,
+        });
+        playKindleMoment(hasOneLeft ? "oneLeft" : voiceForPose(pose));
       }
     }
 
@@ -2566,17 +2642,6 @@ function WorkspaceApp({ authClient, client }) {
       if (action === "complete" && updated.done) {
         loadActivity().catch((error) => notify(error.message));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
-        if (nextCelebration) setCelebrationType(nextCelebration);
-        else if (body.done && !task.done && task.challengeId && !tasks.some((other) => other.id !== task.id && other.challengeId === task.challengeId && taskDay(other) === localDate() && !other.done)) {
-          setWarrior({ scene: "fire", title: "Day done!", line: "The circle’s flame just grew." });
-        } else if (body.done && !task.done) {
-          const pose = pickPose();
-          setKindleCheer({
-            key: Date.now(),
-            pose,
-            text: openTodayAfter === 1 ? "Just one left. You’ve got this!" : undefined,
-          });
-        }
         try {
           const nextStreak = await api(
             `/streak?tz=${new Date().getTimezoneOffset()}`,
@@ -2616,19 +2681,8 @@ function WorkspaceApp({ authClient, client }) {
           setKindleToast(null);
           setKindleCheer(null);
         }
-        if (willFinishAllTasks) {
-          if (soundReady) {
-            soundReady
-              .then(playCelebrationSound)
-              .catch((error) =>
-                notify(`The celebration sound couldn't play: ${error.message}`),
-              );
-          }
-        }
       }
     } catch (error) {
-      if (soundReady)
-        soundReady.then((context) => context.close()).catch(() => {});
       if (action === "complete") {
         try {
           // A request can commit on the server even if its response is interrupted.
@@ -3511,6 +3565,8 @@ function WorkspaceApp({ authClient, client }) {
               onWhatsNew={() => setShowWhatsNew(true)}
               accent={accent}
               setAccent={setAccent}
+              soundEnabled={soundEnabled}
+              setSoundEnabled={setSoundEnabled}
             />
           )}
         </section>
@@ -3677,6 +3733,12 @@ function WorkspaceApp({ authClient, client }) {
             type={celebrationType}
             streakInfo={celebrationStreak}
             onClose={() => setCelebrationType(null)}
+          />
+        )}
+        {showOnboardingSurvey && (
+          <OnboardingSurvey
+            onSubmit={saveOnboardingSurvey}
+            onSkip={() => saveOnboardingSurvey({ skipped: true })}
           />
         )}
         {toast && (
@@ -6702,6 +6764,8 @@ function SettingsPage({
   onWhatsNew,
   accent,
   setAccent,
+  soundEnabled,
+  setSoundEnabled,
 }) {
   const { isIOS, standalone } = useInstall();
   const [confirmText, setConfirmText] = useState("");
@@ -6936,6 +7000,21 @@ function SettingsPage({
             onClick={onWhatsNew}
           >
             <Sparkles size={13} /> See
+          </button>
+        </div>
+        <div className="settings-row">
+          <span>
+            <b>Sound effects</b>
+            <small>Soft sounds for tasks, timers, and streak celebrations.</small>
+          </span>
+          <button
+            className="button button-secondary small-button"
+            type="button"
+            aria-pressed={soundEnabled}
+            onClick={() => setSoundEnabled((enabled) => !enabled)}
+          >
+            {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+            {soundEnabled ? "On" : "Off"}
           </button>
         </div>
       </section>
@@ -9320,6 +9399,118 @@ function LandingFeatureDetailPage({
   );
 }
 
+function OnboardingSurvey({ onSubmit, onSkip }) {
+  const [reasons, setReasons] = useState([]);
+  const [source, setSource] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const reasonOptions = [
+    ["focus", "Get focused and organized"],
+    ["habits", "Build better habits"],
+    ["accountability", "Stay accountable"],
+    ["friends", "Work toward goals with friends"],
+    ["circle", "Join a circle or accept an invite"],
+    ["other", "Something else"],
+  ];
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!reasons.length) {
+      setError("Choose at least one reason, or skip the survey.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await onSubmit({ reasons, source });
+    } catch (submitError) {
+      setError(submitError.message || "Could not save your answers.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function skip() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onSkip();
+    } catch (submitError) {
+      setError(submitError.message || "Could not save your choice.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="Help us make Kinda better"
+      subtitle="A couple of optional questions. Your answers help us understand what people need and how they find us."
+      onClose={skip}
+    >
+      <form className="modal-form" onSubmit={submit}>
+        <fieldset className="assign-audience">
+          <legend>
+            What brings you to Kinda? <small>Choose any that fit</small>
+          </legend>
+          {reasonOptions.map(([value, label]) => (
+            <label className="audience-option" key={value}>
+              <input
+                type="checkbox"
+                checked={reasons.includes(value)}
+                disabled={busy}
+                onChange={() =>
+                  setReasons((selected) =>
+                    selected.includes(value)
+                      ? selected.filter((item) => item !== value)
+                      : [...selected, value]
+                  )
+                }
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </fieldset>
+        <label>
+          Where did you hear about Kinda?
+          <select
+            value={source}
+            disabled={busy}
+            onChange={(event) => setSource(event.target.value)}
+          >
+            <option value="">Choose one (optional)</option>
+            <option value="friend">Friend or family</option>
+            <option value="social_media">Social media</option>
+            <option value="search">Web search</option>
+            <option value="community">School, work, or community</option>
+            <option value="other">Somewhere else</option>
+            <option value="prefer_not_to_say">Prefer not to say</option>
+          </select>
+        </label>
+        {error && (
+          <p className="auth-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="reminder-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={skip}
+            disabled={busy}
+          >
+            {busy ? "Saving…" : "Skip"}
+          </button>
+          <button className="button button-primary" type="submit" disabled={busy}>
+            {busy ? "Saving…" : "Send answers"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function AuthScreen({
   mode,
   setMode,
@@ -9519,7 +9710,93 @@ function AuthScreen({
 
 export function SupabaseApp({ client }) {
   const authClient = useMemo(() => createSupabaseAuthClient(client), [client]);
-  return <WorkspaceApp authClient={authClient} client={client} />;
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const retryConnectivity = useRef(() => {});
+
+  useEffect(() => {
+    preloadKindleSound();
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let activeController = null;
+    const checkConnectivity = async () => {
+      if (!navigator.onLine) {
+        setIsOnline(false);
+        return;
+      }
+      if (activeController) activeController.abort();
+      const controller = new AbortController();
+      activeController = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(`/favicon.svg?connectivity=${Date.now()}`, {
+          method: "HEAD",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Connectivity check failed.");
+        if (!disposed && activeController === controller) setIsOnline(true);
+      } catch {
+        if (!disposed && activeController === controller) setIsOnline(false);
+      } finally {
+        window.clearTimeout(timeout);
+        if (activeController === controller) activeController = null;
+      }
+    };
+    const onOffline = () => {
+      if (activeController) activeController.abort();
+      setIsOnline(false);
+    };
+    const onOnline = () => void checkConnectivity();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void checkConnectivity();
+    };
+    retryConnectivity.current = checkConnectivity;
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void checkConnectivity();
+    }, 30_000);
+    void checkConnectivity();
+    return () => {
+      disposed = true;
+      if (activeController) activeController.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      retryConnectivity.current = () => {};
+    };
+  }, []);
+
+  return (
+    <>
+      <WorkspaceApp authClient={authClient} client={client} />
+      {!isOnline && (
+        <OfflineScreen onRetry={() => retryConnectivity.current()} />
+      )}
+    </>
+  );
+}
+
+function OfflineScreen({ onRetry }) {
+  return (
+    <main className="offline-screen" role="status" aria-live="polite">
+      <section className="offline-card">
+        <span className="offline-label">
+          <WifiOff size={15} /> CONNECTION LOST
+        </span>
+        <Kindle mood="think" size={112} />
+        <h1>Seems like something’s wrong.</h1>
+        <p>Kindly check your internet connection. We’ll be here when you’re back.</p>
+        <button className="button button-primary" type="button" onClick={onRetry}>
+          Try again
+        </button>
+      </section>
+    </main>
+  );
 }
 
 export default SupabaseApp;
