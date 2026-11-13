@@ -84,55 +84,282 @@ function roundedRect(context, x, y, width, height, radius) {
   context.roundRect(x, y, width, height, radius);
 }
 
-function cardBlob({ title, subtitle, stats, filename, mood = "happy" }) {
+function drawSpark(context, x, y, radius, color, alpha = 1) {
+  context.save();
+  context.globalAlpha = alpha;
+  context.fillStyle = color;
+  context.beginPath();
+  context.moveTo(x, y - radius);
+  context.quadraticCurveTo(x + radius * 0.18, y - radius * 0.18, x + radius, y);
+  context.quadraticCurveTo(x + radius * 0.18, y + radius * 0.18, x, y + radius);
+  context.quadraticCurveTo(x - radius * 0.18, y + radius * 0.18, x - radius, y);
+  context.quadraticCurveTo(x - radius * 0.18, y - radius * 0.18, x, y - radius);
+  context.fill();
+  context.restore();
+}
+
+function drawRosette(context, x, y, radius) {
+  context.save();
+  context.translate(x, y);
+  context.shadowColor = "rgba(0, 0, 0, 0.48)";
+  context.shadowBlur = 34;
+  context.shadowOffsetY = 18;
+  context.beginPath();
+  for (let index = 0; index < 48; index += 1) {
+    const angle = (Math.PI * 2 * index) / 48 - Math.PI / 2;
+    const pointRadius = index % 2 === 0 ? radius : radius * 0.955;
+    const pointX = Math.cos(angle) * pointRadius;
+    const pointY = Math.sin(angle) * pointRadius;
+    if (index === 0) context.moveTo(pointX, pointY);
+    else context.lineTo(pointX, pointY);
+  }
+  context.closePath();
+  const metal = context.createLinearGradient(-radius, -radius, radius, radius);
+  metal.addColorStop(0, "#fff0bc");
+  metal.addColorStop(0.24, "#e5b961");
+  metal.addColorStop(0.52, "#fff4d0");
+  metal.addColorStop(0.78, "#a9642c");
+  metal.addColorStop(1, "#f5d686");
+  context.fillStyle = metal;
+  context.fill();
+  context.shadowColor = "transparent";
+  context.lineWidth = 3;
+  context.strokeStyle = "rgba(255, 247, 215, 0.82)";
+  context.stroke();
+
+  context.beginPath();
+  context.arc(0, 0, radius * 0.91, 0, Math.PI * 2);
+  context.fillStyle = "#123035";
+  context.fill();
+  context.lineWidth = 7;
+  context.strokeStyle = "#855126";
+  context.stroke();
+  context.beginPath();
+  context.arc(0, 0, radius * 0.86, 0, Math.PI * 2);
+  const enamel = context.createRadialGradient(-radius * 0.34, -radius * 0.42, 4, 0, 0, radius);
+  enamel.addColorStop(0, "#31585a");
+  enamel.addColorStop(0.58, "#17393d");
+  enamel.addColorStop(1, "#0b2228");
+  context.fillStyle = enamel;
+  context.fill();
+  context.lineWidth = 2;
+  context.strokeStyle = "rgba(255, 228, 166, 0.78)";
+  context.stroke();
+  context.restore();
+}
+
+function drawStatTile(context, stat, x, y, width, height) {
+  context.save();
+  roundedRect(context, x, y, width, height, 20);
+  const fill = context.createLinearGradient(x, y, x + width, y + height);
+  fill.addColorStop(0, "rgba(39, 72, 73, 0.94)");
+  fill.addColorStop(1, "rgba(17, 43, 48, 0.94)");
+  context.fillStyle = fill;
+  context.fill();
+  context.lineWidth = 2;
+  context.strokeStyle = "rgba(223, 181, 100, 0.42)";
+  context.stroke();
+  context.fillStyle = "#d9b866";
+  context.fillRect(x + 24, y + 22, 4, height - 44);
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+  context.fillStyle = "#d5c9ad";
+  context.font = "700 19px Arial, sans-serif";
+  context.fillText(String(stat.label).toUpperCase(), x + 48, y + 39, width - 72);
+  context.fillStyle = "#fff1cd";
+  context.font = "700 42px Georgia, serif";
+  context.fillText(String(stat.value), x + 48, y + 82, width - 72);
+  context.restore();
+}
+
+function drawMarkSeal(context, mark) {
+  context.save();
+  context.shadowColor = "rgba(0, 0, 0, 0.42)";
+  context.shadowBlur = 12;
+  context.shadowOffsetY = 5;
+  context.beginPath();
+  context.arc(756, 393, 43, 0, Math.PI * 2);
+  const seal = context.createLinearGradient(720, 350, 792, 436);
+  seal.addColorStop(0, "#fff4d0");
+  seal.addColorStop(0.52, "#e5b961");
+  seal.addColorStop(1, "#a9642c");
+  context.fillStyle = seal;
+  context.fill();
+  context.shadowColor = "transparent";
+  context.lineWidth = 3;
+  context.strokeStyle = "rgba(255, 247, 215, 0.94)";
+  context.stroke();
+  context.beginPath();
+  context.arc(756, 393, 34, 0, Math.PI * 2);
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(95, 55, 24, 0.62)";
+  context.stroke();
+  context.fillStyle = "#392716";
+  context.font = `700 ${String(mark).length > 3 ? 17 : 23}px Georgia, serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(mark), 756, 393, 58);
+  context.restore();
+}
+
+function cardBlob({
+  title,
+  headline,
+  subtitle,
+  stats = [],
+  days = [],
+  displayValue,
+  displayLabel,
+  ribbonText,
+  mark,
+  filename,
+  mood = "happy",
+  kind = "weekly",
+}) {
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1350;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Your browser cannot create a share image.");
+
   const background = context.createLinearGradient(0, 0, 1080, 1350);
-  background.addColorStop(0, "#fff8f2");
-  background.addColorStop(1, "#f1e9df");
+  background.addColorStop(0, "#091c24");
+  background.addColorStop(0.52, "#17363a");
+  background.addColorStop(1, "#081920");
   context.fillStyle = background;
   context.fillRect(0, 0, 1080, 1350);
-  context.fillStyle = "#c25a2c";
+
+  const glow = context.createRadialGradient(540, 610, 30, 540, 610, 610);
+  glow.addColorStop(0, "rgba(207, 151, 68, 0.2)");
+  glow.addColorStop(0.58, "rgba(77, 117, 96, 0.08)");
+  glow.addColorStop(1, "rgba(5, 20, 26, 0)");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, 1080, 1350);
+
+  const stars = [
+    [105, 220, 10], [942, 245, 7], [117, 556, 6], [966, 605, 10],
+    [116, 870, 8], [959, 910, 6], [194, 1100, 5], [882, 1128, 8],
+    [247, 302, 4], [846, 365, 4], [211, 785, 4], [858, 814, 5],
+  ];
+  stars.forEach(([x, y, radius], index) =>
+    drawSpark(context, x, y, radius, index % 2 ? "#f5d686" : "#fff3ca", 0.76)
+  );
+
+  roundedRect(context, 38, 38, 1004, 1274, 44);
+  context.lineWidth = 3;
+  context.strokeStyle = "rgba(235, 196, 118, 0.62)";
+  context.stroke();
+  roundedRect(context, 55, 55, 970, 1240, 34);
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(255, 241, 202, 0.22)";
+  context.stroke();
+
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+  context.fillStyle = "#f3d48b";
+  context.font = "700 22px Arial, sans-serif";
+  context.fillText("K I N D A   ·   THE MOMENTUM COLLECTION", 540, 112);
+  context.fillStyle = "#fff0cc";
+  context.font = "700 54px Georgia, serif";
+  context.fillText(String(headline || title).toUpperCase(), 540, 218, 850);
+  context.fillStyle = "#c8d1c5";
+  context.font = "500 24px Arial, sans-serif";
+  context.fillText(String(subtitle || "").toUpperCase(), 540, 263, 850);
+
+  drawRosette(context, 540, 563, 257);
+  drawSpark(context, 358, 472, 11, "#fff0bd");
+  drawSpark(context, 720, 493, 8, "#f3d48b");
+  drawSpark(context, 727, 685, 10, "#fff0bd");
+  drawKindle(context, 540, 570, 1.42, mood);
+  if (kind === "badge" && mark) drawMarkSeal(context, mark);
+
+  context.save();
+  context.shadowColor = "rgba(0, 0, 0, 0.5)";
+  context.shadowBlur = 15;
+  context.shadowOffsetY = 8;
   context.beginPath();
-  context.arc(910, 155, 230, 0, Math.PI * 2);
+  context.moveTo(244, 734);
+  context.lineTo(836, 734);
+  context.lineTo(809, 785);
+  context.lineTo(836, 836);
+  context.lineTo(244, 836);
+  context.lineTo(271, 785);
+  context.closePath();
+  const ribbon = context.createLinearGradient(244, 734, 836, 836);
+  ribbon.addColorStop(0, "#e5b961");
+  ribbon.addColorStop(0.5, "#fff0bd");
+  ribbon.addColorStop(1, "#bd7a36");
+  context.fillStyle = ribbon;
   context.fill();
-  context.fillStyle = "#fffdfa";
-  roundedRect(context, 72, 72, 936, 1206, 34);
-  context.fill();
-  context.fillStyle = "#c25a2c";
-  context.font = "700 40px Arial, sans-serif";
-  context.fillText("kinda", 132, 170);
-  drawKindle(context, 132 + context.measureText("kinda").width + 24, 158, 0.21, "happy");
-  drawKindle(context, 850, 222, 0.78, mood);
-  context.fillStyle = "#242424";
-  context.font = "700 68px Arial, sans-serif";
-  context.fillText(title, 132, 340, 810);
-  context.fillStyle = "#77716b";
-  context.font = "400 30px Arial, sans-serif";
-  context.fillText(subtitle, 132, 405, 810);
-  const top = 500;
-  const cardHeight = 150;
-  stats.forEach((stat, index) => {
-    const y = top + index * (cardHeight + 24);
-    context.fillStyle = index % 2 ? "#f8f4ef" : "#fbede6";
-    roundedRect(context, 132, y, 816, cardHeight, 24);
-    context.fill();
-    context.fillStyle = "#242424";
-    context.font = "700 58px Arial, sans-serif";
-    context.fillText(String(stat.value), 168, y + 94, 300);
-    context.fillStyle = "#77716b";
-    context.font = "500 28px Arial, sans-serif";
-    context.fillText(stat.label, 490, y + 88, 410);
+  context.shadowColor = "transparent";
+  context.lineWidth = 2;
+  context.strokeStyle = "rgba(255, 247, 215, 0.92)";
+  context.stroke();
+  context.fillStyle = "#2b251a";
+  context.font = "700 46px Georgia, serif";
+  context.textAlign = "center";
+  context.fillText(
+    String(ribbonText || `${displayValue ?? ""} ${displayLabel || ""}`).trim().toUpperCase(),
+    540,
+    800,
+    540,
+  );
+  context.restore();
+
+  const isBadge = kind === "badge";
+  const tileWidth = isBadge ? 832 : kind === "streak" ? 404 : 382;
+  const tileGap = isBadge ? 0 : 24;
+  const tileX = isBadge ? 124 : (1080 - (tileWidth * 2 + tileGap)) / 2;
+  const tileY = isBadge ? 966 : kind === "streak" ? 941 : 905;
+  const tileHeight = isBadge ? 112 : 94;
+  stats.slice(0, isBadge ? 1 : 4).forEach((stat, index) => {
+    const column = isBadge ? 0 : index % 2;
+    const row = isBadge ? 0 : Math.floor(index / 2);
+    drawStatTile(
+      context,
+      stat,
+      tileX + column * (tileWidth + tileGap),
+      tileY + row * (tileHeight + 17),
+      tileWidth,
+      tileHeight,
+    );
   });
-  context.fillStyle = "#77716b";
-  context.font = "400 24px Arial, sans-serif";
-  context.fillText("Small steps count. Keep showing up.", 132, 1160);
-  context.fillStyle = "#c25a2c";
-  context.font = "600 24px Arial, sans-serif";
-  context.fillText("kinda.app", 132, 1215);
+
+  if (kind === "weekly" && days.length) {
+    context.fillStyle = "#d9bd7d";
+    context.font = "700 17px Arial, sans-serif";
+    context.textAlign = "center";
+    context.fillText("SEVEN DAYS, ONE STORY", 540, 1150);
+    const gap = 96;
+    const startX = 540 - (gap * 3);
+    days.slice(0, 7).forEach((day, index) => {
+      const x = startX + index * gap;
+      const y = 1192;
+      const active = Number(day.done) > 0;
+      context.beginPath();
+      context.arc(x, y, 22, 0, Math.PI * 2);
+      context.fillStyle = active ? "#e5b961" : "rgba(9, 28, 36, 0.72)";
+      context.fill();
+      context.lineWidth = 2;
+      context.strokeStyle = active ? "#fff0bd" : "rgba(223, 181, 100, 0.54)";
+      context.stroke();
+      context.fillStyle = active ? "#2b251a" : "#bdc8bb";
+      context.font = "700 18px Arial, sans-serif";
+      context.fillText(String(day.done || "·"), x, y + 6);
+      context.fillStyle = "#bdc8bb";
+      context.font = "600 15px Arial, sans-serif";
+      context.fillText(String(day.label).slice(0, 3).toUpperCase(), x, y + 44);
+    });
+  }
+
+  context.fillStyle = "rgba(224, 214, 188, 0.8)";
+  context.font = "600 17px Arial, sans-serif";
+  context.textAlign = "center";
+  context.fillText("SMALL STEPS. LASTING MOMENTUM.", 540, 1270);
+  context.fillStyle = "#f3d48b";
+  context.font = "700 19px Arial, sans-serif";
+  context.fillText("KINDA.APP", 540, 1300);
+
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Couldn’t create the share image.")), "image/png"))
     .then(blob => ({ blob, filename }));
 }

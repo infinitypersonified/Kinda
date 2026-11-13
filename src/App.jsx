@@ -9,6 +9,7 @@ import Kindle, {
   pickPose,
   pickStreakScene,
 } from "./Kindle.jsx";
+import { BADGE_CATALOG, BadgeCollection, BadgeUnlock } from "../scripts/Badges.jsx";
 import StreakWeekProgress from "./StreakWeekProgress.jsx";
 import { ChallengeCard, ChallengeScreen } from "./Challenge.jsx";
 import React, {
@@ -25,6 +26,7 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowRight,
+  Award,
   BarChart3,
   TrendingUp,
   Bell,
@@ -182,6 +184,7 @@ function categorySlug(name) {
 const pages = [
   { id: "home", label: "Home", icon: House },
   { id: "tasks", label: "My Tasks", icon: CheckSquare2 },
+  { id: "badges", label: "Badges", icon: Award },
   { id: "circles", label: "Circles", icon: Users },
   { id: "activity", label: "Activity", icon: Heart },
   { id: "weekly", label: "Weekly", icon: BarChart3 },
@@ -699,6 +702,7 @@ function FocusMode({ task, onClose, onToggle, onDone, onExtend }) {
 }
 
 const kindleVoiceBase = "/Kindle%20voice/";
+const WEEK_COMPLETE_SOUND_FILE = "Streak week complete sound.mp3";
 const kindleVoiceFiles = {
   thumbs: "Nailed it.mp3",
   peace: "peace out task.mp3",
@@ -732,6 +736,7 @@ function getKindleAudio(file) {
 
 function preloadKindleSound() {
   getKindleAudio("sound.mp3");
+  getKindleAudio(WEEK_COMPLETE_SOUND_FILE);
   const preloadVoices = () => {
     [...new Set(Object.values(kindleVoiceFiles))].forEach(getKindleAudio);
   };
@@ -743,7 +748,7 @@ function preloadKindleSound() {
   return () => window.clearTimeout(timer);
 }
 
-function playKindleMoment(voiceKey) {
+function playKindleMoment(voiceKey, soundFile = "sound.mp3") {
   if (!soundEffectsEnabled()) return;
   try {
     if (activeKindlePlayback) {
@@ -751,7 +756,7 @@ function playKindleMoment(voiceKey) {
       activeKindlePlayback.sound.pause();
       activeKindlePlayback.voice?.pause();
     }
-    const sound = getKindleAudio("sound.mp3");
+    const sound = getKindleAudio(soundFile);
     sound.volume = 0.85;
     const voice = voiceKey ? getKindleAudio(kindleVoiceFiles[voiceKey]) : null;
     const playback = { sound, voice, voiceTimer: null, voiceStarted: false };
@@ -791,6 +796,10 @@ function playKindleMoment(voiceKey) {
   } catch {
     /* Audio is optional; never block task actions. */
   }
+}
+
+function playKindleWeekComplete() {
+  playKindleMoment(null, WEEK_COMPLETE_SOUND_FILE);
 }
 
 function playChime() {
@@ -1290,6 +1299,11 @@ function WorkspaceApp({ authClient, client }) {
   const [kindleCheer, setKindleCheer] = useState(null);
   const [kindleCreated, setKindleCreated] = useState(null);
   const [celebrationStreak, setCelebrationStreak] = useState(null);
+  const [badgeData, setBadgeData] = useState(null);
+  const [badgeLoading, setBadgeLoading] = useState(false);
+  const [badgeQueue, setBadgeQueue] = useState([]);
+  const badgeUserIdRef = useRef(user?.id);
+  badgeUserIdRef.current = user?.id;
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return undefined;
     const onServiceWorkerMessage = (event) => {
@@ -1370,6 +1384,41 @@ function WorkspaceApp({ authClient, client }) {
     setActivity(await api("/activity"));
     setActivityLoaded(true);
   }, [api]);
+
+  const loadBadgeCollection = useCallback(async () => {
+    const requestedUserId = user?.id;
+    setBadgeLoading(true);
+    try {
+      const data = await api("/badges/evaluate", {
+        method: "POST",
+        body: JSON.stringify({ tzOffset: new Date().getTimezoneOffset() }),
+      });
+      if (badgeUserIdRef.current === requestedUserId) {
+        setBadgeData(data);
+        const unlocked = (data.newlyUnlocked || [])
+          .map((badge) => BADGE_CATALOG.find((item) => item.id === badge.id))
+          .filter(Boolean);
+        if (unlocked.length) {
+          setBadgeQueue((current) => {
+            const queuedIds = new Set(current.map((badge) => badge.id));
+            return [
+              ...current,
+              ...unlocked.filter((badge) => !queuedIds.has(badge.id)),
+            ];
+          });
+        }
+      }
+      return data;
+    } finally {
+      if (badgeUserIdRef.current === requestedUserId) setBadgeLoading(false);
+    }
+  }, [api, user?.id]);
+
+  useEffect(() => {
+    setBadgeData(null);
+    setBadgeQueue([]);
+    setBadgeLoading(false);
+  }, [user?.id]);
 
   const syncCircleTask = useCallback((task, remove = false) => {
     if (!task?.id) return;
@@ -1748,7 +1797,8 @@ function WorkspaceApp({ authClient, client }) {
   }, [goalsByGroup, user?.id]);
 
   useEffect(() => {
-    if (!user || page !== "chat" || !activeGroup) return undefined;
+    if (!user || page !== "chat" || !activeGroup || !chatMobileOpen)
+      return undefined;
     const id = activeGroup.id;
     return live(
       `/groups/${id}/typing`,
@@ -1769,7 +1819,7 @@ function WorkspaceApp({ authClient, client }) {
         }),
       () => {},
     );
-  }, [user?.id, page, activeGroup?.id, live]);
+  }, [user?.id, page, activeGroup?.id, chatMobileOpen, live]);
 
   useEffect(() => {
     if (!user || page !== "circles" || !activeGroup) {
@@ -1867,7 +1917,7 @@ function WorkspaceApp({ authClient, client }) {
   const seenRef = useRef(seen);
   seenRef.current = seen;
   useEffect(() => {
-    if (page !== "chat" || !activeGroup) return;
+    if (page !== "chat" || !activeGroup || !chatMobileOpen) return;
     setChatDivider({
       groupId: activeGroup.id,
       time: seenRef.current.chat[activeGroup.id] ?? null,
@@ -1895,7 +1945,7 @@ function WorkspaceApp({ authClient, client }) {
     if (
       page === "chat" &&
       activeGroup &&
-      (chatMobileOpen || !window.matchMedia("(max-width: 780px)").matches)
+      chatMobileOpen
     ) {
       const fromOthers = messages
         .filter((message) => message.senderId !== user.id)
@@ -2155,7 +2205,7 @@ function WorkspaceApp({ authClient, client }) {
       const viewing =
         page === "chat" &&
         activeGroup?.id === groupId &&
-        (chatMobileOpen || !window.matchMedia("(max-width: 780px)").matches);
+        chatMobileOpen;
       if (viewing || document.hidden) return;
       const group = groups.find((item) => item.id === groupId);
       const mentioned = (last.mentions || []).includes(user.id);
@@ -2316,12 +2366,16 @@ function WorkspaceApp({ authClient, client }) {
     setPage(nextPage);
     setMenuOpen(false);
     setChatMobileOpen(false);
+    if (nextPage === "badges")
+      loadBadgeCollection().catch((error) => notify(error.message));
     if (nextPage === "activity")
       loadActivity().catch((error) => notify(error.message));
-    if (nextPage === "profile")
+    if (nextPage === "profile") {
       api("/me")
         .then(setProfile)
         .catch((error) => notify(error.message));
+      loadBadgeCollection().catch((error) => notify(error.message));
+    }
   }
 
   async function submitAuth(event) {
@@ -2673,10 +2727,13 @@ function WorkspaceApp({ authClient, client }) {
 
     try {
       let updated;
+      const requestBody = action === "complete" && body.done
+        ? { ...body, tzOffset: new Date().getTimezoneOffset() }
+        : body;
       try {
         updated = await api(`/tasks/${task.id}/${action}`, {
           method: "POST",
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
         });
       } catch (firstError) {
         if (
@@ -2687,7 +2744,7 @@ function WorkspaceApp({ authClient, client }) {
         await authClient.token();
         updated = await api(`/tasks/${task.id}/${action}`, {
           method: "POST",
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
         });
       }
       settleOps(opIds, updated);
@@ -2695,6 +2752,8 @@ function WorkspaceApp({ authClient, client }) {
       refreshTasks().catch((error) => notify(error.message));
       if (action === "complete" && updated.done) {
         loadActivity().catch((error) => notify(error.message));
+        loadBadgeCollection()
+          .catch((error) => notify(`Couldn’t check your badge progress: ${error.message}`));
         let nextCelebration = willFinishAllTasks ? "tasks" : null;
         try {
           const nextStreak = await api(
@@ -3190,21 +3249,44 @@ function WorkspaceApp({ authClient, client }) {
     if (!streak) return;
     try {
       await shareProgressCard({
+        kind: "streak",
         title: `${streak.current} day streak`,
-        subtitle: `${user.name} is building a little momentum.`,
+        headline: "A flame well kept",
+        subtitle: `${user.name} · Kinda streak collection`,
         filename: `kinda-streak-${streak.current}.png`,
         mood: "celebrate",
+        displayValue: streak.current,
+        displayLabel: "day streak",
         stats: [
-          { value: `${streak.current} days`, label: "current streak" },
           { value: `${streak.best} days`, label: "personal best" },
           {
-            value: streak.doneToday ? "Saved" : `${streak.needed} to go`,
-            label: "today's progress",
+            value: streak.doneToday
+              ? "Saved"
+              : `${streak.needed} ${streak.needed === 1 ? "task" : "tasks"} to go`,
+            label: "today's checkpoint",
           },
         ],
       });
     } catch (error) {
       notify(error.message || "Couldn't share the streak card.");
+    }
+  }
+
+  async function shareBadgeCard(badge) {
+    try {
+      await shareProgressCard({
+        kind: "badge",
+        title: `${badge.name} badge`,
+        headline: badge.name,
+        subtitle: `${badge.category} · Kinda keepsake`,
+        ribbonText: "BADGE UNLOCKED",
+        filename: `kinda-badge-${badge.id}.png`,
+        mood: badge.mood,
+        mark: badge.mark,
+        stats: [{ value: badge.criteria, label: "earned for" }],
+      });
+    } catch (error) {
+      notify(error.message || "Couldn't share the badge.");
     }
   }
 
@@ -3302,7 +3384,7 @@ function WorkspaceApp({ authClient, client }) {
             {[
               ["Plan", ["home", "tasks", "weekly", "growth"]],
               ["Together", ["circles", "chat", "activity"]],
-              ["You", ["profile", "settings"]],
+              ["You", ["profile", "badges", "settings"]],
             ].map(([heading, ids]) => (
               <div className="nav-group" key={heading}>
                 <p className="side-label">{heading}</p>
@@ -3554,7 +3636,6 @@ function WorkspaceApp({ authClient, client }) {
                 setChatMobileOpen(true);
               }}
               messages={messages}
-              sharedTasks={sharedTasksToday}
               user={user}
               value={newMessage}
               setValue={setNewMessage}
@@ -3585,6 +3666,13 @@ function WorkspaceApp({ authClient, client }) {
               <GrowthPage tasks={tasks} />
             </React.Suspense>
           )}
+          {page === "badges" && (
+            <BadgeCollection
+              data={badgeData}
+              loading={badgeLoading}
+              onShareBadge={shareBadgeCard}
+            />
+          )}
           {page === "weekly" && (
             <React.Suspense fallback={<p className="quiet-empty">Loading your weekly report…</p>}>
               <WeeklyPage tasks={tasks} userName={user.name} onError={notify} api={api} />
@@ -3593,8 +3681,11 @@ function WorkspaceApp({ authClient, client }) {
           {page === "profile" && (
             <ProfilePage
               user={profile || user}
-              tasks={tasks}
               friends={friends}
+              streak={streak}
+              badgeData={badgeData}
+              badgeLoading={badgeLoading}
+              onBadges={() => navigate("badges")}
               editing={profileEditing}
               setEditing={setProfileEditing}
               onSave={saveProfile}
@@ -3787,9 +3878,24 @@ function WorkspaceApp({ authClient, client }) {
           <CelebrationDialog
             type={celebrationType}
             streakInfo={celebrationStreak}
+            onWeekCompleteReveal={playKindleWeekComplete}
+            onShareStreak={shareStreakCard}
             onClose={() => setCelebrationType(null)}
           />
         )}
+        {badgeQueue[0] &&
+          !celebrationType &&
+          !kindleCheer &&
+          !kindleCreated &&
+          !kindleToast &&
+          !warrior && (
+            <BadgeUnlock
+              badge={badgeQueue[0]}
+              onShown={playChime}
+              onShare={shareBadgeCard}
+              onDone={() => setBadgeQueue((current) => current.slice(1))}
+            />
+          )}
         {showOnboardingSurvey && (
           <OnboardingSurvey
             onSubmit={saveOnboardingSurvey}
@@ -4055,8 +4161,17 @@ function GroupLeaderboard({
   );
 }
 
-function CelebrationDialog({ type, streakInfo, onClose }) {
+function CelebrationDialog({
+  type,
+  streakInfo,
+  onClose,
+  onWeekCompleteReveal,
+  onShareStreak,
+}) {
   if (type === "streak" && streakInfo) {
+    const weekComplete =
+      streakInfo.week?.length === 7 &&
+      streakInfo.week.every((day) => day.qualified);
     return createPortal(
       <div
         className="celebration-backdrop kd-streak-backdrop"
@@ -4065,17 +4180,22 @@ function CelebrationDialog({ type, streakInfo, onClose }) {
         }}
       >
         <section
-          className="kd-streak-card"
+          className={`kd-streak-card${weekComplete ? " is-week-complete" : ""}`}
           role="dialog"
           aria-modal="true"
-          aria-label="Streak continued"
+          aria-label={weekComplete ? "Perfect week complete" : "Streak continued"}
         >
           <div className="kd-streak-content">
             <KindleStreak
               to={streakInfo.to}
               scene={streakInfo.scene}
               week={streakInfo.week}
+              onWeekCompleteReveal={onWeekCompleteReveal}
             />
+            <button type="button" className="kd-share" onClick={onShareStreak}>
+              <Share size={16} strokeWidth={2.5} />
+              Share this streak
+            </button>
             <button className="kd-go" onClick={onClose}>
               Keep going
             </button>
@@ -6288,7 +6408,6 @@ function ChatPage({
   activeGroup,
   setActiveGroup,
   messages,
-  sharedTasks,
   user,
   value,
   setValue,
@@ -6311,12 +6430,13 @@ function ChatPage({
   const composeRef = useRef(null);
   const messagesRef = useRef(null);
   const stickRef = useRef(true);
+  const chatGroup = mobileOpen ? activeGroup : null;
   const lastMessage = messages[messages.length - 1];
   // Opening a chat (or switching circles) jumps straight to the newest message; after that the view only follows
   // new messages while you are already near the bottom, or when the new message is yours.
   useLayoutEffect(() => {
     stickRef.current = true;
-  }, [activeGroup?.id, mobileOpen]);
+  }, [chatGroup?.id, mobileOpen]);
   useLayoutEffect(() => {
     const node = messagesRef.current;
     if (!node || !(stickRef.current || lastMessage?.senderId === user.id))
@@ -6329,7 +6449,7 @@ function ChatPage({
   }, [
     messages.length,
     lastMessage?.id,
-    activeGroup?.id,
+    chatGroup?.id,
     mobileOpen,
     dividerTime,
   ]);
@@ -6342,7 +6462,7 @@ function ChatPage({
     });
     observer.observe(node, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [activeGroup?.id, mobileOpen]);
+  }, [chatGroup?.id, mobileOpen]);
   function onMessagesScroll(event) {
     const node = event.currentTarget;
     stickRef.current =
@@ -6365,7 +6485,7 @@ function ChatPage({
           (message) =>
             message.senderId !== user.id && message.createdAt > dividerTime,
         );
-  const members = activeGroup?.members || [];
+  const members = chatGroup?.members || [];
   const mentionMatch = value.match(/(^|\s)@([^\s@]*)$/);
   const suggestions = mentionMatch
     ? members
@@ -6378,12 +6498,14 @@ function ChatPage({
     : [];
   return (
     <div className="page-content chat-page">
-      <PageHeader
-        eyebrow="A LITTLE ENCOURAGEMENT"
-        title="Circle chat"
-        description="Every member of a circle shares one group conversation."
-      />
-      <div className={`chat-layout ${mobileOpen ? "chat-open" : ""}`}>
+      {!chatGroup && (
+        <PageHeader
+          eyebrow="YOUR CIRCLES"
+          title="Choose a circle"
+          description="Pick a circle to open its conversation."
+        />
+      )}
+      <div className={`chat-layout ${chatGroup ? "chat-open" : "chat-picker"}`}>
         <aside className="conversation-list">
           <div className="conversation-heading">
             <h2>Your circles</h2>
@@ -6399,7 +6521,7 @@ function ChatPage({
             groups.map((group, index) => (
               <button
                 key={group.id}
-                className={`conversation-item ${activeGroup?.id === group.id ? "selected" : ""}`}
+                className={`conversation-item ${chatGroup?.id === group.id ? "selected" : ""}`}
                 onClick={() => setActiveGroup(group)}
               >
                 <Avatar name={group.name} index={index} />
@@ -6419,32 +6541,19 @@ function ChatPage({
           )}
         </aside>
         <section className="chat-conversation">
-          {activeGroup ? (
+          {chatGroup ? (
             <>
               <header className="chat-header">
                 <button
-                  className="mobile-back"
+                  className="chat-back"
                   onClick={onMobileBack}
                   aria-label="Back to circles"
                 >
                   <ArrowLeft size={18} />
                 </button>
-                <Avatar name={activeGroup.name} />
-                <div>
-                  <h2>{activeGroup.name}</h2>
-                  <small>
-                    {activeGroup.memberCount} members · one group chat
-                  </small>
-                </div>
+                <Avatar name={chatGroup.name} />
+                <h2>{chatGroup.name}</h2>
               </header>
-              <div className="chat-shared-tasks">
-                {sharedTasks.slice(0, 3).map((task) => (
-                  <span key={`${task.ownerId}-${task.id}`}>
-                    <CheckSquare2 size={12} />
-                    {task.ownerName}: {task.title}
-                  </span>
-                ))}
-              </div>
               <div
                 className="chat-messages"
                 aria-live="polite"
@@ -6574,11 +6683,7 @@ function ChatPage({
                 ) : (
                   <div className="chat-empty">
                     <MessageCircle size={22} />
-                    <h3>A fresh conversation.</h3>
-                    <p>
-                      Say hello, share a little progress, or send some
-                      encouragement. Type @ to mention someone.
-                    </p>
+                    <h3>No messages yet</h3>
                   </div>
                 )}
               </div>
@@ -6652,18 +6757,7 @@ function ChatPage({
                 </button>
               </form>
             </>
-          ) : (
-            <div className="chat-empty chat-no-selection">
-              <MessageCircle size={24} />
-              <h3>Your people are one hello away.</h3>
-              <p>
-                Create a circle to give everyone in it one shared conversation.
-              </p>
-              <button className="button button-primary" onClick={onInvite}>
-                <Plus size={15} /> Create circle
-              </button>
-            </div>
-          )}
+          ) : null}
         </section>
       </div>
     </div>
@@ -6672,37 +6766,50 @@ function ChatPage({
 
 function ProfilePage({
   user,
-  tasks,
   friends,
+  streak,
+  badgeData,
+  badgeLoading,
+  onBadges,
   editing,
   setEditing,
   onSave,
   onFriend,
 }) {
-  const done = tasks.filter((task) => task.done).length;
+  const earnedBadges = (badgeData?.badges || [])
+    .flatMap((earned) => {
+      const badge = BADGE_CATALOG.find((item) => item.id === earned.id);
+      return badge ? [{ ...badge, earnedAt: earned.earnedAt }] : [];
+    })
+    .slice(-4)
+    .reverse();
+  const badgeCount = badgeData
+    ? (badgeData.badges || []).filter((earned) =>
+      BADGE_CATALOG.some((badge) => badge.id === earned.id)
+    ).length
+    : null;
+
   return (
-    <div className="page-content">
-      <PageHeader
-        eyebrow="A LITTLE ABOUT YOU"
-        title="Profile"
-        description="Your details, your way."
-        action={
-          !editing && (
+    <div className="page-content profile-page">
+      <section className="profile-hero">
+        <div className="profile-hero-copy">
+          <p className="eyebrow">YOUR KINDA SPACE</p>
+          <h1>{user.name}</h1>
+          <p className="profile-hero-bio">
+            {user.bio || "A little progress, a lot of possibility."}
+          </p>
+          <span className="profile-hero-email">{user.email}</span>
+          {!editing && (
             <button
-              className="button button-secondary"
+              className="button button-secondary profile-edit-button"
               onClick={() => setEditing(true)}
             >
               <Pencil size={14} /> Edit profile
             </button>
-          )
-        }
-      />
-      <section className="profile-panel">
-        <Avatar name={user.name} index={-1} large avatar={user.avatar} />
-        <div className="profile-copy">
-          <h2>{user.name}</h2>
-          <p>{user.bio || "A work in progress, task by task."}</p>
-          <small>{user.email}</small>
+          )}
+        </div>
+        <div className="profile-hero-art" aria-hidden="true">
+          <Avatar name={user.name} index={-1} large avatar={user.avatar} />
         </div>
       </section>
       {editing && (
@@ -6742,72 +6849,98 @@ function ProfilePage({
           </div>
         </form>
       )}
-      <section className="profile-progress">
-        <div>
-          <p className="eyebrow">YOUR TASKS</p>
-          <h2>{done} completed</h2>
-          <p>{tasks.length} total · visible only as you choose</p>
-        </div>
-        <div className="profile-friends">
-          <p className="eyebrow">YOUR PEOPLE</p>
-          {friends.length ? (
-            <div className="avatar-stack">
-              {friends.slice(0, 5).map((friend, index) => (
-                <button
-                  key={friend.id}
-                  onClick={() => onFriend(friend)}
-                  aria-label={`View ${friend.name}`}
-                >
-                  <Avatar
-                    name={friend.name}
-                    index={index}
-                    avatar={friend.avatar}
-                  />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <span>No people added yet</span>
-          )}
-        </div>
-      </section>
-      <section className="profile-shared">
-        <div className="section-title-row">
+
+      <section className="profile-overview" aria-label="Your overview">
+        <article className="profile-stat-card profile-stat-streak">
+          <span className="profile-stat-icon"><Flame size={21} /></span>
           <div>
-            <p className="eyebrow">YOUR SHARED TASKS</p>
-            <h2>Tasks in your circles</h2>
+            <strong>{Number(streak?.current) || 0}</strong>
+            <span>day streak</span>
           </div>
+        </article>
+        <article className="profile-stat-card profile-stat-badges">
+          <span className="profile-stat-icon"><Award size={21} /></span>
+          <div>
+            <strong>
+              {badgeCount === null
+                ? (badgeLoading ? "…" : "—")
+                : `${badgeCount}/${BADGE_CATALOG.length}`}
+            </strong>
+            <span>badges earned</span>
+          </div>
+        </article>
+        <article className="profile-stat-card profile-stat-friends">
+          <span className="profile-stat-icon"><Users size={21} /></span>
+          <div>
+            <strong>{friends.length}</strong>
+            <span>your people</span>
+          </div>
+        </article>
+      </section>
+
+      <section className="profile-people-panel">
+        <div>
+          <p className="eyebrow">YOUR PEOPLE</p>
+          <h2>Good things grow together.</h2>
         </div>
-        {tasks.filter(
-          (task) => task.groupIds?.length || task.visibility === "friends",
-        ).length ? (
-          <div className="task-list">
-            {tasks
-              .filter(
-                (task) =>
-                  task.groupIds?.length || task.visibility === "friends",
-              )
-              .map((task) => (
-                <article
-                  className={`shared-task-row ${task.done ? "task-complete" : ""}`}
-                  key={task.id}
-                >
-                  <span className={`task-check ${task.done ? "checked" : ""}`}>
-                    {task.done && <Check size={14} />}
-                  </span>
-                  <div>
-                    <h3>{task.title}</h3>
-                    <p>
-                      {task.category} <span>·</span> {dayLabel(task.dueDate)}
-                    </p>
-                  </div>
-                </article>
-              ))}
+        {friends.length ? (
+          <div className="avatar-stack">
+            {friends.slice(0, 6).map((friend, index) => (
+              <button
+                key={friend.id}
+                onClick={() => onFriend(friend)}
+                aria-label={`View ${friend.name}`}
+              >
+                <Avatar
+                  name={friend.name}
+                  index={index}
+                  avatar={friend.avatar}
+                />
+              </button>
+            ))}
           </div>
         ) : (
-          <p className="quiet-empty">
-            You haven’t shared any tasks. Everything else stays private.
-          </p>
+          <span className="profile-people-empty">
+            Your circle is ready when you are.
+          </span>
+        )}
+      </section>
+
+      <section className="profile-achievements">
+        <div className="profile-achievements-heading">
+          <div>
+            <p className="eyebrow">LITTLE WINS, MADE LEGENDARY</p>
+            <h2>Your keepsakes</h2>
+          </div>
+          <button type="button" className="text-link" onClick={onBadges}>
+            All badges <ArrowRight size={14} />
+          </button>
+        </div>
+        {earnedBadges.length ? (
+          <div className="profile-badge-list">
+            {earnedBadges.map((badge) => (
+              <button
+                className="profile-badge-chip"
+                key={badge.id}
+                type="button"
+                onClick={onBadges}
+              >
+                <span style={{ "--badge-accent": badge.accent }}>
+                  <Kindle mood={badge.mood} size={39} costume={badge.id} />
+                </span>
+                <b>{badge.name}</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="profile-achievements-empty">
+            <Kindle mood="think" size={58} animate />
+            <p>
+              {badgeLoading
+                ? "Kindle is gathering your keepsakes…"
+                : "Your first badge story is waiting to be written."}
+            </p>
+          </div>
         )}
       </section>
     </div>
@@ -9209,7 +9342,6 @@ function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
         activeGroup={group}
         setActiveGroup={noop}
         messages={messages}
-        sharedTasks={sharedTasks}
         user={user}
         value={messageValue}
         setValue={setMessageValue}
@@ -9396,7 +9528,6 @@ function LandingFeatureDetailPage({
         activeGroup={group}
         setActiveGroup={noop}
         messages={[]}
-        sharedTasks={[]}
         user={user}
         value={message}
         setValue={setMessage}

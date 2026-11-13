@@ -1,10 +1,15 @@
 import React from "react";
-import { Check, Flame } from "lucide-react";
+import { Check, Flame, Sparkles, Trophy } from "lucide-react";
 
-export default function StreakWeekProgress({ week, className = "" }) {
+export default function StreakWeekProgress({
+  week,
+  className = "",
+  celebrateWeek = false,
+}) {
   if (!Array.isArray(week) || week.length !== 7) return null;
 
   const completed = week.filter((day) => day.qualified).length;
+  const perfectWeek = celebrateWeek && completed === 7;
   const labels = week.map((day) =>
     new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, {
       weekday: "short",
@@ -23,7 +28,7 @@ export default function StreakWeekProgress({ week, className = "" }) {
 
   return (
     <div
-      className={`streak-week-progress ${className}`.trim()}
+      className={`streak-week-progress ${className}${perfectWeek ? " is-perfect-week" : ""}`.trim()}
       role="group"
       aria-label="Weekly streak progress"
     >
@@ -85,6 +90,18 @@ export default function StreakWeekProgress({ week, className = "" }) {
         aria-valuemax={7}
         aria-valuenow={completed}
       />
+      {perfectWeek && (
+        <div className="streak-week-perfect" role="status">
+          <span className="streak-week-perfect-icon" aria-hidden="true">
+            <Trophy size={16} strokeWidth={2.5} />
+          </span>
+          <span className="streak-week-perfect-copy">
+            <b>Perfect week</b>
+            <small>Seven days. One blazing streak.</small>
+          </span>
+          <Sparkles className="streak-week-perfect-sparkle" size={18} aria-hidden="true" />
+        </div>
+      )}
     </div>
   );
 }

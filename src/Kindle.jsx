@@ -43,6 +43,105 @@ const Smile = () => <Line d="M-9 52Q0 64 9 52" />;
 const HappyEyes = () => <Line d="M-17 27Q-12 19-7 27M7 27Q12 19 17 27" />;
 const SleepyEyes = () => <Line d="M-17 27Q-12 31-7 27M7 27Q12 31 17 27" />;
 
+function BadgeCostume({ costume }) {
+  switch (costume) {
+    case "first_spark":
+      return (
+        <g fill="none" stroke="#FFF1A8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M-34-91Q0-113 34-91" strokeWidth="5" />
+          <path d="M0-145L4-135L14-132L4-128L0-118L-4-128L-14-132L-4-135Z" fill="#FFF1A8" stroke="#F59E0B" strokeWidth="2" />
+        </g>
+      );
+    case "task_master":
+      return (
+        <g stroke="#7C2D12" strokeLinejoin="round">
+          <path d="M-28-102L-24-122L-10-112L0-130L10-112L24-122L28-102Z" fill="#FFD54F" strokeWidth="3" />
+          <path d="M-28-102H28V-95H-28Z" fill="#F59E0B" strokeWidth="2" />
+          <circle cx="0" cy="-109" r="4" fill="#FFF4E6" stroke="none" />
+        </g>
+      );
+    case "century_club":
+      return (
+        <g fill="none" stroke="#A7F3D0" strokeLinecap="round" strokeWidth="4">
+          <path d="M-52 46Q-72 15-48-15M52 46Q72 15 48-15" />
+          <path d="M-56 26L-67 20M-53 8L-65 4M-47-8L-57-17M56 26L67 20M53 8L65 4M47-8L57-17" />
+          <path d="M-28-92Q0-107 28-92" stroke="#FDE68A" strokeWidth="5" />
+        </g>
+      );
+    case "afternoon_task_killer":
+      return (
+        <g stroke="#7C2D12" strokeLinejoin="round">
+          <path d="M-38-94Q0-110 38-94L31-86H-31Z" fill="#FB923C" strokeWidth="3" />
+          <circle cx="59" cy="-77" r="16" fill="#FFD54F" strokeWidth="3" />
+          <path d="M59-86V-77L66-72" fill="none" strokeWidth="3" strokeLinecap="round" />
+        </g>
+      );
+    case "sunrise_spark":
+      return (
+        <g stroke="#C2410C" strokeLinecap="round" strokeWidth="4">
+          <path d="M-28-102Q0-117 28-102" fill="none" />
+          <circle cx="0" cy="-124" r="10" fill="#FFF1A8" strokeWidth="3" />
+          <path d="M0-143V-138M-20-137L-16-133M20-137L16-133" />
+        </g>
+      );
+    case "midnight_momentum":
+      return (
+        <g stroke="#312E81" strokeLinejoin="round">
+          <path d="M-32-101Q-8-111 31-98L23-87H-28Z" fill="#818CF8" strokeWidth="3" />
+          <circle cx="30" cy="-101" r="4" fill="#FFF4E6" stroke="none" />
+          <path d="M-54-59L-50-50L-41-47L-50-44L-54-35L-58-44L-67-47L-58-50Z" fill="#C4B5FD" strokeWidth="2" />
+        </g>
+      );
+    case "priority_pro":
+      return (
+        <g stroke="#9F1239" strokeLinejoin="round">
+          <path d="M-31-54L0-44L31-54L25-34L0-26L-25-34Z" fill="#FDA4AF" strokeWidth="3" />
+          <path d="M0-45V-29" stroke="#FFF4E6" strokeWidth="3" />
+          <path d="M0-42L19-38L0-34Z" fill="#FFF4E6" stroke="none" />
+        </g>
+      );
+    case "deep_work_diver":
+      return (
+        <g fill="none" stroke="#075985" strokeWidth="4">
+          <rect x="-37" y="20" width="31" height="25" rx="10" fill="#BAE6FD" />
+          <rect x="6" y="20" width="31" height="25" rx="10" fill="#BAE6FD" />
+          <path d="M-6 31H6M-37 33H-45M37 33H45" strokeLinecap="round" />
+          <path d="M-42-78Q-52-88-46-97M-52-69Q-59-76-55-82" stroke="#38BDF8" strokeLinecap="round" />
+        </g>
+      );
+    case "perfect_week":
+      return (
+        <g>
+          <path d="M-44-99Q0-120 44-99" fill="none" stroke="#FBBF24" strokeWidth="5" strokeLinecap="round" />
+          {[-36, -24, -12, 0, 12, 24, 36].map((x, index) => (
+            <path
+              key={x}
+              d={`M${x} ${index === 3 ? -117 : -111}l2.5 5 5 .8-3.7 3.6.9 5-4.7-2.5-4.7 2.5.9-5-3.7-3.6 5-.8Z`}
+              fill={index % 2 ? "#FFF4E6" : "#FFD54F"}
+            />
+          ))}
+        </g>
+      );
+    case "routine_builder":
+      return (
+        <g fill="none" stroke="#047857" strokeLinecap="round" strokeWidth="4">
+          <path d="M-36-95Q0-112 36-95M-45-84Q-50-64-40-54M45-84Q50-64 40-54" />
+          <path d="M-36-94Q-49-108-56-95Q-43-82-36-94ZM36-94Q49-108 56-95Q43-82 36-94Z" fill="#A7F3D0" strokeWidth="3" />
+        </g>
+      );
+    case "challenge_warrior":
+      return (
+        <g stroke="#6D28D9" strokeLinejoin="round">
+          <path d="M-29-102L0-115L29-102L24-91H-24Z" fill="#C4B5FD" strokeWidth="3" />
+          <path d="M67 17L83 23V43Q80 57 67 65Q54 57 51 43V23Z" fill="#8B5CF6" strokeWidth="3" />
+          <path d="M60 40L66 46L76 34" fill="none" stroke="#FFF4E6" strokeWidth="4" strokeLinecap="round" />
+        </g>
+      );
+    default:
+      return null;
+  }
+}
+
 const CONFETTI = [
   [-70, -70, 5, "#FFD54F"], [72, -80, 4, "#60A5FA"], [-40, -110, 3, PINK],
   [48, -112, 3, "#34D399"], [0, -132, 4, "#A78BFA"], [-88, -30, 3, "#34D399"],
@@ -88,7 +187,13 @@ const LOOKS = {
   },
 };
 
-export default function Kindle({ mood = "happy", size = 48, animate = false, className = "" }) {
+export default function Kindle({
+  mood = "happy",
+  size = 48,
+  animate = false,
+  className = "",
+  costume,
+}) {
   const look = LOOKS[mood] || LOOKS.happy;
   return (
     <svg
@@ -106,6 +211,7 @@ export default function Kindle({ mood = "happy", size = 48, animate = false, cla
         <path d={MID} fill="#FF8A1F" />
         <path d={BELLY} fill="#FFD54F" />
         {look.face}
+        <BadgeCostume costume={costume} />
       </g>
     </svg>
   );
@@ -155,6 +261,16 @@ const Html = ({ html, className, style }) => (
 );
 
 const KINDLE_VOICE_ANIMATION_MS = 7000;
+const WEEK_PARTICLE_COLORS = ["#ffd54f", "#ff8a1f", "#fb7185", "#fff4e6", "#a78bfa", "#60a5fa"];
+const WEEK_PARTICLES = Array.from({ length: 28 }, (_, index) => ({
+  angle: `${(360 / 28) * index}deg`,
+  distance: `-${135 + (index % 5) * 34}px`,
+  delay: `${(index % 7) * 24}ms`,
+  duration: `${850 + (index % 4) * 100}ms`,
+  color: WEEK_PARTICLE_COLORS[index % WEEK_PARTICLE_COLORS.length],
+  size: `${5 + (index % 4) * 2}px`,
+  height: `${9 + (index % 4) * 3}px`,
+}));
 
 // Big cheer when a task is ticked: a random pose with its own words.
 export function KindleCheer({ cheer, onDone }) {
@@ -203,24 +319,41 @@ export function KindleThinking() {
 }
 
 // Calm streak animation. The number comes from the app; this only draws it.
-export function KindleStreak({ to, scene, week }) {
+export function KindleStreak({ to, scene, week, onWeekCompleteReveal }) {
   const html = useMemo(() => streakSceneHtml(scene, to), [scene, to]);
   const todayQualified = week?.some((day) => day.today && day.qualified);
+  const weekComplete = week?.length === 7 && week.every((day) => day.qualified);
+  const weekKey = week?.map((day) => day.date).join("|") || "";
   const [newDayRevealed, setNewDayRevealed] = useState(false);
+  const latestOnWeekCompleteReveal = useRef(onWeekCompleteReveal);
+  const announcedWeekRef = useRef("");
+  latestOnWeekCompleteReveal.current = onWeekCompleteReveal;
 
   useEffect(() => {
-    if (
-      !todayQualified ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
+    const revealNewDay = () => {
       setNewDayRevealed(true);
+      if (weekComplete && weekKey && announcedWeekRef.current !== weekKey) {
+        announcedWeekRef.current = weekKey;
+        latestOnWeekCompleteReveal.current?.();
+      }
+    };
+
+    if (!todayQualified) {
+      setNewDayRevealed(true);
+      return undefined;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      revealNewDay();
       return undefined;
     }
 
     setNewDayRevealed(false);
-    const timer = window.setTimeout(() => setNewDayRevealed(true), 2700);
+    const timer = window.setTimeout(
+      revealNewDay,
+      weekComplete ? 2100 : 2700,
+    );
     return () => window.clearTimeout(timer);
-  }, [to, todayQualified]);
+  }, [to, todayQualified, weekComplete, weekKey]);
 
   const displayedWeek = useMemo(() => {
     if (!todayQualified || newDayRevealed) return week;
@@ -229,8 +362,30 @@ export function KindleStreak({ to, scene, week }) {
 
   return (
     <>
+      {weekComplete && newDayRevealed && (
+        <div className="kd-week-fireworks" aria-hidden="true">
+          {WEEK_PARTICLES.map((particle, index) => (
+            <i
+              key={index}
+              style={{
+                "--particle-angle": particle.angle,
+                "--particle-distance": particle.distance,
+                "--particle-delay": particle.delay,
+                "--particle-duration": particle.duration,
+                "--particle-color": particle.color,
+                "--particle-size": particle.size,
+                "--particle-height": particle.height,
+              }}
+            />
+          ))}
+        </div>
+      )}
       <Html html={html} />
-      <StreakWeekProgress week={displayedWeek} className="kd-week" />
+      <StreakWeekProgress
+        week={displayedWeek}
+        className="kd-week"
+        celebrateWeek={weekComplete && newDayRevealed}
+      />
     </>
   );
 }

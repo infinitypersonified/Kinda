@@ -588,6 +588,265 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         avatar: profile?.avatar || "",
       });
     }
+    if (method === "POST" && pathname === "/badges/evaluate") {
+      const tzOffset = body.tzOffset == null ? 0 : Number(body.tzOffset);
+      if (!Number.isInteger(tzOffset) || Math.abs(tzOffset) > 840) {
+        fail("Choose a valid timezone.");
+      }
+
+      const dayMs = 86400000;
+      const now = Date.now();
+      const localDayKey = (time: number) =>
+        new Date(time - tzOffset * 60000).toISOString().slice(0, 10);
+      const cutoff = new Date(now - 400 * dayMs).toISOString();
+      const weekTasks: ApiRow[] = [];
+      for (let from = 0;; from += 1000) {
+        const { data: page, error } = await db.from("tasks").select(
+          "created_at,due_date,done,moved_from",
+        ).eq("user_id", userId).gte("created_at", cutoff)
+          .order("id", { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        weekTasks.push(...(page || []));
+        if (!page || page.length < 1000 || from >= 49000) break;
+      }
+
+      const perDay = new Map<string, { total: number; done: number }>();
+      for (const task of weekTasks) {
+        const key = task.due_date || localDayKey(Date.parse(task.created_at));
+        const item = perDay.get(key) || { total: 0, done: 0 };
+        item.total++;
+        if (task.done) item.done++;
+        perDay.set(key, item);
+        for (const moved of task.moved_from || []) {
+          if (moved !== key) {
+            const prior = perDay.get(moved) || { total: 0, done: 0 };
+            prior.total++;
+            perDay.set(moved, prior);
+          }
+        }
+      }
+
+      const { data: streakBase, error: streakBaseError } = await db.from(
+        "profiles",
+      ).select("streak_base,streak_base_date").eq("id", userId).maybeSingle();
+      if (streakBaseError) throw streakBaseError;
+      const baseDate: string | null = streakBase?.streak_base_date || null;
+      const baseDays = Math.min(400, Math.max(0, Number(streakBase?.streak_base || 0)));
+      const virtualDays = new Set<string>();
+      if (baseDate) {
+        for (let back = 1; back <= baseDays; back++) {
+          virtualDays.add(
+            new Date(Date.parse(`${baseDate}T00:00:00Z`) - back * dayMs)
+              .toISOString().slice(0, 10),
+          );
+        }
+      }
+      const qualifies = (date: string) => {
+        if (baseDate && date < baseDate) return virtualDays.has(date);
+        const item = perDay.get(date);
+        return Boolean(
+          item && item.total >= 5 && item.done * 100 >= item.total * 80,
+        );
+      };
+      const today = localDayKey(now);
+      const todayDate = new Date(`${today}T00:00:00Z`);
+      const mondayOffset = (todayDate.getUTCDay() + 6) % 7;
+      const monday = new Date(todayDate.getTime() - mondayOffset * dayMs);
+      const qualifiedWeekDays = Array.from({ length: 7 }, (_, index) =>
+        new Date(monday.getTime() + index * dayMs).toISOString().slice(0, 10)
+      ).filter((date) => date <= today && qualifies(date)).length;
+
+      const [
+        completedCountResult,
+        afternoonCountResult,
+        dawnCountResult,
+        nightCountResult,
+        priorityCountResult,
+        deepWorkCountResult,
+        membershipResult,
+      ] = await Promise.all([
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true),
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true)
+          .gte("completed_local_hour", 12).lt("completed_local_hour", 18),
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true)
+          .gte("completed_local_hour", 5).lt("completed_local_hour", 9),
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true)
+          .gte("completed_local_hour", 21).lt("completed_local_hour", 24),
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true).eq("priority", "high"),
+        db.from("tasks").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).eq("done", true).gte("elapsed_seconds", 1500),
+        db.from("challenge_members").select("challenge_id,joined_at")
+          .eq("user_id", userId),
+      ]);
+      if (completedCountResult.error) throw completedCountResult.error;
+      if (afternoonCountResult.error) throw afternoonCountResult.error;
+      if (dawnCountResult.error) throw dawnCountResult.error;
+      if (nightCountResult.error) throw nightCountResult.error;
+      if (priorityCountResult.error) throw priorityCountResult.error;
+      if (deepWorkCountResult.error) throw deepWorkCountResult.error;
+      if (membershipResult.error) throw membershipResult.error;
+      const completedTasks = completedCountResult.count || 0;
+      const afternoonTasks = afternoonCountResult.count || 0;
+      const dawnTasks = dawnCountResult.count || 0;
+      const nightTasks = nightCountResult.count || 0;
+      const priorityTasks = priorityCountResult.count || 0;
+      const deepWorkTasks = deepWorkCountResult.count || 0;
+      const routineCounts = new Map<string, number>();
+      let routineCompletions = 0;
+      for (let from = 0;; from += 1000) {
+        const { data: page, error } = await db.from("tasks").select(
+          "series_id",
+        ).eq("user_id", userId).eq("done", true)
+          .not("series_id", "is", null).order("id", { ascending: true })
+          .range(from, from + 999);
+        if (error) throw error;
+        for (const task of page || []) {
+          const seriesId = String(task.series_id);
+          const count = (routineCounts.get(seriesId) || 0) + 1;
+          routineCounts.set(seriesId, count);
+          routineCompletions = Math.max(routineCompletions, count);
+        }
+        if (
+          routineCompletions >= 7 ||
+          !page ||
+          page.length < 1000 ||
+          from >= 49000
+        ) break;
+      }
+      routineCompletions = Math.min(7, routineCompletions);
+
+      let challengeProgress = 0;
+      let finishedChallenge = false;
+      const memberships = membershipResult.data || [];
+      const challengeIds = [...new Set(memberships.map((row) =>
+        String(row.challenge_id)
+      ))];
+      if (challengeIds.length) {
+        const { data: challenges, error: challengeError } = await db.from(
+          "challenges",
+        ).select("id,days,starts_on,daily_tasks").in("id", challengeIds);
+        if (challengeError) throw challengeError;
+        const challengeTasks: ApiRow[] = [];
+        for (let from = 0;; from += 1000) {
+          const { data: page, error } = await db.from("tasks").select(
+            "challenge_id,due_date,title,done",
+          ).eq("user_id", userId).in("challenge_id", challengeIds)
+            .order("id", { ascending: true }).range(from, from + 999);
+          if (error) throw error;
+          challengeTasks.push(...(page || []));
+          if (!page || page.length < 1000 || from >= 49000) break;
+        }
+        const completedByChallengeDay = new Map<string, Map<string, number>>();
+        for (const task of challengeTasks) {
+          if (!task.done) continue;
+          const dayKey = `${task.challenge_id}:${task.due_date}`;
+          const title = String(task.title);
+          const counts = completedByChallengeDay.get(dayKey) ||
+            new Map<string, number>();
+          counts.set(title, (counts.get(title) || 0) + 1);
+          completedByChallengeDay.set(dayKey, counts);
+        }
+        for (const challenge of challenges || []) {
+          const membership = memberships.find((row) =>
+            String(row.challenge_id) === String(challenge.id)
+          );
+          const titles = Array.isArray(challenge.daily_tasks)
+            ? challenge.daily_tasks.map(String)
+            : [];
+          const days = Number(challenge.days);
+          if (!membership || !titles.length || !days) continue;
+
+          const startTime = Date.parse(`${challenge.starts_on}T00:00:00Z`);
+          const joinedOn = localDayKey(Date.parse(membership.joined_at));
+          const firstDay = Math.max(
+            0,
+            Math.ceil(
+              (Date.parse(`${joinedOn}T00:00:00Z`) - startTime) / dayMs,
+            ),
+          );
+          let requiredTasks = 0;
+          let completedChallengeTasks = 0;
+          let completedEveryDay = firstDay < days;
+          for (let day = firstDay; day < days; day++) {
+            const dueDate = new Date(startTime + day * dayMs)
+              .toISOString().slice(0, 10);
+            const completedTitleCounts = new Map(
+              completedByChallengeDay.get(`${challenge.id}:${dueDate}`) || [],
+            );
+            const dailyCompleted = titles.reduce((count, title) => {
+              const remaining = completedTitleCounts.get(title) || 0;
+              if (!remaining) return count;
+              completedTitleCounts.set(title, remaining - 1);
+              return count + 1;
+            }, 0);
+            requiredTasks += titles.length;
+            completedChallengeTasks += dailyCompleted;
+            if (dailyCompleted < titles.length) completedEveryDay = false;
+          }
+          if (requiredTasks) {
+            challengeProgress = Math.max(
+              challengeProgress,
+              Math.round(completedChallengeTasks * 100 / requiredTasks),
+            );
+          }
+          if (completedEveryDay) finishedChallenge = true;
+        }
+      }
+
+      const unlockedIds = [
+        ...(completedTasks >= 1 ? ["first_spark"] : []),
+        ...(completedTasks >= 25 ? ["task_master"] : []),
+        ...(completedTasks >= 100 ? ["century_club"] : []),
+        ...(afternoonTasks >= 5 ? ["afternoon_task_killer"] : []),
+        ...(dawnTasks >= 5 ? ["sunrise_spark"] : []),
+        ...(nightTasks >= 5 ? ["midnight_momentum"] : []),
+        ...(priorityTasks >= 10 ? ["priority_pro"] : []),
+        ...(deepWorkTasks >= 5 ? ["deep_work_diver"] : []),
+        ...(qualifiedWeekDays === 7 ? ["perfect_week"] : []),
+        ...(routineCompletions >= 7 ? ["routine_builder"] : []),
+        ...(finishedChallenge ? ["challenge_warrior"] : []),
+      ];
+      let newlyUnlocked: ApiRow[] = [];
+      if (unlockedIds.length) {
+        const { data, error } = await db.from("user_badges").upsert(
+          unlockedIds.map((badgeId) => ({ user_id: userId, badge_id: badgeId })),
+          { onConflict: "user_id,badge_id", ignoreDuplicates: true },
+        ).select("badge_id,earned_at");
+        if (error) throw error;
+        newlyUnlocked = data || [];
+      }
+      const { data: earnedBadges, error: earnedError } = await db.from(
+        "user_badges",
+      ).select("badge_id,earned_at").eq("user_id", userId)
+        .order("earned_at", { ascending: true });
+      if (earnedError) throw earnedError;
+      return response(200, {
+        badges: (earnedBadges || []).map((badge) => ({
+          id: badge.badge_id,
+          earnedAt: badge.earned_at,
+        })),
+        newlyUnlocked: newlyUnlocked.map((badge) => ({
+          id: badge.badge_id,
+          earnedAt: badge.earned_at,
+        })),
+        progress: {
+          tasksCompleted: completedTasks,
+          afternoonTasks,
+          dawnTasks,
+          nightTasks,
+          priorityTasks,
+          deepWorkTasks,
+          qualifiedWeekDays,
+          routineCompletions,
+          challengeProgress,
+        },
+      });
+    }
     if (pathname === "/onboarding-survey" && method === "GET") {
       const { data, error } = await db.from("onboarding_surveys").select(
         "user_id",
@@ -1035,6 +1294,17 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           }
         } else {
           const done = Boolean(body.done);
+          const completionTzOffset = body.tzOffset == null
+            ? Number(task.tz_offset || 0)
+            : Number(body.tzOffset);
+          if (
+            done &&
+            (!Number.isInteger(completionTzOffset) ||
+              Math.abs(completionTzOffset) > 840)
+          ) fail("Choose a valid timezone.");
+          const completedLocalHour = done
+            ? new Date(now - completionTzOffset * 60000).getUTCHours()
+            : null;
           const elapsed = task.timer_started_at
             ? Math.max(
               0,
@@ -1045,6 +1315,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             .update({
               done,
               completed_at: done ? new Date(now).toISOString() : null,
+              completed_local_hour: completedLocalHour,
               elapsed_seconds: task.elapsed_seconds + elapsed,
               timer_started_at: null,
             }).eq("id", task.id).select(TASK_COLUMNS).single();

@@ -443,15 +443,20 @@ export function WeeklyPage({ tasks, userName, onError = () => {}, api = null }) 
   async function shareCard() {
     try {
       await shareProgressCard({
-        title: "My week, in progress",
+        kind: "weekly",
+        title: "A week worth keeping",
+        headline: summary.done.length ? "A week well spent" : "A week in the making",
         subtitle: rangeLabel(startKey),
         filename: `kinda-week-${startKey}.png`,
         mood: "proud",
+        displayValue: summary.done.length,
+        displayLabel: summary.done.length === 1 ? "win collected" : "wins collected",
+        days: summary.days,
         stats: [
-          { value: `${summary.completion}%`, label: "weekly completion" },
-          { value: summary.done.length, label: "tasks completed" },
-          { value: summary.open.length, label: "still in progress" },
-          { value: formatMinutes(Math.round(summary.focusSeconds / 60)), label: "focus time" }
+          { value: `${summary.completion}%`, label: "completion" },
+          { value: summary.open.length, label: "still in motion" },
+          { value: formatMinutes(Math.round(summary.focusSeconds / 60)), label: "focus time" },
+          { value: summary.bestDay?.label || "—", label: "strongest day" },
         ]
       });
     } catch (error) { onError(error.message || "Couldn't share the weekly card."); }
