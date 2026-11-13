@@ -9,6 +9,7 @@ import Kindle, {
   pickPose,
   pickStreakScene,
 } from "./Kindle.jsx";
+import StreakWeekProgress from "./StreakWeekProgress.jsx";
 import { ChallengeCard, ChallengeScreen } from "./Challenge.jsx";
 import React, {
   createContext,
@@ -713,46 +714,79 @@ const kindleVoiceFiles = {
   oneLeft: "Just one left you've got this.mp3",
 };
 
+const kindleAudioElements = new Map();
+let activeKindlePlayback = null;
+
+function getKindleAudio(file) {
+  let audio = kindleAudioElements.get(file);
+  if (!audio) {
+    audio = new Audio(
+      `${kindleVoiceBase}${encodeURIComponent(file)}`,
+    );
+    audio.preload = "auto";
+    kindleAudioElements.set(file, audio);
+    audio.load();
+  }
+  return audio;
+}
+
 function preloadKindleSound() {
-  const sound = new Audio(`${kindleVoiceBase}sound.mp3`);
-  sound.preload = "auto";
-  sound.load();
+  getKindleAudio("sound.mp3");
+  const preloadVoices = () => {
+    [...new Set(Object.values(kindleVoiceFiles))].forEach(getKindleAudio);
+  };
+  if ("requestIdleCallback" in window) {
+    const idleId = window.requestIdleCallback(preloadVoices, { timeout: 3000 });
+    return () => window.cancelIdleCallback(idleId);
+  }
+  const timer = window.setTimeout(preloadVoices, 1200);
+  return () => window.clearTimeout(timer);
 }
 
 function playKindleMoment(voiceKey) {
   if (!soundEffectsEnabled()) return;
   try {
-    const sound = new Audio(`${kindleVoiceBase}sound.mp3`);
-    sound.preload = "auto";
-    sound.volume = 0.85;
-    const voice = voiceKey
-      ? new Audio(
-          `${kindleVoiceBase}${encodeURIComponent(kindleVoiceFiles[voiceKey])}`,
-        )
-      : null;
-    if (voice) {
-      voice.preload = "auto";
-      voice.load();
+    if (activeKindlePlayback) {
+      window.clearTimeout(activeKindlePlayback.voiceTimer);
+      activeKindlePlayback.sound.pause();
+      activeKindlePlayback.voice?.pause();
     }
-    let voiceStarted = false;
-    let voiceTimer = null;
+    const sound = getKindleAudio("sound.mp3");
+    sound.volume = 0.85;
+    const voice = voiceKey ? getKindleAudio(kindleVoiceFiles[voiceKey]) : null;
+    const playback = { sound, voice, voiceTimer: null, voiceStarted: false };
+    activeKindlePlayback = playback;
     const startVoice = () => {
-      if (voiceStarted || !voiceKey) return;
-      voiceStarted = true;
-      window.clearTimeout(voiceTimer);
-      voice?.play().catch(() => {});
+      if (playback.voiceStarted || !voiceKey || activeKindlePlayback !== playback) return;
+      playback.voiceStarted = true;
+      window.clearTimeout(playback.voiceTimer);
+      voice.currentTime = 0;
+      voice.onended = () => {
+        if (activeKindlePlayback === playback) activeKindlePlayback = null;
+      };
+      voice.onerror = () => {
+        if (activeKindlePlayback === playback) activeKindlePlayback = null;
+      };
+      voice.play().catch(() => {
+        if (activeKindlePlayback === playback) activeKindlePlayback = null;
+      });
     };
     const scheduleVoice = () => {
       if (!Number.isFinite(sound.duration) || sound.duration <= 0) return;
       const delay = Math.max(0, sound.duration - sound.currentTime - 0.3);
-      window.clearTimeout(voiceTimer);
-      voiceTimer = window.setTimeout(startVoice, delay * 1000);
+      window.clearTimeout(playback.voiceTimer);
+      playback.voiceTimer = window.setTimeout(startVoice, delay * 1000);
     };
-    sound.addEventListener("loadedmetadata", scheduleVoice, { once: true });
-    sound.addEventListener("timeupdate", scheduleVoice);
-    sound.addEventListener("ended", startVoice, { once: true });
-    sound.addEventListener("error", startVoice, { once: true });
-    sound.play().catch(() => {});
+    sound.onloadedmetadata = scheduleVoice;
+    sound.ontimeupdate = scheduleVoice;
+    sound.onended = voiceKey ? startVoice : () => {
+      if (activeKindlePlayback === playback) activeKindlePlayback = null;
+    };
+    sound.onerror = voiceKey ? startVoice : () => {
+      if (activeKindlePlayback === playback) activeKindlePlayback = null;
+    };
+    sound.currentTime = 0;
+    sound.play().catch(startVoice);
     scheduleVoice();
   } catch {
     /* Audio is optional; never block task actions. */
@@ -1256,6 +1290,26 @@ function WorkspaceApp({ authClient, client }) {
   const [kindleCheer, setKindleCheer] = useState(null);
   const [kindleCreated, setKindleCreated] = useState(null);
   const [celebrationStreak, setCelebrationStreak] = useState(null);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return undefined;
+    const onServiceWorkerMessage = (event) => {
+      const { notification, type } = event.data || {};
+      if (type !== "kinda-push" || notification?.kind !== "streak-risk") return;
+      setKindleToast({
+        key: Date.now(),
+        mood: "sleepy",
+        title: notification.title,
+        text: notification.body,
+        duration: 7000,
+        variant: "streak-risk",
+      });
+    };
+    navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener(
+      "message",
+      onServiceWorkerMessage,
+    );
+  }, []);
   const seenDoneRef = useRef(null);
   const [leaderboardGroupId, setLeaderboardGroupId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2657,6 +2711,7 @@ function WorkspaceApp({ authClient, client }) {
             setCelebrationStreak({
               to: Number(nextStreak.current) || 1,
               scene: pickStreakScene(Number(nextStreak.current) || 1),
+              week: nextStreak.week,
             });
             setCelebrationType("streak");
           }
@@ -4002,9 +4057,9 @@ function GroupLeaderboard({
 
 function CelebrationDialog({ type, streakInfo, onClose }) {
   if (type === "streak" && streakInfo) {
-    return (
+    return createPortal(
       <div
-        className="celebration-backdrop"
+        className="celebration-backdrop kd-streak-backdrop"
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) onClose();
         }}
@@ -4015,12 +4070,19 @@ function CelebrationDialog({ type, streakInfo, onClose }) {
           aria-modal="true"
           aria-label="Streak continued"
         >
-          <KindleStreak to={streakInfo.to} scene={streakInfo.scene} />
-          <button className="kd-go" onClick={onClose}>
-            Keep going
-          </button>
+          <div className="kd-streak-content">
+            <KindleStreak
+              to={streakInfo.to}
+              scene={streakInfo.scene}
+              week={streakInfo.week}
+            />
+            <button className="kd-go" onClick={onClose}>
+              Keep going
+            </button>
+          </div>
         </section>
-      </div>
+      </div>,
+      document.body,
     );
   }
   const celebration =
@@ -4059,12 +4121,15 @@ function CelebrationDialog({ type, streakInfo, onClose }) {
             <span key={index} style={{ "--confetti-index": index }} />
           ))}
         </div>
-        <Kindle
-          mood={type === "leaderboard" ? "cheer" : "celebrate"}
-          size={128}
-          animate
-          className="celebration-kindle"
-        />
+        <div className="celebration-kindle-stage">
+          <span className="celebration-kindle-aura" aria-hidden="true" />
+          <Kindle
+            mood={type === "leaderboard" ? "cheer" : "celebrate"}
+            size={128}
+            animate
+            className="celebration-kindle"
+          />
+        </div>
         <p className="eyebrow">{celebration.eyebrow}</p>
         <h2 id="celebration-title">{celebration.title}</h2>
         <p>{celebration.body}</p>
@@ -4214,7 +4279,7 @@ function StreakLine({ streak, done, total, onShare }) {
   else
     message = `${needed} more tasks to reach ${threshold}%. Keep going, you’re building something.`;
   return (
-    <p className="streak-line" role="status">
+    <div className="streak-line">
       <span className="streak-kindle">
         <Kindle mood={mood} size={34} animate={mood !== "sleepy" && mood !== "sad"} />
       </span>
@@ -4225,7 +4290,7 @@ function StreakLine({ streak, done, total, onShare }) {
           least {threshold}% of them. Today stays open until the day ends.
         </span>
       </HelpTip>
-      <span>{message}</span>
+      <span role="status">{message}</span>
       {current > 0 && (
         <button
           type="button"
@@ -4237,7 +4302,8 @@ function StreakLine({ streak, done, total, onShare }) {
           <Share size={15} />
         </button>
       )}
-    </p>
+      <StreakWeekProgress week={streak.week} />
+    </div>
   );
 }
 
@@ -9714,7 +9780,7 @@ export function SupabaseApp({ client }) {
   const retryConnectivity = useRef(() => {});
 
   useEffect(() => {
-    preloadKindleSound();
+    return preloadKindleSound();
   }, []);
 
   useEffect(() => {

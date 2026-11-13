@@ -3085,15 +3085,27 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         prev = key;
       }
       const todayStat = perDay.get(today) || { total: 0, done: 0 };
+      const todayDate = new Date(`${today}T00:00:00Z`);
+      const mondayOffset = (todayDate.getUTCDay() + 6) % 7;
+      const monday = new Date(todayDate.getTime() - mondayOffset * dayMs);
+      const week = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(monday.getTime() + index * dayMs)
+          .toISOString().slice(0, 10);
+        return {
+          date,
+          qualified: date <= today && qualifies(date),
+          today: date === today,
+        };
+      });
       // Monitoring only: keep a record of what the streak was and, when it
       // fell, which day broke it and why. Never affects the numbers above.
       try {
         const { data: last } = await db.from("streak_log").select(
-          "streak_current,qualified,total,done",
+          "streak_current,qualified,total,done,tz_offset",
         ).eq("user_id", userId).eq("day", today).maybeSingle();
         const changed = !last || last.streak_current !== current ||
           last.qualified !== qualifies(today) || last.total !== todayStat.total ||
-          last.done !== todayStat.done;
+          last.done !== todayStat.done || last.tz_offset !== tzOffset;
         if (changed) {
           const { data: prev } = await db.from("streak_log").select(
             "day,streak_current",
@@ -3142,6 +3154,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         needed,
         percent: 80,
         minTasks: 5,
+        week,
       });
     }
 
@@ -3263,25 +3276,24 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
   } catch (error) {
     const details = error as {
       message?: unknown;
-      details?: unknown;
-      hint?: unknown;
       code?: unknown;
       status?: unknown;
     };
-    console.error("Supabase API request failed:", {
-      message: details?.message ?? String(error),
-      code: details?.code,
-      details: details?.details,
-      hint: details?.hint,
-      status: details?.status,
-    });
     const errorMessage = typeof details?.message === "string"
       ? details.message
       : error instanceof Error
       ? error.message
       : String(error);
+    const status = Number(details?.status) || 500;
+    if (status >= 500) {
+      console.error("Supabase API request failed:", {
+        status,
+        code: details?.code,
+        message: errorMessage.slice(0, 200),
+      });
+    }
 
-    return response(Number(details?.status) || 500, {
+    return response(status, {
       error: errorMessage,
     });
   }

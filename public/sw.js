@@ -18,15 +18,18 @@ self.addEventListener("push", event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { title: "Kinda", body: event.data ? event.data.text() : "" }; }
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => {
-    // The app is on screen: it already shows messages and reminders itself.
-    if (clients.some(client => client.visibilityState === "visible")) return undefined;
+    const visibleClients = clients.filter(client => client.visibilityState === "visible");
+    if (visibleClients.length) {
+      visibleClients.forEach(client => client.postMessage({ type: "kinda-push", notification: data }));
+      return undefined;
+    }
     try { if (self.navigator && self.navigator.setAppBadge) self.navigator.setAppBadge(); } catch (error) { /* badge is optional */ }
     return self.registration.showNotification(data.title || "Kinda", {
       body: data.body || "",
       tag: data.tag || "kinda",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      renotify: true,
+      icon: data.icon || "/icon-192.png",
+      badge: data.badge || "/icon-192.png",
+      renotify: false,
       data: { url: data.url || "/" }
     });
   }));

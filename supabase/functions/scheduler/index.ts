@@ -57,6 +57,7 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     }).eq("id", 1);
   };
   let remindersSent = 0;
+  let streakRemindersSent = 0;
   let occurrencesCreated = 0;
   const now = Date.now();
 
@@ -65,34 +66,37 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     title: string,
     body: string,
     tag: string,
+    extra: Record<string, unknown> = {},
   ) => {
     const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
     const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
-    if (publicKey && privateKey) {
-      webpush.setVapidDetails(
-        Deno.env.get("VAPID_SUBJECT") || "mailto:hello@kinda.app",
-        publicKey,
-        privateKey,
-      );
-      const { data: subscriptions } = await db.from("push_subscriptions")
-        .select("endpoint,p256dh,auth").eq("user_id", userId);
-      await Promise.all((subscriptions || []).map(async (subscription) => {
-        try {
-          await webpush.sendNotification({
-            endpoint: subscription.endpoint,
-            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-          }, JSON.stringify({ title, body, tag, url: "/" }));
-        } catch (error) {
-          const status = (error as { statusCode?: number }).statusCode;
-          if (status === 404 || status === 410) {
-            await db.from("push_subscriptions").delete().eq(
-              "endpoint",
-              subscription.endpoint,
-            );
-          }
+    if (!publicKey || !privateKey) return false;
+    webpush.setVapidDetails(
+      Deno.env.get("VAPID_SUBJECT") || "mailto:hello@kinda.app",
+      publicKey,
+      privateKey,
+    );
+    const { data: subscriptions } = await db.from("push_subscriptions")
+      .select("endpoint,p256dh,auth").eq("user_id", userId);
+    let delivered = false;
+    await Promise.all((subscriptions || []).map(async (subscription) => {
+      try {
+        await webpush.sendNotification({
+          endpoint: subscription.endpoint,
+          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+        }, JSON.stringify({ title, body, tag, url: "/", ...extra }));
+        delivered = true;
+      } catch (error) {
+        const status = (error as { statusCode?: number }).statusCode;
+        if (status === 404 || status === 410) {
+          await db.from("push_subscriptions").delete().eq(
+            "endpoint",
+            subscription.endpoint,
+          );
         }
-      }));
-    }
+      }
+    }));
+    return delivered;
   };
 
   const dueTasks = [];
@@ -146,6 +150,141 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     date.setUTCDate(date.getUTCDate() + amount);
     return date.toISOString().slice(0, 10);
   };
+  if (new Date(now).getUTCHours() >= 5 && new Date(now).getUTCHours() <= 9) {
+    const { data: subscriptions, error: subscriptionsError } = await db.from(
+      "push_subscriptions",
+    ).select("user_id");
+    if (subscriptionsError) {
+      await releaseLock();
+      return Response.json({ error: subscriptionsError.message }, {
+        status: 500,
+      });
+    }
+
+    const userIds = [...new Set((subscriptions || []).map((row) => row.user_id))];
+    for (const userId of userIds) {
+      const { data: lastLog, error: logError } = await db.from("streak_log")
+        .select("day,streak_current,qualified,tz_offset").eq("user_id", userId)
+        .order("day", { ascending: false }).limit(1).maybeSingle();
+      if (logError) {
+        await releaseLock();
+        return Response.json({ error: logError.message }, { status: 500 });
+      }
+      if (!lastLog) continue;
+
+      const tzOffset = Number(lastLog.tz_offset) || 0;
+      const localNow = new Date(now - tzOffset * 60000);
+      if (localNow.getUTCHours() !== 20 || localNow.getUTCMinutes() >= 10) {
+        continue;
+      }
+      const today = localNow.toISOString().slice(0, 10);
+      const yesterday = addDays(today, -1);
+      if (
+        lastLog.day !== today &&
+        (lastLog.day !== yesterday || !lastLog.qualified)
+      ) continue;
+      const currentStreak = Math.max(
+        0,
+        lastLog.streak_current -
+          (lastLog.day === today && lastLog.qualified ? 1 : 0),
+      );
+      if (currentStreak <= 0) continue;
+
+      const { data: alreadySent, error: sentCheckError } = await db.from(
+        "streak_push_reminders",
+      ).select("day").eq("user_id", userId).maybeSingle();
+      if (sentCheckError) {
+        await releaseLock();
+        return Response.json({ error: sentCheckError.message }, {
+          status: 500,
+        });
+      }
+      if (alreadySent?.day === today) continue;
+
+      const dayStart = new Date(
+        Date.parse(`${today}T00:00:00Z`) + tzOffset * 60000,
+      ).toISOString();
+      const dayEnd = new Date(
+        Date.parse(`${today}T00:00:00Z`) + (tzOffset + 1440) * 60000,
+      ).toISOString();
+      const { data: todayTasks, error: todayTasksError } = await db.from(
+        "tasks",
+      ).select("due_date,created_at,done,moved_from").eq("user_id", userId)
+        .or(
+          `due_date.eq.${today},and(due_date.is.null,created_at.gte.${dayStart},created_at.lt.${dayEnd}),moved_from.cs.{${today}}`,
+        );
+      if (todayTasksError) {
+        await releaseLock();
+        return Response.json({ error: todayTasksError.message }, {
+          status: 500,
+        });
+      }
+
+      let total = 0;
+      let done = 0;
+      for (const task of todayTasks || []) {
+        const taskDay = task.due_date ||
+          new Date(Date.parse(task.created_at) - tzOffset * 60000)
+            .toISOString().slice(0, 10);
+        if (taskDay === today) {
+          total++;
+          if (task.done) done++;
+        }
+        for (const moved of task.moved_from || []) {
+          if (moved === today && moved !== taskDay) total++;
+        }
+      }
+      if (total >= 5 && done * 100 >= total * 80) continue;
+
+      const planNeeded = Math.max(0, 5 - total);
+      const doneNeeded = Math.max(
+        0,
+        Math.ceil(Math.max(5, total) * 0.8) - done,
+      );
+      const actions = [];
+      if (planNeeded) {
+        actions.push(
+          `add ${planNeeded} more ${planNeeded === 1 ? "task" : "tasks"}`,
+        );
+      }
+      if (doneNeeded) {
+        actions.push(
+          `finish ${doneNeeded} ${doneNeeded === 1 ? "task" : "tasks"}`,
+        );
+      }
+      const body = `You can ${actions.join(" and ")} today to keep your ${currentStreak}-day streak burning.`;
+      const { error: claimError } = await db.from("streak_push_reminders")
+        .upsert({
+          user_id: userId,
+          day: today,
+          sent_at: new Date(now).toISOString(),
+        }, { onConflict: "user_id" });
+      if (claimError) {
+        await releaseLock();
+        return Response.json({ error: claimError.message }, { status: 500 });
+      }
+      const delivered = await push(
+        userId,
+        "Kindle's flame is fading",
+        body,
+        `streak-risk-${today}`,
+        { kind: "streak-risk", mood: "sleepy" },
+      );
+      if (!delivered) {
+        const { error: unclaimError } = await db.from("streak_push_reminders")
+          .delete().eq("user_id", userId).eq("day", today);
+        if (unclaimError) {
+          await releaseLock();
+          return Response.json({ error: unclaimError.message }, {
+            status: 500,
+          });
+        }
+        continue;
+      }
+      streakRemindersSent++;
+    }
+  }
+
   const nextDate = (key: string, repeat: string) => {
     if (repeat.startsWith("custom:")) {
       const wanted = repeat.slice(7).split(",").map(Number);
@@ -291,5 +430,10 @@ Deno.serve({ automaticCompression: true }, async (request) => {
   }
 
   await releaseLock();
-  return Response.json({ ok: true, remindersSent, occurrencesCreated });
+  return Response.json({
+    ok: true,
+    remindersSent,
+    streakRemindersSent,
+    occurrencesCreated,
+  });
 });

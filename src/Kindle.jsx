@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Flame, Sparkles } from "lucide-react";
 import "./kindle.css";
 import { warriorSvg } from "./kindleWarrior.js";
 import { POSES, confettiHtml, pickPose, pickStreakScene, poseHtml, streakSceneHtml, thinkingHtml } from "./kindleArt.js";
+import StreakWeekProgress from "./StreakWeekProgress.jsx";
 
 const BODY = "M0-118C14-86 62-62 62-2C62 52 32 88 0 88C-32 88-62 52-62-2C-62-26-48-44-36-58C-33-36-20-26-12-30C-22-62-10-96 0-118Z";
 const MID = "M0-40C8-22 44-6 44 28C44 62 24 82 0 82C-24 82-44 62-44 28C-44-6-8-22 0-40Z";
@@ -121,11 +123,18 @@ function useAutoDismiss(key, onDone, ms) {
 }
 
 export function KindleToast({ toast, onDone }) {
-  useAutoDismiss(toast.key, onDone, 3200);
+  useAutoDismiss(toast.key, onDone, toast.duration || 3200);
   return (
-    <div className="kindle-toast" role="status" key={toast.key}>
+    <div
+      className={`kindle-toast${toast.variant ? ` kindle-toast-${toast.variant}` : ""}`}
+      role="status"
+      key={toast.key}
+    >
       <Kindle mood={toast.mood} size={52} animate />
-      <p>{toast.text}</p>
+      <div className="kindle-toast-bubble">
+        {toast.title && <strong>{toast.title}</strong>}
+        <p>{toast.text}</p>
+      </div>
     </div>
   );
 }
@@ -154,7 +163,12 @@ export function KindleCheer({ cheer, onDone }) {
   return (
     <div className="kd-ov kd-ov-soft kd-jump" role="status" key={cheer.key} onClick={onDone}>
       <Html html={confetti} />
+      <div className="kd-cheer-burst" aria-hidden="true" />
       <Html className="kd-enter" html={poseHtml(cheer.pose, 230)} />
+      <div className="kd-cheer-badge" aria-hidden="true">
+        <Check size={15} strokeWidth={3} />
+        Task complete
+      </div>
       <div className="kd-bubble">{cheer.text || POSES[cheer.pose]?.say}</div>
     </div>
   );
@@ -170,6 +184,10 @@ export function KindleCreated({ created, onDone }) {
       <Html className="kd-enter" html={poseHtml(created.pose, 280)} />
       <h2>Task added!</h2>
       <p>You’ve got this.</p>
+      <div className="kd-created-badge" aria-hidden="true">
+        <Sparkles size={15} />
+        Added to your plan
+      </div>
     </div>
   );
 }
@@ -185,9 +203,36 @@ export function KindleThinking() {
 }
 
 // Calm streak animation. The number comes from the app; this only draws it.
-export function KindleStreak({ to, scene }) {
+export function KindleStreak({ to, scene, week }) {
   const html = useMemo(() => streakSceneHtml(scene, to), [scene, to]);
-  return <Html html={html} />;
+  const todayQualified = week?.some((day) => day.today && day.qualified);
+  const [newDayRevealed, setNewDayRevealed] = useState(false);
+
+  useEffect(() => {
+    if (
+      !todayQualified ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setNewDayRevealed(true);
+      return undefined;
+    }
+
+    setNewDayRevealed(false);
+    const timer = window.setTimeout(() => setNewDayRevealed(true), 2700);
+    return () => window.clearTimeout(timer);
+  }, [to, todayQualified]);
+
+  const displayedWeek = useMemo(() => {
+    if (!todayQualified || newDayRevealed) return week;
+    return week.map((day) => day.today ? { ...day, qualified: false } : day);
+  }, [newDayRevealed, todayQualified, week]);
+
+  return (
+    <>
+      <Html html={html} />
+      <StreakWeekProgress week={displayedWeek} className="kd-week" />
+    </>
+  );
 }
 
 export { pickPose, pickStreakScene };
@@ -199,6 +244,10 @@ export function KindleWarrior({ scene, title, line, onDone }) {
     <div className="kw-ov" role="dialog" aria-label={title} onClick={onDone}>
       <div className="kw-ov-art">
         <Html html={warriorSvg(scene)} />
+      </div>
+      <div className="kw-victory-badge" aria-hidden="true">
+        <Flame size={15} />
+        Team win
       </div>
       <h2>{title}</h2>
       {line && <p>{line}</p>}
