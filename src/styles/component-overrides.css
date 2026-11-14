@@ -1166,6 +1166,15 @@ button.ch-card {
   place-items: center;
 }
 
+.profile-photo-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .profile-hero-art .avatar-large {
   position: relative;
   z-index: 1;

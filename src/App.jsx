@@ -7030,6 +7030,9 @@ function ProfilePage({
   onSave,
   onFriend,
 }) {
+  const [showFullPhoto, setShowFullPhoto] = useState(false);
+  const profilePhotoButton = useRef(null);
+  const profilePhoto = avatarImageSource(user.avatar);
   const earnedBadges = (badgeData?.badges || [])
     .flatMap((earned) => {
       const badge = BADGE_CATALOG.find((item) => item.id === earned.id);
@@ -7042,6 +7045,20 @@ function ProfilePage({
       BADGE_CATALOG.some((badge) => badge.id === earned.id)
     ).length
     : null;
+
+  const closeFullPhoto = () => {
+    setShowFullPhoto(false);
+    window.requestAnimationFrame(() => profilePhotoButton.current?.focus());
+  };
+
+  useEffect(() => {
+    if (!showFullPhoto) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeFullPhoto();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showFullPhoto]);
 
   return (
     <div className="page-content profile-page">
@@ -7062,8 +7079,20 @@ function ProfilePage({
             </button>
           )}
         </div>
-        <div className="profile-hero-art" aria-hidden="true">
-          <Avatar name={user.name} index={-1} large avatar={user.avatar} />
+        <div className="profile-hero-art">
+          {profilePhoto ? (
+            <button
+              ref={profilePhotoButton}
+              className="profile-photo-button"
+              type="button"
+              onClick={() => setShowFullPhoto(true)}
+              aria-label={`View ${user.name}'s profile picture`}
+            >
+              <Avatar name={user.name} index={-1} large avatar={user.avatar} />
+            </button>
+          ) : (
+            <Avatar name={user.name} index={-1} large avatar={user.avatar} />
+          )}
         </div>
       </section>
       {editing && (
@@ -7197,6 +7226,21 @@ function ProfilePage({
           </div>
         )}
       </section>
+      {showFullPhoto && profilePhoto && (
+        <Modal
+          title={`${user.name}'s profile picture`}
+          subtitle="Full-size profile picture"
+          onClose={closeFullPhoto}
+          className="avatar-full-view"
+          focusClose
+        >
+          <img
+            className="avatar-full-view-image"
+            src={profilePhoto}
+            alt={`${user.name}'s profile picture`}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -8112,7 +8156,14 @@ function FriendDialog({ onClose, onSubmit }) {
   );
 }
 
-function Modal({ title, subtitle, onClose, children }) {
+function Modal({
+  title,
+  subtitle,
+  onClose,
+  children,
+  className = "",
+  focusClose = false,
+}) {
   const backdrop = useRef(null);
   // On phones the keyboard covers the bottom of the screen without resizing
   // the page. Follow the visible area so the sheet sits above the keyboard
@@ -8145,7 +8196,7 @@ function Modal({ title, subtitle, onClose, children }) {
       }}
     >
       <section
-        className="modal-card"
+        className={`modal-card ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -8154,6 +8205,7 @@ function Modal({ title, subtitle, onClose, children }) {
           className="modal-close icon-quiet"
           onClick={onClose}
           aria-label="Close"
+          autoFocus={focusClose}
         >
           <X size={18} />
         </button>

@@ -92,6 +92,25 @@
   line-height: 1.6;
 }
 
+.modal-card.avatar-full-view {
+  width: min(100%, 900px);
+  max-height: min(94vh, 900px);
+  padding: 24px;
+}
+
+.modal-card.avatar-full-view h2 {
+  margin-right: 36px;
+}
+
+.avatar-full-view-image {
+  display: block;
+  width: 100%;
+  height: min(calc(94vh - 145px), 720px);
+  border-radius: 12px;
+  background: var(--surface);
+  object-fit: contain;
+}
+
 .modal-form {
   display: grid;
   gap: 13px;
