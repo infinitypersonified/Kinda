@@ -532,7 +532,11 @@ function renderMessageContent(text, members, userId) {
   });
 }
 
+let soundEffectsPreferenceOverride = null;
+
 function soundEffectsEnabled() {
+  if (soundEffectsPreferenceOverride !== null)
+    return soundEffectsPreferenceOverride;
   try {
     return localStorage.getItem("kinda:sound-effects") !== "off";
   } catch {
@@ -720,6 +724,15 @@ const kindleVoiceFiles = {
 
 const kindleAudioElements = new Map();
 let activeKindlePlayback = null;
+
+function stopKindlePlayback() {
+  if (!activeKindlePlayback) return;
+  const playback = activeKindlePlayback;
+  window.clearTimeout(playback.voiceTimer);
+  playback.sound.pause();
+  playback.voice?.pause();
+  activeKindlePlayback = null;
+}
 
 function getKindleAudio(file) {
   let audio = kindleAudioElements.get(file);
@@ -1196,6 +1209,11 @@ function WorkspaceApp({ authClient, client }) {
     }
   });
   const [soundEnabled, setSoundEnabled] = useState(soundEffectsEnabled);
+  const updateSoundEnabled = (enabled) => {
+    soundEffectsPreferenceOverride = enabled;
+    if (!enabled) stopKindlePlayback();
+    setSoundEnabled(enabled);
+  };
   const [notifPermission, setNotifPermission] = useState(
     typeof Notification === "undefined"
       ? "unsupported"
@@ -2171,6 +2189,7 @@ function WorkspaceApp({ authClient, client }) {
   }, [accent]);
 
   useEffect(() => {
+    soundEffectsPreferenceOverride = soundEnabled;
     try {
       localStorage.setItem(
         "kinda:sound-effects",
@@ -3712,7 +3731,7 @@ function WorkspaceApp({ authClient, client }) {
               accent={accent}
               setAccent={setAccent}
               soundEnabled={soundEnabled}
-              setSoundEnabled={setSoundEnabled}
+              onSoundEnabledChange={updateSoundEnabled}
             />
           )}
         </section>
@@ -6964,7 +6983,7 @@ function SettingsPage({
   accent,
   setAccent,
   soundEnabled,
-  setSoundEnabled,
+  onSoundEnabledChange,
 }) {
   const { isIOS, standalone } = useInstall();
   const [confirmText, setConfirmText] = useState("");
@@ -7209,8 +7228,10 @@ function SettingsPage({
           <button
             className="button button-secondary small-button"
             type="button"
-            aria-pressed={soundEnabled}
-            onClick={() => setSoundEnabled((enabled) => !enabled)}
+            role="switch"
+            aria-label="Sound effects"
+            aria-checked={soundEnabled}
+            onClick={() => onSoundEnabledChange(!soundEnabled)}
           >
             {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
             {soundEnabled ? "On" : "Off"}
