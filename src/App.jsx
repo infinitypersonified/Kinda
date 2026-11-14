@@ -90,6 +90,7 @@ const CircleWeeklyPanel = React.lazy(() =>
   import("./weekly.jsx").then((module) => ({ default: module.CircleWeeklyPanel })),
 );
 
+//#region Shared helpers and UI
 const ClockContext = createContext(Date.now());
 
 function ClockProvider({ children }) {
@@ -603,7 +604,7 @@ function OnboardingCard({ steps, onDismiss }) {
     <section className="onboarding-card" aria-label="Getting started">
       <div className="onboarding-head">
         <div>
-          <p className="eyebrow">GETTING STARTED</p>
+          <p className="eyebrow">START SMALL</p>
           <b>
             {doneCount} of {steps.length} done
           </b>
@@ -1037,6 +1038,8 @@ function WhatsNewDialog({ onClose }) {
 
 let toastTimeout = 0;
 
+//#endregion Shared helpers and UI
+//#region Workspace app and navigation
 function WorkspaceApp({ authClient, client }) {
   const api = useMemo(() => {
     const base = createSupabaseApi(client);
@@ -2077,37 +2080,22 @@ function WorkspaceApp({ authClient, client }) {
   const onboardingSteps = [
     {
       id: "task",
-      label: "Add your first task",
+      label: "Add one small task",
       cta: "Add task",
       done: tasks.length > 0,
       action: () => setTaskDialog({ task: null }),
     },
     {
-      id: "circle",
-      label: "Create a circle for your people",
-      cta: "Create",
-      done: groups.length > 0,
-      action: () => setCircleDialog(true),
-    },
-    {
       id: "invite",
-      label: "Invite a friend to a circle",
+      label: "Bring someone into your circle",
       cta: "Invite",
       done: groups.some((group) => group.memberCount > 1) || friends.length > 0,
       action: () => navigate("circles"),
-    },
-    {
-      id: "avatar",
-      label: "Pick your avatar",
-      cta: "Choose",
-      done: Boolean(user?.avatar),
-      action: () => navigate("profile"),
     },
   ];
   const focusTask = tasks.find((task) => task.id === focusTaskId && !task.done);
   const viewActiveGroup =
     viewGroups.find((group) => group.id === activeGroup?.id) || activeGroup;
-  const openTodayTasks = todayTasks.filter((task) => !task.done);
   const filteredTasks = useMemo(() => {
     if (filter === "Completed") return doneTasks;
     if (filter === "Earlier") return olderOpenTasks;
@@ -3384,11 +3372,6 @@ function WorkspaceApp({ authClient, client }) {
 
   const activeTimer = tasks.find((task) => task.timerStartedAt && !task.done);
   const activePage = pages.find((item) => item.id === page) || pages[0];
-  const todayDoneTasks = todayTasks.filter((task) => task.done);
-  const todayCompletion = todayTasks.length
-    ? Math.round((todayDoneTasks.length / todayTasks.length) * 100)
-    : 0;
-
   return (
     <ClockProvider>
       <main className={`app-shell ${menuOpen ? "menu-open" : ""}`}>
@@ -3527,16 +3510,13 @@ function WorkspaceApp({ authClient, client }) {
                 form.reset();
               }}
               user={user}
-              tasks={todayTasks}
-              done={todayDoneTasks.length}
-              total={todayTasks.length}
-              completion={todayCompletion}
-              remainingTasks={openTodayTasks.length}
+              todayTasks={todayTasks}
+              planTasks={tasks}
               leaderboardGroupId={leaderboardGroupId ?? groups[0]?.id}
               onSelectLeaderboardGroup={setLeaderboardGroupId}
               activity={activity.slice(0, 4)}
               groups={viewGroups}
-              onCreate={() => setTaskDialog({ task: null })}
+              onCreate={(dueDate) => setTaskDialog({ task: null, dueDate })}
               onEdit={editTask}
               onComplete={completeTask}
               onTimer={timerTask}
@@ -3578,7 +3558,6 @@ function WorkspaceApp({ authClient, client }) {
               onMoveToToday={moveToToday}
               filter={filter}
               setFilter={setFilter}
-              allCount={tasks.length}
               onCreate={() => setTaskDialog({ task: null })}
               onEdit={editTask}
               onComplete={completeTask}
@@ -3739,6 +3718,7 @@ function WorkspaceApp({ authClient, client }) {
         {taskDialog && (
           <TaskDialog
             task={taskDialog.task}
+            initialDueDate={taskDialog.dueDate}
             groups={groups}
             friends={friends}
             initialGroupIds={taskDialog.groupIds}
@@ -3950,6 +3930,8 @@ function WorkspaceApp({ authClient, client }) {
   );
 }
 
+//#endregion Workspace app and navigation
+//#region Shared reusable components
 function RunningTimer({ task, onOpen }) {
   const tick = useClock();
   const remaining =
@@ -4290,7 +4272,7 @@ function PageHeader({ eyebrow, title, description, action }) {
   return (
     <header className="page-header">
       <div>
-        <p className="eyebrow">{label}</p>
+        {label && <p className="eyebrow">{label}</p>}
         <h1>{title}</h1>
         {description && <p className="page-description">{description}</p>}
       </div>
@@ -4387,7 +4369,6 @@ function StreakLine({ streak, done, total, onShare }) {
   const threshold = Number(streak.percent) || 80;
   const minTasks = Number(streak.minTasks) || 5;
   const current = Number(streak.current) || 0;
-  const percentDone = total ? Math.round((done / total) * 100) : 0;
   const reached = total >= minTasks && done * 100 >= total * threshold;
   const needed = total
     ? Math.max(0, Math.ceil((total * threshold) / 100) - done)
@@ -4401,22 +4382,19 @@ function StreakLine({ streak, done, total, onShare }) {
   else if (total >= minTasks && needed === 1) mood = "enc";
   let message;
   if (atRisk)
-    message =
-      total < minTasks
-        ? `Don’t let me fade out! Plan ${minTasks} tasks and finish ${threshold}% to keep your ${current}-day streak.`
-        : `Don’t let me fade out! ${needed} more ${needed === 1 ? "task" : "tasks"} to keep your ${current}-day streak.`;
+    message = `${needed || minTasks - total} more to keep your ${current}-day streak.`;
   else if (lost)
-    message = "Your streak ended. Let’s relight it today with one small task.";
+    message = "A fresh start today.";
   else if (reached)
-    message = `You’ve done ${percentDone}% of today’s tasks, so your streak is saved.`;
+    message = "Today’s goal reached.";
   else if (total < minTasks)
-    message = `Plan at least ${minTasks} tasks today, then finish ${threshold}% of them to keep your streak alive.`;
+    message = `${minTasks - total} more planned to reach today’s goal.`;
   else if (done === 0)
-    message = "Start with one small task. Your streak is counting on today.";
+    message = "Start with one small task.";
   else if (needed === 1)
-    message = "One more task and your streak is safe. You’re so close.";
+    message = "One more to go.";
   else
-    message = `${needed} more tasks to reach ${threshold}%. Keep going, you’re building something.`;
+    message = `${needed} more to reach today’s goal.`;
   return (
     <div className="streak-line">
       <span className="streak-kindle">
@@ -4539,16 +4517,15 @@ function EarlierDays({ tasks, onMove, onShowAll, current = [] }) {
   );
 }
 
+//#endregion Shared reusable components
+//#region Home and tasks
 function HomePage({
   onDelete,
   onMoveTomorrow,
   onQuickAdd,
   user,
-  tasks,
-  done,
-  total,
-  completion,
-  remainingTasks,
+  todayTasks,
+  planTasks,
   activity,
   groups,
   leaderboardGroupId,
@@ -4571,22 +4548,46 @@ function HomePage({
   onDismissOnboarding,
   onShareStreak,
 }) {
+  const today = localDate();
+  const tasksForToday = planTasks.filter((task) => taskDay(task) === today);
+  const done = tasksForToday.filter((task) => task.done).length;
+  const total = tasksForToday.length;
+  const completion = total ? Math.round((done / total) * 100) : 0;
+  const remainingTasks = total - done;
+  const todayDone = todayTasks.filter((task) => task.done).length;
+  const taskGroups = tasksForToday.reduce((list, task) => {
+    const category = task.category || "Personal";
+    let group = list.find((item) => item.category === category);
+    if (!group) {
+      group = { category, tasks: [] };
+      list.push(group);
+    }
+    group.tasks.push(task);
+    return list;
+  }, []);
+  const collaboratorsFor = (task) => {
+    const members = new Map();
+    groups
+      .filter((group) => task.groupIds?.includes(group.id))
+      .flatMap((group) => group.members || [])
+      .forEach((member) => {
+        if (member.id !== user.id) members.set(member.id, member);
+      });
+    return Array.from(members.values()).slice(0, 3);
+  };
   const activeLeaderboard =
     groups.find((group) => group.id === leaderboardGroupId) ||
     groups[0] ||
     null;
-  const next = tasks.find((task) => !task.done && !task.timerStartedAt);
   return (
     <div className="page-content home-page">
       <PageHeader
-        eyebrow={new Intl.DateTimeFormat("en", {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-        }).format(new Date())}
         title={`${greeting()}, ${user.name.split(/\s+/)[0]}`}
         action={
-          <button className="button button-primary home-new-task" onClick={onCreate}>
+          <button
+            className="button button-primary home-new-task"
+            onClick={() => onCreate(today)}
+          >
             <Plus size={16} /> New task
           </button>
         }
@@ -4604,32 +4605,31 @@ function HomePage({
           </div>
         </section>
       ) : (
-        <section className="day-glance" aria-label="Today at a glance">
+        <section
+          className="day-glance"
+          aria-label={`Progress for ${dayLabel(today)}`}
+        >
           <ProgressRing percent={completion} size={76} stroke={7}>
             <Kindle mood={completion >= 100 ? "proud" : "happy"} size={36} animate />
           </ProgressRing>
           <div className="glance-copy">
-            <b>
-              {done} of {total} done today
-            </b>
+            <b>{done} / {total} done</b>
             <span>
               {total === 0
-                ? "Nothing planned yet."
+                ? "Your day is open."
                 : completion === 100
-                  ? "Everything finished."
-                  : next
-                    ? `${completion}% done. Next up: ${next.title}`
-                    : `${remainingTasks} left to go.`}
+                  ? "All done."
+                  : `${remainingTasks} left.`}
             </span>
           </div>
           {streak &&
             (Number(streak.current) > 0 ||
               Number(streak.best) > 0 ||
-              total > 0) && (
+              todayTasks.length > 0) && (
               <StreakLine
                 streak={streak}
-                done={done}
-                total={total}
+                done={todayDone}
+                total={todayTasks.length}
                 onShare={onShareStreak}
               />
             )}
@@ -4638,7 +4638,7 @@ function HomePage({
       <div className="home-grid">
         <section className="home-tasks">
           <div className="section-title-row">
-            <h2>Today</h2>
+            <h2>Tasks</h2>
             <button className="text-link" onClick={() => onPage("tasks")}>
               All tasks <ArrowRight size={15} />
             </button>
@@ -4650,55 +4650,72 @@ function HomePage({
                 id="quick-add"
                 name="title"
                 maxLength={120}
-                placeholder="Add a task and press Enter"
-                aria-label="Add a task for today"
+                placeholder="Add a task"
+                aria-label={`Add a task for ${dayLabel(today)}`}
                 autoComplete="off"
                 required
               />
-              <input type="hidden" name="dueDate" value={localDate()} />
-              <kbd title="Press N to jump here">N</kbd>
+              <input type="hidden" name="dueDate" value={today} />
             </form>
           )}
           {earlier.length > 0 && (
             <EarlierDays
               tasks={earlier}
-              current={tasks}
+              current={todayTasks}
               onMove={onMoveToToday}
               onShowAll={onShowEarlier}
             />
           )}
           {!loaded ? (
             <SkeletonList />
-          ) : tasks.length ? (
-            <div className="task-list">
-              {tasks.slice(0, 8).map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  hideToday
-                  justDone={justDoneId === task.id}
-                  onComplete={onComplete}
-                  onTimer={onTimer}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onMoveTomorrow={onMoveTomorrow}
-                />
-              ))}
+          ) : tasksForToday.length ? (
+            <div className="home-plan-groups">
+              {taskGroups.map(({ category, tasks: groupTasks }) => {
+                const groupDone = groupTasks.filter((task) => task.done).length;
+                const groupProgress = Math.round((groupDone / groupTasks.length) * 100);
+                return (
+                  <section className="home-plan-group" key={category}>
+                    <div className="home-plan-group-head">
+                      <h3>{category}</h3>
+                      <span>{groupDone}/{groupTasks.length}</span>
+                    </div>
+                    <div
+                      className="home-plan-progress"
+                      role="progressbar"
+                      aria-label={`${category} progress`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={groupProgress}
+                    >
+                      <span style={{ width: `${groupProgress}%` }} />
+                    </div>
+                    <div className="task-list">
+                      {groupTasks.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          hideToday
+                          hideCategory
+                          collaborators={collaboratorsFor(task)}
+                          justDone={justDoneId === task.id}
+                          onComplete={onComplete}
+                          onTimer={onTimer}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                          onMoveTomorrow={onMoveTomorrow}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           ) : (
-            <EmptyTasks onCreate={onCreate} compact />
-          )}
-          {next && (
-            <div className="up-next">
-              <span>Up next</span>
-              <b>{next.title}</b>
-              <button
-                className="text-link"
-                onClick={() => onTimer(next, "start")}
-              >
-                <Play size={13} /> Start focus
-              </button>
-            </div>
+            <EmptyTasks
+              onCreate={() => onCreate(today)}
+              title="Nothing planned."
+              compact
+            />
           )}
         </section>
         <aside className="home-social">
@@ -4790,7 +4807,6 @@ function TasksPage({
   onMoveToToday,
   filter,
   setFilter,
-  allCount,
   onCreate,
   onEdit,
   onComplete,
@@ -4802,9 +4818,7 @@ function TasksPage({
   return (
     <div className="page-content">
       <PageHeader
-        eyebrow="Everything you are working on"
-        title="My Tasks"
-        description={`${allCount} ${allCount === 1 ? "task" : "tasks"} on your list.`}
+        title="Tasks"
         action={
           <button className="button button-primary" onClick={onCreate}>
             <Plus size={16} /> New task
@@ -4932,6 +4946,8 @@ const TaskRow = React.memo(function TaskRow({
   onDelete,
   justDone,
   hideToday = false,
+  hideCategory = false,
+  collaborators = [],
   onMoveTomorrow,
 }) {
   const locked = Boolean(task.assignmentId);
@@ -5047,12 +5063,19 @@ const TaskRow = React.memo(function TaskRow({
             )}
           </h3>
           <div className="task-meta">
-            <span className="task-cat" data-cat={categorySlug(task.category)}>
-              {task.category}
-            </span>
+            {!hideCategory && (
+              <span className="task-cat" data-cat={categorySlug(task.category)}>
+                {task.category}
+              </span>
+            )}
             {task.challengeId && (
               <span className="challenge-tag">
                 <Target size={11} /> Challenge
+              </span>
+            )}
+            {task.reminderTime && (
+              <span className="task-reminder-time" title="Reminder">
+                <Bell size={11} /> {task.reminderTime}
               </span>
             )}
             {!(hideToday && due.text === "Today") && (
@@ -5067,6 +5090,21 @@ const TaskRow = React.memo(function TaskRow({
               <span className="meta-icon" title="Shared with a circle">
                 <Users size={12} />
                 <span className="sr-only">Shared with a circle</span>
+              </span>
+            )}
+            {collaborators.length > 0 && (
+              <span
+                className="task-collaborators"
+                aria-label={`Shared with ${collaborators.map((member) => member.name).join(", ")}`}
+              >
+                {collaborators.map((member, index) => (
+                  <Avatar
+                    key={member.id}
+                    name={member.name}
+                    avatar={member.avatar}
+                    index={index}
+                  />
+                ))}
               </span>
             )}
             {task.repeat && task.repeat !== "none" && (
@@ -5151,17 +5189,16 @@ function EmptyTasks({
     <div className={`empty-tasks ${compact ? "empty-compact" : ""}`}>
       <span className="empty-spark">✳</span>
       <h3>{title}</h3>
-      <p>
-        Add a task when you’re ready. You can keep it private or share it with
-        friends.
-      </p>
+      <p>Add a small step when you’re ready.</p>
       <button className="text-link" onClick={onCreate}>
-        <Plus size={15} /> Create a task
+        <Plus size={15} /> Add task
       </button>
     </div>
   );
 }
 
+//#endregion Home and tasks
+//#region Circles and activity
 function CirclesPage({
   groups,
   activeGroup,
@@ -6422,6 +6459,8 @@ function EmojiPicker({ onPick }) {
   );
 }
 
+//#endregion Circles and activity
+//#region Chat, profile, and settings
 function ChatPage({
   groups,
   activeGroup,
@@ -7540,6 +7579,8 @@ function SettingsPage({
   );
 }
 
+//#endregion Chat, profile, and settings
+//#region Task forms and dialogs
 const REPEAT_DAYS = [
   ["1", "M", "Monday"],
   ["2", "T", "Tuesday"],
@@ -7624,18 +7665,13 @@ function RepeatField({ defaultValue = "none" }) {
   );
 }
 
-function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
+function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
   const selectedFriendIds = task?.sharedWith || initialSharedWith;
   const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0 || initialSharedWith.length > 0);
   return (
     <Modal
       title={task ? "Edit task" : "New task"}
-      subtitle={
-        task
-          ? "Make a quick update."
-          : "Just the essentials. Everything else is optional."
-      }
       onClose={onClose}
     >
       <form className="modal-form" onSubmit={onSave}>
@@ -7657,7 +7693,7 @@ function TaskDialog({ task, groups, friends = [], initialGroupIds = [], initialS
             <input
               name="dueDate"
               type="date"
-              defaultValue={task ? task.dueDate || "" : localDate()}
+              defaultValue={task ? task.dueDate || "" : initialDueDate || localDate()}
             />
           </label>
           <label>
@@ -8196,12 +8232,16 @@ function InviteScreen({ invitation, error, onSignup, onLogin, onHome }) {
   );
 }
 
+//#endregion Task forms and dialogs
+//#region Landing and product pages
 const landingDemoScenes = [
-  ["tasks", "Your tasks"],
-  ["leaderboard", "Leaderboard"],
-  ["circles", "Circles"],
-  ["chat", "Circle chat"],
-  ["streak", "Streak"],
+  ["tasks", "Your tasks", CheckSquare2],
+  ["leaderboard", "Leaderboard", Trophy],
+  ["circles", "Circles", Users],
+  ["chat", "Circle chat", MessageCircle],
+  ["streak", "Streak", Flame],
+  ["badges", "Badges", Award],
+  ["weekly", "Weekly", BarChart3],
 ];
 
 function Landing({ onStart, onLogin }) {
@@ -8529,7 +8569,7 @@ function Landing({ onStart, onLogin }) {
           <div>
             <p className="eyebrow">A LITTLE TOUR</p>
             <h2>Come on in.</h2>
-            <p>Pick a screen. Tap around. Get the feel of it.</p>
+            <p>Choose a screen.</p>
           </div>
           <div
             className="device-switch"
@@ -8839,7 +8879,7 @@ function Landing({ onStart, onLogin }) {
               role="tablist"
               aria-label="Demo screens"
             >
-              {landingDemoScenes.map(([key, label], index) => (
+              {landingDemoScenes.map(([key, label, Icon]) => (
                 <button
                   key={key}
                   role="tab"
@@ -8850,14 +8890,7 @@ function Landing({ onStart, onLogin }) {
                     setNudged(false);
                   }}
                 >
-                  {
-                    [
-                      <CheckSquare2 size={14} />,
-                      <Users size={14} />,
-                      <CalendarDays size={14} />,
-                      <Heart size={14} />,
-                    ][index]
-                  }
+                  <Icon size={14} />
                   {label}
                 </button>
               ))}
@@ -9210,6 +9243,69 @@ function Landing({ onStart, onLogin }) {
   );
 }
 
+function LandingBadgePreview() {
+  return (
+    <section className="landing-preview-page">
+      <header className="landing-preview-heading">
+        <span>BADGES</span>
+        <h2>Little wins, kept.</h2>
+        <small>3 earned</small>
+      </header>
+      <div className="landing-preview-badges">
+        {BADGE_CATALOG.slice(0, 3).map((badge) => {
+          const Icon = badge.icon;
+          return (
+            <article
+              className="landing-preview-badge"
+              key={badge.id}
+              style={{ "--badge-accent": badge.accent }}
+            >
+              <span className="landing-preview-medal">
+                <Icon size={20} />
+              </span>
+              <span>
+                <small>{badge.category}</small>
+                <b>{badge.name}</b>
+              </span>
+              <span className="landing-preview-badge-share">
+                <Share size={13} /> Share
+              </span>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function LandingWeeklyPreview() {
+  return (
+    <section className="landing-preview-page">
+      <header className="landing-preview-heading">
+        <span>WEEKLY RECAP</span>
+        <h2>Your week, kept.</h2>
+      </header>
+      <article className="landing-weekly-card">
+        <div className="landing-weekly-brand">
+          kinda<span className="wordmark-flame"><Kindle mood="happy" size={18} /></span>
+          <small>THIS WEEK</small>
+        </div>
+        <div className="landing-weekly-art">
+          <Kindle mood="proud" size={54} />
+          <h3>You showed up for you.</h3>
+        </div>
+        <div className="landing-weekly-stats">
+          <span><b>12</b><small>tasks done</small></span>
+          <span><b>5 days</b><small>in your rhythm</small></span>
+        </div>
+        <div className="landing-preview-share">
+          <Share size={15} /> Share this week
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
   const [completed, setCompleted] = useState([true, false, false]);
   const [messageValue, setMessageValue] = useState("");
@@ -9270,9 +9366,6 @@ function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
   };
   const noop = () => {};
   const groups = [group];
-  const completion = tasks.length
-    ? Math.round((completed.filter(Boolean).length / tasks.length) * 100)
-    : 0;
   const toggleTask = (task, done) =>
     setCompleted((current) =>
       current.map((value, index) =>
@@ -9299,11 +9392,8 @@ function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
     scene === "tasks" || scene === "streak" ? (
       <HomePage
         user={user}
-        tasks={tasks}
-        done={completed.filter(Boolean).length}
-        total={tasks.length}
-        completion={completion}
-        remainingTasks={tasks.length - completed.filter(Boolean).length}
+        todayTasks={tasks}
+        planTasks={tasks}
         activity={[]}
         groups={groups}
         leaderboardGroupId={group.id}
@@ -9357,6 +9447,10 @@ function LandingAppReel({ scene, onSetScene, onOpenFeature }) {
         onRemoveMember={noop}
         onWeeklyReport={noop}
       />
+    ) : scene === "badges" ? (
+      <LandingBadgePreview />
+    ) : scene === "weekly" ? (
+      <LandingWeeklyPreview />
     ) : (
       <ChatPage
         groups={groups}
@@ -9617,6 +9711,8 @@ function LandingFeatureDetailPage({
   );
 }
 
+//#endregion Landing and product pages
+//#region Onboarding and authentication
 function OnboardingSurvey({ onSubmit, onSkip }) {
   const [reasons, setReasons] = useState([]);
   const [source, setSource] = useState("");
@@ -9926,6 +10022,8 @@ function AuthScreen({
   );
 }
 
+//#endregion Onboarding and authentication
+//#region App bootstrap and offline state
 export function SupabaseApp({ client }) {
   const authClient = useMemo(() => createSupabaseAuthClient(client), [client]);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -10018,3 +10116,4 @@ function OfflineScreen({ onRetry }) {
 }
 
 export default SupabaseApp;
+//#endregion App bootstrap and offline state
