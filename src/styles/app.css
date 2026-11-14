@@ -901,7 +901,7 @@ html body .task-check {
   width: 24px;
   height: 24px;
   margin-top: 1px;
-  border: 1.6px solid var(--border-strong);
+  border: 1.6px solid whitesmoke;
   border-radius: 50%;
   background: transparent;
   color: var(--on-accent);
@@ -926,10 +926,11 @@ html body .task-check.checked {
   font-size: 16px;
   font-weight: 500;
   line-height: 1.35;
+  color: whitesmoke
 }
 
 .task-complete .task-main h3 {
-  color: var(--muted);
+  color: whitesmoke;
 }
 
 .task-meta {
@@ -938,7 +939,7 @@ html body .task-check.checked {
   align-items: center;
   gap: 4px 12px;
   margin-top: 4px;
-  color: var(--muted);
+  color: whitesmoke;
 }
 
 html body .task-meta span,
@@ -1064,8 +1065,8 @@ html body .focus-chip {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 0 11px;
-  background: transparent;
-  color: var(--text-soft);
+  background: var(--task-card-accent );
+  color: #000000;
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1073,8 +1074,8 @@ html body .focus-chip {
 }
 
 html body .focus-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent-deep);
+  color: #ffff;
+  background: #ffff;
 }
 
 html body .focus-chip.running {

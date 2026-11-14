@@ -1460,7 +1460,7 @@ button.ch-card {
     border: 1px solid var(--task-card-accent);
     border-radius: 17px;
     padding: 12px 14px 10px;
-    background: var(--task-card-accent);
+    background: transparent;
     color: var(--on-accent);
   }
 
@@ -1474,28 +1474,30 @@ button.ch-card {
 
   .home-plan-group-head h3 {
     margin: 0;
-    color: var(--on-accent);
+    color: #fffffff1;
     font: 700 17px var(--display);
   }
 
   .home-plan-group-head>span {
-    color: var(--on-accent);
+     color: #fffffff1;
     font: 600 14px var(--mono);
     font-variant-numeric: tabular-nums;
   }
 
   .home-plan-progress {
-    height: 6px;
+    box-sizing: border-box;
+    height: 8px;
     overflow: hidden;
+    border: 1px solid var(--task-card-accent);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--on-accent) 18%, var(--task-card-accent));
+    background: #000;
   }
 
   .home-plan-progress>span {
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: var(--surface);
+    background: var(--task-card-accent);
     transition: width 0.3s ease;
   }
 
@@ -1509,7 +1511,7 @@ button.ch-card {
     align-items: center;
     border-bottom-color: color-mix(in srgb, var(--border) 76%, transparent);
     padding: 12px 1px;
-    background: var(--task-card-accent);
+    background: transparent;
     color: var(--on-accent);
   }
 
@@ -1521,11 +1523,12 @@ button.ch-card {
   .app-shell .home-plan-group .task-row .task-cat,
   .app-shell .home-plan-group .task-row .task-date,
   .app-shell .home-plan-group .task-row .task-description,
-  .app-shell .home-plan-group .task-row .icon-quiet,
-  .app-shell .home-plan-group .task-row .focus-chip {
+  .app-shell .home-plan-group .task-row .icon-quiet {
+    color: #fffffff1;
+  }
+ .app-shell .home-plan-group .task-row .focus-chip {
     color: var(--on-accent);
   }
-
   .app-shell .home-plan-group .task-main h3,
   .app-shell .home-plan-group .task-title {
     font-size: 17px;
@@ -1543,18 +1546,18 @@ button.ch-card {
   }
 
   .app-shell .home-plan-group .task-row .task-check {
-    border-color: var(--on-accent);
+    border-color: whitesmoke;
   }
 
   .app-shell .home-plan-group .task-row .task-check.checked {
     border-color: var(--on-accent);
-    background: var(--on-accent);
-    color: var(--task-card-accent);
+    background: var(--task-card-accent);
+    color: black;
   }
 
   .app-shell .home-plan-group .task-row .focus-chip {
     border-color: var(--on-accent);
-    background: transparent;
+    background:var(--task-card-accent);
   }
 
   .app-shell .home-plan-group .task-row:last-child {
@@ -1595,8 +1598,8 @@ button.ch-card {
     border: 1px solid var(--task-card-accent);
     border-radius: 14px;
     padding: 14px;
-    background: var(--task-card-accent);
-    color: var(--on-accent);
+    background: transparent;
+    color: whitesmoke;
   }
 
   .app-shell .task-list-page .task-row .task-main h3,
@@ -1605,8 +1608,15 @@ button.ch-card {
   .app-shell .task-list-page .task-row .task-meta svg,
   .app-shell .task-list-page .task-row .task-cat,
   .app-shell .task-list-page .task-row .task-date,
-  .app-shell .task-list-page .task-row .icon-quiet {
+  .app-shell .task-list-page .task-row .icon-quiet{
+    color: whitesmoke;
+  }
+.app-shell .task-list-page .task-row .focus-chip {
     color: var(--on-accent);
+  }
+  .app-shell .task-list-page .task-row .task-check {
+    border-color: whitesmoke;
+    color: var(--task-card-accent);
   }
 
   .app-shell .task-list-page .task-row.priority-high:not(.task-complete) {
@@ -1614,14 +1624,12 @@ button.ch-card {
   }
 
   .app-shell .task-list-page .task-row .task-check.checked {
-    border-color: var(--on-accent);
+    border-color: whitesmoke;
     background: var(--on-accent);
-    color: var(--task-card-accent);
+    color: whitesmoke;
   }
 
-  .app-shell .task-list-page .task-row:hover {
-    background: var(--accent-highlight);
-  }
+ 
 
   .app-shell .button-primary,
   .app-shell .fab-add,
