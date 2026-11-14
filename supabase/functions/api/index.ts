@@ -900,15 +900,23 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     if (method === "PATCH" && pathname === "/profile") {
       const name = String(body.name || "").trim();
       const bio = String(body.bio || "").trim();
+      const avatar = String(body.avatar || "");
       if (name.length < 2 || name.length > 60 || bio.length > 240) {
         fail("Check your profile details and try again.");
+      }
+      if (avatar.length > 120) fail("Choose a valid profile avatar.");
+      if (avatar.startsWith("photo:")) {
+        const photo = /^photo:([0-9a-f-]{36})\/([0-9a-f-]{36}\.jpg)$/i.exec(avatar);
+        if (!photo || photo[1].toLowerCase() !== userId.toLowerCase()) {
+          fail("Choose a profile photo uploaded to this account.");
+        }
       }
       const { error } = await db.from("profiles").upsert({
         id: userId,
         name,
         email: user?.email || "",
         bio,
-        avatar: String(body.avatar || ""),
+        avatar,
       }, { onConflict: "id" });
       if (error) throw error;
       const { error: authError } = await db.auth.admin.updateUserById(userId, {
@@ -920,7 +928,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         name,
         email: user?.email,
         bio,
-        avatar: String(body.avatar || ""),
+        avatar,
       });
     }
     if (method === "GET" && pathname === "/tasks") {

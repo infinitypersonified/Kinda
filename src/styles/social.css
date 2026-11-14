@@ -567,7 +567,7 @@
   margin: 0;
 }
 
-.profile-edit-form>div {
+.profile-edit-form>.profile-edit-actions {
   display: flex;
   align-items: center;
   gap: 15px;

@@ -3160,17 +3160,46 @@ function WorkspaceApp({ authClient, client }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
+      let avatar = String(form.get("avatar") || "");
+      const currentAvatarPath = avatarStoragePath(user.avatar);
+      const avatarImage = form.get("avatarImage");
+      if (avatarImage instanceof File && avatarImage.size > 0) {
+        const compressedImage = await compressAvatarImage(avatarImage);
+        const path = `${user.id}/${crypto.randomUUID()}.jpg`;
+        const { error: uploadError } = await client.storage
+          .from(AVATAR_BUCKET)
+          .upload(path, compressedImage, {
+            cacheControl: "31536000",
+            contentType: "image/jpeg",
+            upsert: false,
+          });
+        if (uploadError) throw uploadError;
+        avatar = `photo:${path}`;
+      }
+
       const updated = await api("/profile", {
         method: "PATCH",
         body: JSON.stringify({
           name: String(form.get("name") || "").trim(),
           bio: String(form.get("bio") || "").trim(),
-          avatar: String(form.get("avatar") || "") || undefined,
+          avatar,
         }),
       });
       setProfile(updated);
       setUser(updated);
       setProfileEditing(false);
+
+      const nextAvatarPath = avatarStoragePath(updated.avatar);
+      if (currentAvatarPath && currentAvatarPath !== nextAvatarPath) {
+        const { error: removeError } = await client.storage
+          .from(AVATAR_BUCKET)
+          .remove([currentAvatarPath]);
+        if (removeError) {
+          console.error("Could not remove the previous profile photo", removeError);
+          notify("Profile saved, but the previous photo could not be removed.");
+          return;
+        }
+      }
       notify("Profile saved.");
     } catch (error) {
       notify(error.message);
@@ -3953,6 +3982,89 @@ function RunningTimer({ task, onOpen }) {
   );
 }
 
+const AVATAR_BUCKET = "profile-avatars";
+const AVATAR_INPUT_MAX_BYTES = 12 * 1024 * 1024;
+const AVATAR_OUTPUT_MAX_BYTES = 1024 * 1024;
+const AVATAR_MAX_DIMENSION = 512;
+const AVATAR_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function avatarStoragePath(value) {
+  const match = /^photo:([0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg)$/i.exec(
+    String(value || ""),
+  );
+  return match?.[1] || "";
+}
+
+function avatarImageSource(value) {
+  const avatar = String(value || "");
+  if (avatar.startsWith("blob:")) return avatar;
+  const path = avatarStoragePath(avatar);
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/+$/, "");
+  return path && supabaseUrl
+    ? `${supabaseUrl}/storage/v1/object/public/${AVATAR_BUCKET}/${path}`
+    : "";
+}
+
+async function compressAvatarImage(file) {
+  if (!AVATAR_IMAGE_TYPES.includes(file.type.toLowerCase())) {
+    throw new Error("Choose a JPG, PNG, or WebP image.");
+  }
+  if (file.size > AVATAR_INPUT_MAX_BYTES) {
+    throw new Error("Choose an image smaller than 12 MB.");
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    try {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = objectUrl;
+      });
+    } catch {
+      throw new Error("This image could not be opened. Try another photo.");
+    }
+    if (
+      !image.naturalWidth ||
+      !image.naturalHeight ||
+      image.naturalWidth * image.naturalHeight > 40_000_000
+    ) {
+      throw new Error("Choose a photo with dimensions under 40 megapixels.");
+    }
+
+    const scale = Math.min(
+      1,
+      AVATAR_MAX_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Your browser could not process this image.");
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    for (const quality of [0.82, 0.68, 0.54]) {
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (result) =>
+            result
+              ? resolve(result)
+              : reject(new Error("Your browser could not compress this image.")),
+          "image/jpeg",
+          quality,
+        );
+      });
+      if (blob.size <= AVATAR_OUTPUT_MAX_BYTES) return blob;
+    }
+    throw new Error("This image is still too large after compression. Try another photo.");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function parseAvatar(value) {
   const [color, emoji = ""] = String(value || "").split("|");
   return avatarColorKeys.includes(color) ? { color, emoji } : null;
@@ -3960,6 +4072,7 @@ function parseAvatar(value) {
 
 function Avatar({ name, index = 0, large = false, avatar }) {
   const custom = parseAvatar(avatar);
+  const imageSource = avatarImageSource(avatar);
   const colors = [
     "avatar-terracotta",
     "avatar-sand",
@@ -3975,7 +4088,11 @@ function Avatar({ name, index = 0, large = false, avatar }) {
     <span
       className={`avatar ${color} ${large ? "avatar-large" : ""} ${custom?.emoji ? "avatar-emoji" : ""}`}
     >
-      {custom?.emoji || initials(name)}
+      {imageSource ? (
+        <img src={imageSource} alt="" decoding="async" />
+      ) : (
+        custom?.emoji || initials(name)
+      )}
     </span>
   );
 }
@@ -3984,56 +4101,135 @@ function AvatarPicker({ name, defaultValue }) {
   const start = parseAvatar(defaultValue);
   const [color, setColor] = useState(start?.color || "terracotta");
   const [emoji, setEmoji] = useState(start?.emoji || "");
+  const [avatarValue, setAvatarValue] = useState(
+    defaultValue || `${start?.color || "terracotta"}|${start?.emoji || ""}`,
+  );
+  const [photoPreview, setPhotoPreview] = useState(() =>
+    avatarImageSource(defaultValue),
+  );
+  const [photoError, setPhotoError] = useState("");
+  const fileInput = useRef(null);
+
+  useEffect(() => {
+    if (!photoPreview.startsWith("blob:")) return undefined;
+    return () => URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
+
+  function choosePreset(nextColor, nextEmoji) {
+    setColor(nextColor);
+    setEmoji(nextEmoji);
+    setAvatarValue(`${nextColor}|${nextEmoji}`);
+    setPhotoPreview("");
+    setPhotoError("");
+    if (fileInput.current) fileInput.current.value = "";
+  }
+
+  function choosePhoto(event) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    if (!AVATAR_IMAGE_TYPES.includes(file.type.toLowerCase())) {
+      setPhotoError("Choose a JPG, PNG, or WebP image.");
+      event.currentTarget.value = "";
+      setPhotoPreview(avatarImageSource(avatarValue));
+      return;
+    }
+    if (file.size > AVATAR_INPUT_MAX_BYTES) {
+      setPhotoError("Choose an image smaller than 12 MB.");
+      event.currentTarget.value = "";
+      setPhotoPreview(avatarImageSource(avatarValue));
+      return;
+    }
+    setPhotoError("");
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
   return (
     <div className="avatar-picker">
-      <input type="hidden" name="avatar" value={`${color}|${emoji}`} />
+      <input type="hidden" name="avatar" value={avatarValue} />
       <div className="avatar-picker-preview">
-        <Avatar name={name} avatar={`${color}|${emoji}`} large />
-        <span>Pick a color and a character</span>
+        <Avatar name={name} avatar={photoPreview || avatarValue} large />
+        <span>
+          {photoPreview
+            ? "Photo preview"
+            : "Pick a color and a character, or add a photo"}
+        </span>
       </div>
-      <div
-        className="avatar-swatches"
-        role="radiogroup"
-        aria-label="Avatar color"
-      >
-        {avatarColorKeys.map((key) => (
-          <button
-            type="button"
-            key={key}
-            role="radio"
-            aria-checked={color === key}
-            aria-label={key}
-            className={`swatch avatar-c-${key} ${color === key ? "selected" : ""}`}
-            onClick={() => setColor(key)}
+      <div className="avatar-upload-row">
+        <label className="button button-secondary avatar-upload">
+          Choose a photo
+          <input
+            ref={fileInput}
+            type="file"
+            name="avatarImage"
+            accept="image/jpeg,image/png,image/webp"
+            aria-label="Choose a profile photo"
+            onChange={choosePhoto}
           />
-        ))}
+        </label>
+        <span className="avatar-upload-note">
+          JPG, PNG, or WebP. Automatically resized to 512 px and compressed.
+        </span>
+        {photoError && (
+          <p className="form-error" role="alert">
+            {photoError}
+          </p>
+        )}
       </div>
-      <div
-        className="avatar-emoji-grid"
-        role="radiogroup"
-        aria-label="Avatar character"
-      >
-        <button
-          type="button"
-          role="radio"
-          aria-checked={emoji === ""}
-          className={`emoji-option emoji-initials ${emoji === "" ? "selected" : ""}`}
-          onClick={() => setEmoji("")}
-        >
-          Aa
-        </button>
-        {avatarEmojis.map((item) => (
-          <button
-            type="button"
-            key={item}
-            role="radio"
-            aria-checked={emoji === item}
-            className={`emoji-option ${emoji === item ? "selected" : ""}`}
-            onClick={() => setEmoji(item)}
+      <div className="avatar-preset-panel">
+        <div className="avatar-choice-section">
+          <span id="avatar-color-label" className="avatar-choice-label">
+            Color
+          </span>
+          <div
+            className="avatar-swatches"
+            role="radiogroup"
+            aria-labelledby="avatar-color-label"
           >
-            {item}
-          </button>
-        ))}
+            {avatarColorKeys.map((key) => (
+              <button
+                type="button"
+                key={key}
+                role="radio"
+                aria-checked={!photoPreview && color === key}
+                aria-label={key}
+                className={`swatch avatar-c-${key} ${!photoPreview && color === key ? "selected" : ""}`}
+                onClick={() => choosePreset(key, emoji)}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="avatar-choice-section">
+          <span id="avatar-character-label" className="avatar-choice-label">
+            Character
+          </span>
+          <div
+            className="avatar-emoji-grid"
+            role="radiogroup"
+            aria-labelledby="avatar-character-label"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!photoPreview && emoji === ""}
+              className={`emoji-option emoji-initials ${!photoPreview && emoji === "" ? "selected" : ""}`}
+              onClick={() => choosePreset(color, "")}
+            >
+              Aa
+            </button>
+            {avatarEmojis.map((item) => (
+              <button
+                type="button"
+                key={item}
+                role="radio"
+                aria-checked={!photoPreview && emoji === item}
+                className={`emoji-option ${!photoPreview && emoji === item ? "selected" : ""}`}
+                onClick={() => choosePreset(color, item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -6893,7 +7089,7 @@ function ProfilePage({
               placeholder="A few words about you"
             />
           </label>
-          <div>
+          <div className="profile-edit-actions">
             <button className="button button-primary" type="submit">
               Save profile
             </button>
