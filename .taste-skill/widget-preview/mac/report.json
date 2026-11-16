@@ -1,0 +1,606 @@
+{
+ "url": "http://127.0.0.1:5174/widget-preview.html?device=mac&mode=dark&moment=morning&size=small",
+ "at": "2026-11-16T15:42:44.610Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    1,
+    1
+   ],
+   "motion": {
+    "elements": 5,
+    "css": 5,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 1017,
+     "screens": 1.1,
+     "words": 144,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 14,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "✦"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Keep the streak close.",
+     "words": 4,
+     "chars": 22,
+     "lines": 1,
+     "size": 60,
+     "vw": 4.2,
+     "font": "Fraunces",
+     "weight": 600,
+     "tracking": -0.045,
+     "leading": 1.03,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.78,
+     "top": 168,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Keep the streak close.",
+     "words": 4,
+     "lines": 1,
+     "size": 60,
+     "font": "Fraunces"
+    },
+    "headings": [
+     {
+      "text": "Keep the streak close.",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 60,
+      "vw": 4.2,
+      "font": "Fraunces",
+      "weight": 600,
+      "tracking": -0.045,
+      "leading": 1.03,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.78,
+      "top": 168,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "16",
+      "words": 1,
+      "chars": 2,
+      "lines": 1,
+      "size": 50,
+      "vw": 3.5,
+      "font": "Fraunces",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.04,
+      "top": 639,
+      "tag": "b",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 2,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 1,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.92,
+       "mono": false
+      },
+      {
+       "family": "Fraunces",
+       "share": 0.07,
+       "mono": false
+      },
+      {
+       "family": "DM Mono",
+       "share": 0.01,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      9,
+      10,
+      11,
+      12,
+      13,
+      15,
+      17,
+      18,
+      23,
+      25,
+      50,
+      60
+     ],
+     "sizeCount": 12,
+     "notLoaded": [
+      "DM Mono"
+     ],
+     "body": {
+      "font": "DM Sans",
+      "size": 10,
+      "leading": 1.55,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": null
+     },
+     "measureChars": 152,
+     "max": {
+      "size": 60,
+      "vw": 4.2,
+      "font": "Fraunces",
+      "text": "Keep the streak close."
+     },
+     "monoShare": 0.01,
+     "monoProseShare": 0.01,
+     "monoFamilies": [
+      "DM Mono"
+     ],
+     "monoSamples": [
+      "01",
+      "02"
+     ],
+     "microLabels": 8,
+     "microLabelShare": 0.207,
+     "microSamples": [
+      "DESIGN PREVIEW",
+      "NOT LIVE",
+      "A LITTLE SPARK, RIGHT WHERE YOU NEED IT",
+      "THE STREAK WIDGET",
+      "A FRESH START",
+      "MAC · DESKTOP WIDGET"
+     ],
+     "upperShare": 0.27,
+     "centerShare": 0.05,
+     "smallText": 13
+    },
+    "eyebrows": [
+     {
+      "text": "A LITTLE SPARK, RIGHT WHERE YOU NEED IT",
+      "above": "Keep the streak close.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 10,
+      "top": 143
+     },
+     {
+      "text": "MAC · DESKTOP WIDGET",
+      "above": "16",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 556
+     }
+    ],
+    "numbered": [
+     {
+      "text": "01",
+      "size": 10,
+      "top": 360
+     },
+     {
+      "text": "02",
+      "size": 10,
+      "top": 431
+     }
+    ],
+    "color": {
+     "bodyBg": "#17120f",
+     "bodyBgHsl": {
+      "h": 23,
+      "s": 0.21,
+      "l": 0.07
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#17120f",
+       "top": 0,
+       "hsl": {
+        "h": 23,
+        "s": 0.21,
+        "l": 0.07
+       }
+      },
+      {
+       "color": "#211913",
+       "top": 498,
+       "hsl": {
+        "h": 26,
+        "s": 0.27,
+        "l": 0.1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#a99583",
+       "share": 0.22
+      },
+      {
+       "color": "#b9a89a",
+       "share": 0.17
+      },
+      {
+       "color": "#b8a79a",
+       "share": 0.09
+      },
+      {
+       "color": "#c7b5a4",
+       "share": 0.07
+      },
+      {
+       "color": "#f3a05b",
+       "share": 0.05
+      }
+     ],
+     "button": null,
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 8,
+     "radius": 9,
+     "height": 47,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "7:15 AM Morning",
+      "12:30 PM Midday",
+      "5:45 PM After work",
+      "8:15 PM Streak at risk",
+      "8:40 PM Goal reached"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 1,
+     "scrims": 0,
+     "gradientSamples": [
+      "main.wd-page → radial-gradient(at 76% 18%, rgba(126, 64, 31, 0.16), rgba(0, 0, 0, 0) 35%), none"
+     ],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "section.wd-controls 1120px",
+      "div.wd-control-row.wd-device-row 1120px",
+      "div.wd-desktop-topline 898px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 18,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 1,
+     "fixed": false,
+     "height": 30,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm sans",
+     "fraunces"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 1017,
+    "margins": {
+     "left": 160,
+     "right": 160
+    },
+    "sections": [
+     {
+      "sel": "section.wd-intro",
+      "tag": "section",
+      "top": 143,
+      "height": 150,
+      "words": 33,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Keep the streak close.",
+       "size": 60,
+       "tag": "h1"
+      },
+      "left": 160,
+      "right": 738,
+      "textLeft": 160,
+      "textRight": 738,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.wd-controls",
+      "tag": "section",
+      "top": 326,
+      "height": 144,
+      "words": 33,
+      "media": 0,
+      "middle": 132,
+      "heading": null,
+      "left": 160,
+      "right": 160,
+      "textLeft": 160,
+      "textRight": 169,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.wd-stage-wrap.is-mac",
+      "tag": "section",
+      "top": 498,
+      "height": 446,
+      "words": 31,
+      "media": 0,
+      "middle": 369,
+      "heading": {
+       "text": "16",
+       "size": 50,
+       "tag": "b"
+      },
+      "left": 179,
+      "right": 179,
+      "textLeft": 179,
+      "textRight": 179,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Keep the streak close.",
+      "size": 60,
+      "top": 168,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 160,
+      "n": 2
+     },
+     {
+      "x": 805,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 3,
+    "bodySize": 10,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.13,
+    "voidBox": {
+     "x": 900,
+     "y": 120,
+     "w": 540,
+     "h": 300
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "eyebrow",
+   "width": 1440,
+   "message": "2 eyebrow/kicker label(s) above headings: \"A LITTLE SPARK, RIGHT WHERE YOU NEED IT\" above \"Keep the streak close.\"; \"MAC · DESKTOP WIDGET\" above \"16\"",
+   "fix": "Delete them. If the label carried real information, fold it into the headline or the supporting sentence."
+  },
+  {
+   "level": "FAIL",
+   "id": "mono",
+   "width": 1440,
+   "message": "Monospace type outside code: DM Mono — e.g. \"01\", \"02\"",
+   "fix": "Set it in the text face. Monospace is for literal code inside <pre>/<code> only."
+  },
+  {
+   "level": "FAIL",
+   "id": "numbering",
+   "width": 1440,
+   "message": "Decorative index numbers: \"01\", \"02\"",
+   "fix": "Remove them. If order truly matters, write it into the words (\"First, …\") or use a real <ol>."
+  },
+  {
+   "level": "FAIL",
+   "id": "micro-label",
+   "width": 1440,
+   "message": "8 tiny uppercase letter-spaced labels (e.g. \"DESIGN PREVIEW\", \"NOT LIVE\", \"A LITTLE SPARK, RIGHT WHERE YOU NEED IT\", \"THE STREAK WIDGET\").",
+   "fix": "Use sentence-case text at a readable size, or delete the label."
+  },
+  {
+   "level": "FAIL",
+   "id": "emoji",
+   "width": 1440,
+   "message": "Emoji in the page: ✦",
+   "fix": "Remove. Use words or real imagery."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "width": 1440,
+   "message": "1 gradient fill(s): main.wd-page → radial-gradient(at 76% 18%, rgba(126, 64, 31, 0.16), rgba(0, 0, 0, 0) 35%), none",
+   "fix": "Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "width": 1440,
+   "message": "3 thin rule(s)/divider line(s): section.wd-controls 1120px | div.wd-control-row.wd-device-row 1120px | div.wd-desktop-topline 898px",
+   "fix": "Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "outlined-box",
+   "width": 1440,
+   "message": "3 boxes drawn with a 1px outline.",
+   "fix": "Define a surface by its fill (one tone step from the page) or leave the content unboxed."
+  },
+  {
+   "level": "WARN",
+   "id": "font-fallback",
+   "width": 1440,
+   "message": "Typeface(s) declared but not loaded, so a fallback is rendering: DM Mono",
+   "fix": "Fix the font URL / family name, or the screenshots you are judging are not the design."
+  },
+  {
+   "level": "WARN",
+   "id": "size-count",
+   "width": 1440,
+   "message": "12 different font sizes (9, 10, 11, 12, 13, 15, 17, 18, 23, 25, 50, 60).",
+   "fix": "A page needs about five: display, heading, lead, body, small."
+  },
+  {
+   "level": "FAIL",
+   "id": "body-size",
+   "width": 1440,
+   "message": "Body text is 10px (the size most of the running text is set in).",
+   "fix": "Body copy 16–20px. Map small sizes from blueprints onto your body step."
+  },
+  {
+   "level": "FAIL",
+   "id": "few-pictures",
+   "width": 1440,
+   "message": "Only 0 picture(s) on the page (0 photographs, footage or raster images, 0 interface fragments). Drawings in SVG do not count.",
+   "fix": "Find real pictures of the subject's world with scripts/assets.mjs (photographs, archival images, maps, engravings, footage), download them to assets/ and give them room: a hero picture, one per section that has a subject, a full-width band. At least four, usually six to twelve."
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1440,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "WARN",
+   "id": "measure",
+   "width": 1440,
+   "message": "Longest paragraph runs about 152 characters per line.",
+   "fix": "Cap paragraphs at 45–75 characters (max-width: 60ch)."
+  },
+  {
+   "level": "FAIL",
+   "id": "small-text",
+   "width": 1440,
+   "message": "13 text blocks under 13px.",
+   "fix": "Nothing meant to be read goes below 13px."
+  },
+  {
+   "level": "FAIL",
+   "id": "focal-point",
+   "width": 1440,
+   "message": "The first screen has no dominant element: the largest type is 60px (4.2vw) and no single picture holds a third of the viewport.",
+   "fix": "Make one thing lead: the headline at display size, or one large picture. A grid of many small pictures is not one thing; in blind tests jurors marked a first screen without a headline down every time. On the strongest studied sites the largest type has a median of 8.4vw."
+  },
+  {
+   "level": "WARN",
+   "id": "dev-server",
+   "width": 1440,
+   "message": "This page is served by a development server (Vite, webpack or Next in dev mode).",
+   "fix": "Run the last gate on the production build too (vite build && vite preview, next build && next start, or the built index.html): minifiers and bundlers change the CSS a visitor receives."
+  },
+  {
+   "level": "FAIL",
+   "id": "still-page",
+   "width": 1440,
+   "message": "Only 5 element(s) moved while the page loaded and scrolled.",
+   "fix": "Build the motion layer (SKILL.md step 9, references/motion.md): the signature move, an entrance for the parts of every section, feedback on every control, and one moving picture. Transform and opacity only, with a reduced-motion fallback."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\widget-preview\\mac\\desktop-fold.jpg",
+   "pages": [
+    "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\widget-preview\\mac\\desktop-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

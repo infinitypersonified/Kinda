@@ -1,0 +1,112 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "ColumnSet",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "🔥  ${streak} day streak",
+              "weight": "Bolder",
+              "size": "Large",
+              "color": "Warning",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "${message}",
+              "weight": "Bolder",
+              "size": "Medium",
+              "spacing": "Medium",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "${subline}",
+              "isSubtle": true,
+              "spacing": "Small",
+              "wrap": true
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "72px",
+          "verticalContentAlignment": "Center",
+          "items": [
+            {
+              "type": "Image",
+              "url": "${kindle}",
+              "altText": "Kindle, your Kinda streak companion",
+              "size": "Medium"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Container",
+      "style": "emphasis",
+      "bleed": true,
+      "items": [
+        {
+          "type": "ColumnSet",
+          "spacing": "Medium",
+          "columns": [
+            {
+              "type": "Column",
+              "width": "stretch",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "TODAY",
+                  "size": "Small",
+                  "weight": "Bolder",
+                  "isSubtle": true
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "${done} of ${total} tasks",
+                  "weight": "Bolder",
+                  "wrap": true
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "width": "stretch",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "THIS WEEK",
+                  "size": "Small",
+                  "weight": "Bolder",
+                  "isSubtle": true
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "${week}",
+                  "weight": "Bolder",
+                  "wrap": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "title": "Open today’s tasks",
+      "verb": "open-tasks"
+    }
+  ]
+}

@@ -1,0 +1,252 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap");
+@import "./kindle.css";
+
+:root {
+  font-family: "DM Sans", sans-serif;
+  color: #f8eee2;
+  background: #17120f;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, a { font: inherit; }
+button { color: inherit; }
+
+.wd-page {
+  --wd-orange: #fb8425;
+  --wd-terracotta: #d96c3b;
+  --wd-cream: #fff2df;
+  --wd-cocoa: #25180f;
+  --wd-ink: #f8eee2;
+  --wd-muted: #b9a89a;
+  min-height: 100vh;
+  padding: 27px clamp(18px, 5vw, 72px) 36px;
+  background:
+    radial-gradient(ellipse at 76% 18%, rgba(126, 64, 31, 0.16), transparent 35%),
+    #17120f;
+}
+
+.wd-header,
+.wd-brand,
+.wd-preview-badge,
+.wd-control-label,
+.wd-device-options,
+.wd-view-options,
+.wd-device-options button,
+.wd-view-options button,
+.wd-streak-number,
+.wd-week-days,
+.wd-day,
+.wd-desktop-topline,
+.wd-stage-label,
+.wd-footer,
+.wd-motion-note { display: flex; align-items: center; }
+
+.wd-header { justify-content: space-between; max-width: 1120px; margin: 0 auto; }
+.wd-brand { gap: 8px; color: #fff4e7; font: 700 23px/1 "Fraunces", Georgia, serif; letter-spacing: -0.05em; text-decoration: none; }
+.wd-brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px 10px 10px 4px; background: var(--wd-orange); color: #24170f; }
+.wd-preview-badge { gap: 8px; color: #c9b9aa; font: 600 10px/1 "DM Sans", sans-serif; letter-spacing: .12em; }
+.wd-preview-badge i,.wd-motion-note i { width: 7px; height: 7px; border-radius: 50%; background: #95cb91; box-shadow: 0 0 0 3px rgba(149,203,145,.1); }
+.wd-preview-badge b { margin-left: 4px; padding: 6px 8px; border: 1px solid rgba(251,132,37,.25); border-radius: 999px; color: #f5ad69; font-size: 9px; letter-spacing: .1em; }
+
+.wd-intro { max-width: 1120px; margin: clamp(48px, 7vw, 86px) auto 33px; }
+.wd-eyebrow { margin: 0 0 12px; color: #f3a05b; font-size: 10px; font-weight: 700; letter-spacing: .19em; }
+.wd-intro h1 { margin: 0; color: #fff3e5; font: 600 clamp(36px, 6vw, 60px)/1.03 "Fraunces", Georgia, serif; letter-spacing: -.045em; }
+.wd-intro-copy { max-width: 590px; margin: 14px 0 0; color: #b9a89a; font-size: 15px; line-height: 1.65; }
+
+.wd-controls { max-width: 1120px; margin: 0 auto 28px; border-top: 1px solid #44342a; border-bottom: 1px solid #44342a; }
+.wd-control-row { display: flex; align-items: center; gap: 22px; padding: 15px 0; }
+.wd-control-row + .wd-control-row { border-top: 1px solid rgba(110,85,67,.45); }
+.wd-control-label { flex: 0 0 143px; gap: 10px; color: #f6eee5; font-size: 12px; }
+.wd-control-label span { color: #9d7860; font-size: 10px; }
+.wd-control-label b { font-weight: 600; }
+.wd-moment-options,.wd-device-options,.wd-view-options { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wd-moment-options { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
+.wd-moment-options::-webkit-scrollbar { display: none; }
+.wd-moment-options button,.wd-device-options button,.wd-view-options button { border: 1px solid transparent; border-radius: 9px; background: transparent; color: #b8a79a; cursor: pointer; transition: color .18s,background .18s,border-color .18s,transform .18s; }
+.wd-moment-options button { display: grid; flex: 0 0 88px; justify-items: start; gap: 3px; min-width: 88px; padding: 8px 9px; font-size: 10px; text-align: left; }
+.wd-moment-options button small { color: #937e6e; font-size: 9px; }
+.wd-device-options button,.wd-view-options button { justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; font-size: 11px; }
+.wd-view-options { margin-left: auto; }
+.wd-view-options button { padding-inline: 8px; }
+.wd-view-options button span { display: inline; }
+.wd-option-divider { height: 18px; margin: 0 2px; border-left: 1px solid #534133; }
+.wd-moment-options button:hover,.wd-device-options button:hover,.wd-view-options button:hover { color: #fff2df; background: rgba(255,255,255,.045); }
+.wd-moment-options button.is-active,.wd-device-options button.is-active,.wd-view-options button.is-active { border-color: rgba(251,132,37,.42); background: rgba(251,132,37,.12); color: #ffc080; }
+.wd-moment-options button:focus-visible,.wd-device-options button:focus-visible,.wd-view-options button:focus-visible { outline: 2px solid #fb8425; outline-offset: 2px; }
+
+.wd-stage-wrap { max-width: 1120px; min-height: 446px; margin: 0 auto; padding: 15px 18px 22px; border: 1px solid #433329; border-radius: 18px; background: #211913; }
+.wd-stage-label { justify-content: space-between; margin-bottom: 12px; color: #a99481; font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+.wd-stage-label span:last-child { color: #da9b67; }
+
+.wd-card { --card-bg: #2b1c13; --card-ink: #fff2df; --card-muted: #c7b5a4; --card-border: #68452e; --card-soft: #3b281b; position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0,1fr) 120px; align-items: center; min-height: 220px; overflow: hidden; padding: 21px 23px 17px; border: 1px solid var(--card-border); border-radius: 22px; background: var(--card-bg); color: var(--card-ink); }
+.wd-card.is-light { --card-bg: #fff5e9; --card-ink: #40291b; --card-muted: #806d5d; --card-border: #ead4bb; --card-soft: #f6e5d0; }
+.wd-card::before { position: absolute; z-index: -1; inset: 0; background: radial-gradient(ellipse at 85% 46%, rgba(217,108,59,.19), transparent 34%); content: ""; }
+.wd-card.is-light::before { background: radial-gradient(ellipse at 85% 46%, rgba(251,132,37,.12), transparent 35%); }
+.wd-card-copy { position: relative; z-index: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; }
+.wd-streak-number { gap: 8px; min-height: 32px; color: var(--wd-orange); }
+.wd-streak-number strong { color: var(--card-ink); font: 700 30px/.95 "Fraunces", Georgia, serif; letter-spacing: -.035em; }
+.wd-streak-number span { align-self: center; margin: 4px 0 0 1px; color: var(--card-muted); font-size: 11px; font-weight: 600; letter-spacing: .025em; }
+.wd-message-block { padding: 10px 0 9px; animation: wd-copy-in .32s ease-out both; }
+.wd-message-kicker { display: block; margin-bottom: 6px; color: #ef9c5a; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.is-light .wd-message-kicker { color: #b95825; }
+.wd-message-block h2 { max-width: 370px; margin: 0; color: var(--card-ink); font: 600 clamp(18px, 2.5vw, 23px)/1.14 "Fraunces", Georgia, serif; letter-spacing: -.02em; }
+.wd-message-block p { margin: 6px 0 0; color: var(--card-muted); font-size: 11px; line-height: 1.35; }
+.wd-week { display: flex; align-items: end; justify-content: space-between; gap: 12px; max-width: 380px; }
+.wd-week-days { gap: clamp(5px, 1vw, 11px); }
+.wd-day { flex-direction: column; gap: 4px; color: var(--card-muted); font-size: 9px; }
+.wd-day small { font-size: 9px; font-weight: 600; }
+.wd-day i { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid rgba(255,242,223,.17); border-radius: 8px; background: var(--card-soft); color: var(--card-muted); font-style: normal; }
+.is-light .wd-day i { border-color: rgba(96,65,40,.14); }
+.wd-day.is-done i { border-color: transparent; background: var(--wd-orange); color: #2a1a10; }
+.wd-day.is-today i { border: 1.5px solid var(--wd-orange); color: var(--wd-orange); }
+.wd-day.is-today small { color: var(--wd-orange); }
+.wd-week-count { margin-bottom: 4px; color: var(--card-muted); font-size: 9px; white-space: nowrap; }
+.wd-open-tasks { display: inline-flex; align-items: center; align-self: flex-start; gap: 5px; margin-top: 8px; padding: 0; border: 0; background: transparent; color: #c85f22; font-size: 10px; font-weight: 700; cursor: pointer; }
+.wd-card:not(.is-light) .wd-open-tasks { color: #ffad67; }
+.wd-open-tasks:hover { color: var(--wd-orange); }
+.wd-open-tasks:focus-visible { outline: 2px solid var(--wd-orange); outline-offset: 3px; border-radius: 3px; }
+.wd-kindle-stage { position: relative; display: grid; place-items: end center; align-self: stretch; min-height: 160px; }
+.wd-kindle-orbit { position: absolute; right: 0; bottom: 24px; width: 112px; height: 112px; border: 1px solid rgba(251,132,37,.23); border-radius: 50%; background: radial-gradient(circle,rgba(251,132,37,.13),transparent 66%); }
+.is-light .wd-kindle-orbit { border-color: rgba(185,88,37,.16); background: radial-gradient(circle,rgba(251,132,37,.11),transparent 70%); }
+.wd-kindle { position: relative; z-index: 1; width: auto; height: auto; max-height: 155px; transform-origin: 50% 90%; }
+.wd-kindle-flame { position: absolute; z-index: 2; right: 34px; top: 45px; display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid rgba(255,224,169,.62); border-radius: 50%; background: #fb8425; color: #5d2d11; box-shadow: 0 0 0 4px rgba(251,132,37,.12); animation: wd-flame 1.8s ease-in-out infinite alternate; }
+.wd-kindle-spark { position: absolute; z-index: 2; color: #ffd166; font-size: 18px; animation: wd-spark 1.8s ease-in-out infinite; }
+.wd-spark-one { top: 17px; right: 91px; }
+.wd-spark-two { top: 61px; right: 4px; font-size: 12px; animation-delay: .5s; }
+.wd-card-accent { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: linear-gradient(90deg,transparent 2%,#d96c3b 28%,#fb8425 78%,#ffd166); opacity: .9; }
+
+.wd-card.is-small { grid-template-columns: minmax(0,1fr) 86px; width: min(100%,310px); min-height: 188px; margin-inline: auto; padding: 17px 17px 15px; border-radius: 19px; }
+.wd-card.is-small .wd-streak-number strong { font-size: 25px; }
+.wd-card.is-small .wd-streak-number span { font-size: 10px; }
+.wd-card.is-small .wd-message-block h2 { max-width: 205px; font-size: 17px; }
+.wd-card.is-small .wd-message-block p { max-width: 185px; font-size: 10px; }
+.wd-card.is-small .wd-kindle-stage { min-height: 130px; }
+.wd-card.is-small .wd-kindle-orbit { right: -3px; bottom: 19px; width: 88px; height: 88px; }
+.wd-card.is-small .wd-kindle { max-height: 114px; }
+.wd-card.is-small .wd-day i { width: 19px; height: 19px; border-radius: 6px; }
+.wd-card.is-small .wd-week-days { gap: 4px; }
+.wd-card.is-small .wd-week-count { display: none; }
+.wd-card.is-small .wd-kindle-flame { right: 22px; top: 42px; width: 23px; height: 23px; }
+.wd-card.is-small .wd-spark-one { right: 67px; top: 13px; }
+.wd-card.is-small .wd-spark-two { right: 0; top: 50px; }
+
+.wd-phone-frame { width: min(100%,370px); margin: 14px auto 0; padding: 9px; border: 1px solid #625044; border-radius: 38px; background: #100d0b; box-shadow: 0 26px 58px rgba(0,0,0,.36), inset 0 0 0 1px #0b0908; }
+.wd-phone-screen { position: relative; display: flex; flex-direction: column; min-height: 590px; overflow: hidden; padding: 19px 12px 23px; border-radius: 30px; background: radial-gradient(ellipse at 50% 36%,#58321d 0%,#352219 33%,#211912 76%); }
+.wd-phone-status { display: flex; justify-content: space-between; padding: 0 7px; color: #fff0df; font-size: 11px; font-weight: 700; }
+.wd-phone-date { display: grid; gap: 5px; margin: 45px 8px 21px; color: #fff0df; }
+.wd-phone-date small { color: #f2bd83; font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+.wd-phone-date strong { font: 600 27px/1 "Fraunces", Georgia, serif; letter-spacing: -.03em; }
+.wd-phone-screen .wd-card { width: 100%; min-height: 223px; margin: 0; padding: 16px 14px 14px; grid-template-columns: minmax(0,1fr) 88px; border-radius: 19px; }
+.wd-phone-screen .wd-streak-number strong { font-size: 27px; }
+.wd-phone-screen .wd-streak-number span { font-size: 10px; }
+.wd-phone-screen .wd-message-block h2 { font-size: 19px; }
+.wd-phone-screen .wd-message-block p { font-size: 10px; }
+.wd-phone-screen .wd-week-days { gap: 5px; }
+.wd-phone-screen .wd-day i { width: 19px; height: 19px; border-radius: 6px; }
+.wd-phone-screen .wd-week { justify-content: flex-start; }
+.wd-phone-screen .wd-week-count { display: none; }
+.wd-phone-screen .wd-week-days { gap: 4px; }
+.wd-phone-screen .wd-kindle-stage { min-height: 150px; }
+.wd-phone-screen .wd-kindle { width: 84px; height: auto; max-height: 112px; }
+.wd-phone-screen .wd-kindle-orbit { right: -2px; bottom: 24px; width: 88px; height: 88px; }
+.wd-phone-screen .wd-kindle-flame { right: 21px; top: 44px; width: 22px; height: 22px; }
+.wd-phone-screen .wd-spark-one { top: 23px; right: 66px; }
+.wd-phone-screen .wd-spark-two { top: 66px; right: -1px; }
+.wd-phone-apps { display: flex; justify-content: center; gap: 17px; margin: auto 0 24px; }
+.wd-phone-apps i { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(255,239,218,.16); border-radius: 13px; background: rgba(255,244,226,.12); color: #ffdbb5; font-size: 16px; font-style: normal; }
+.wd-phone-homebar { position: absolute; bottom: 9px; left: 50%; width: 91px; height: 4px; border-radius: 3px; background: #fff4e8; transform: translateX(-50%); }
+
+.wd-desktop-screen { position: relative; min-height: 365px; margin: 14px auto 0; overflow: hidden; border: 1px solid #5c4638; border-radius: 15px; background: #1d1713; }
+.wd-desktop-topline { position: relative; z-index: 1; gap: 8px; height: 43px; padding: 0 15px; border-bottom: 1px solid rgba(255,241,221,.12); color: #ddcbbb; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.wd-desktop-time { margin-left: auto; color: #a98c76; font-size: 10px; letter-spacing: 0; }
+.wd-windows-board { position: relative; z-index: 2; width: min(100%,610px); margin: 22px auto; padding: 17px; border: 1px solid rgba(255,241,221,.13); border-radius: 15px; background: rgba(33,26,21,.94); }
+.wd-windows-board header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; color: #f4e9de; font-size: 13px; }
+.wd-windows-board header span { color: #d7a06f; font-size: 10px; }
+.wd-windows-board .wd-card { min-height: 211px; }
+.wd-mac-wallpaper { position: relative; min-height: 320px; padding: 27px 8% 30px; overflow: hidden; background: #392619; }
+.wd-mac-wallpaper::before,.wd-mac-wallpaper::after { position: absolute; content: ""; pointer-events: none; }
+.wd-mac-wallpaper::before { top: -115px; right: 11%; width: 390px; height: 390px; border: 1px solid rgba(255,218,179,.12); border-radius: 50%; box-shadow: 0 0 0 22px rgba(255,218,179,.025),0 0 0 58px rgba(255,218,179,.025),0 0 0 98px rgba(255,218,179,.02); }
+.wd-mac-wallpaper::after { right: 0; bottom: 0; left: 0; height: 90px; background: linear-gradient(0deg,rgba(28,18,12,.52),transparent); }
+.wd-mac-date { position: absolute; z-index: 1; top: 36px; left: 8%; display: grid; gap: 2px; color: #f9e7d4; font-size: 13px; }
+.wd-mac-date b { font: 600 50px/1 "Fraunces", Georgia, serif; }
+.wd-mac-wallpaper .wd-card { position: relative; z-index: 1; width: min(100%,470px); min-height: 205px; margin: 0 0 0 auto; }
+.wd-wallpaper-sun { position: absolute; z-index: 0; left: 22%; bottom: 40px; width: 110px; height: 110px; border-radius: 50%; background: rgba(217,108,59,.35); filter: blur(1px); }
+
+.wd-stage-wrap.is-phone { min-height: 0; }
+.wd-stage-wrap.is-windows,.wd-stage-wrap.is-mac { min-height: 446px; }
+.wd-stage-wrap.is-windows .wd-desktop-screen,.wd-stage-wrap.is-mac .wd-desktop-screen { max-width: 900px; }
+.wd-phone-screen .wd-card.is-small { width: min(86%,310px); min-height: 188px; margin-inline: auto; grid-template-columns: minmax(0,1fr) 72px; padding: 15px 12px 13px; }
+.wd-phone-screen .wd-card.is-small .wd-kindle { width: 70px; max-height: 94px; }
+.wd-phone-screen .wd-card.is-small .wd-kindle-orbit { right: -2px; width: 72px; height: 72px; }
+.wd-phone-screen .wd-card.is-small .wd-kindle-stage { min-height: 110px; }
+.wd-windows-board .wd-card.is-small { width: min(100%,310px); min-height: 188px; }
+.wd-mac-wallpaper .wd-card.is-small { width: min(100%,310px); min-height: 188px; }
+
+.wd-footer { max-width: 1120px; flex-wrap: wrap; gap: 10px 20px; justify-content: space-between; margin: 21px auto 0; color: #a99583; }
+.wd-footer>span:first-child { color: #e2a36d; font-size: 9px; font-weight: 700; letter-spacing: .15em; }
+.wd-footer p { flex: 1 1 420px; margin: 0; font-size: 10px; line-height: 1.55; }
+.wd-motion-note { gap: 8px; color: #c4aa93; font-size: 10px; }
+.wd-action-toast { position: fixed; z-index: 20; right: 22px; bottom: 22px; display: flex; align-items: center; gap: 11px; min-width: 260px; padding: 13px 14px; border: 1px solid rgba(251,132,37,.42); border-radius: 14px; background: #2b1c13; color: #fff2df; box-shadow: 0 12px 35px rgba(0,0,0,.32); animation: wd-copy-in .22s ease-out both; }
+.wd-action-toast-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: #fb8425; color: #24170f; }
+.wd-action-toast>span:nth-child(2) { display: grid; gap: 3px; }
+.wd-action-toast strong { font-size: 11px; }
+.wd-action-toast small { color: #c7b5a4; font-size: 10px; }
+.wd-action-toast button { margin-left: auto; border: 0; background: transparent; color: #c7b5a4; font-size: 20px; line-height: 1; cursor: pointer; }
+
+@keyframes wd-copy-in { from { opacity: .25; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes wd-spark { 0%,100% { opacity: .35; transform: scale(.8) rotate(-8deg); } 50% { opacity: 1; transform: scale(1.15) rotate(10deg); } }
+@keyframes wd-flame { from { transform: scale(.94); box-shadow: 0 0 0 4px rgba(251,132,37,.1); } to { transform: scale(1.05); box-shadow: 0 0 0 7px rgba(251,132,37,.05); } }
+@keyframes wd-wave { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-5px) rotate(3deg); } }
+@keyframes wd-think { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes wd-lift { 0%,100% { transform: translateY(1px); } 45% { transform: translateY(-9px); } 65% { transform: translateY(-5px); } }
+@keyframes wd-sleepy { 0%,100% { transform: translateY(5px) rotate(3deg); } 50% { transform: translateY(1px) rotate(0); } }
+@keyframes wd-celebrate { 0%,100% { transform: translateY(0) scale(1); } 35% { transform: translateY(-11px) scale(1.04); } 68% { transform: translateY(0) scale(.98); } }
+.pose-wave .wd-kindle { animation: wd-wave 2.1s ease-in-out infinite; }
+.pose-think .wd-kindle { animation: wd-think 3.4s ease-in-out infinite; }
+.pose-lift .wd-kindle { animation: wd-lift 1.8s cubic-bezier(.25,.6,.3,1) infinite; }
+.pose-sleepy .wd-kindle { animation: wd-sleepy 3s ease-in-out infinite; }
+.pose-celebrate .wd-kindle { animation: wd-celebrate 1.45s cubic-bezier(.2,.8,.3,1) infinite; }
+
+@media (max-width: 860px) {
+  .wd-page { padding-inline: 20px; }
+  .wd-control-row { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .wd-control-label { flex-basis: auto; }
+  .wd-device-row { display: grid; grid-template-columns: 1fr auto; }
+  .wd-device-row .wd-control-label { grid-column: 1/-1; }
+  .wd-view-options { margin-left: 0; }
+}
+@media (max-width: 620px) {
+  .wd-page { padding: 19px 14px 24px; }
+  .wd-intro { margin-top: 48px; }
+  .wd-intro-copy { font-size: 13px; }
+  .wd-preview-badge { gap: 6px; font-size: 8px; }
+  .wd-preview-badge b { font-size: 8px; }
+  .wd-moment-options { display: flex; width: 100%; margin-right: -14px; padding-right: 14px; }
+  .wd-moment-options button { flex-basis: 91px; min-width: 91px; padding: 8px; }
+  .wd-device-row { display: flex; }
+  .wd-device-options { width: 100%; }
+  .wd-device-options button { flex: 1; padding-inline: 7px; }
+  .wd-view-options { gap: 4px; }
+  .wd-view-options button { min-height: 31px; font-size: 10px; }
+  .wd-stage-wrap { padding: 13px 10px 15px; }
+  .wd-phone-frame { border-radius: 33px; }
+  .wd-phone-screen { min-height: 570px; border-radius: 26px; }
+  .wd-stage-wrap.is-windows,.wd-stage-wrap.is-mac { min-height: 365px; }
+  .wd-desktop-screen { min-height: 300px; }
+  .wd-windows-board { margin: 16px auto; padding: 11px; }
+  .wd-windows-board .wd-card { min-height: 215px; }
+  .wd-mac-wallpaper { min-height: 258px; padding: 26px 12px; }
+  .wd-mac-date { top: 22px; left: 14px; font-size: 10px; }
+  .wd-mac-date b { font-size: 34px; }
+  .wd-mac-wallpaper .wd-card { width: 78%; min-height: 200px; grid-template-columns: minmax(0,1fr) 78px; padding: 14px 11px 12px; }
+  .wd-mac-wallpaper .wd-message-block h2 { font-size: 16px; }
+  .wd-mac-wallpaper .wd-message-block p { font-size: 9px; }
+  .wd-footer { align-items: flex-start; flex-direction: column; }
+  .wd-action-toast { right: 14px; bottom: 14px; left: 14px; min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

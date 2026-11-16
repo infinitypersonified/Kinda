@@ -696,6 +696,90 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const nightTasks = nightCountResult.count || 0;
       const priorityTasks = priorityCountResult.count || 0;
       const deepWorkTasks = deepWorkCountResult.count || 0;
+      const categoryBadgeSpecs = [
+        { key: "personalTasks", category: "Personal" },
+        { key: "workTasks", category: "Work" },
+        { key: "learningTasks", category: "Learning" },
+        { key: "buildingTasks", category: "Building" },
+        { key: "creativeTasks", category: "Creative work" },
+        { key: "healthTasks", category: "Health" },
+        { key: "fitnessTasks", category: "Fitness" },
+        { key: "relationshipsTasks", category: "Relationships" },
+        { key: "financeTasks", category: "Finance" },
+        { key: "homeTasks", category: "Home & errands" },
+        { key: "communityTasks", category: "Community" },
+      ];
+      const categoryCountResults = await Promise.all(
+        categoryBadgeSpecs.map(({ category }) => db.from("tasks").select(
+          "id",
+          { count: "exact", head: true },
+        ).eq("user_id", userId).eq("done", true).eq("category", category)),
+      );
+      const categoryTaskCounts: Record<string, number> = {};
+      categoryCountResults.forEach((result, index) => {
+        if (result.error) throw result.error;
+        categoryTaskCounts[categoryBadgeSpecs[index].key] = result.count || 0;
+      });
+
+      const monthStartKey = `${today.slice(0, 7)}-01`;
+      const [monthYear, monthNumber] = today.slice(0, 7).split("-").map(Number);
+      const nextMonthKey = new Date(Date.UTC(monthYear, monthNumber, 1))
+        .toISOString().slice(0, 10);
+      const daysInMonth = new Date(Date.UTC(monthYear, monthNumber, 0))
+        .getUTCDate();
+      const localMidnightIso = (key: string) =>
+        new Date(Date.parse(`${key}T00:00:00Z`) + tzOffset * 60000)
+          .toISOString();
+      const monthlyRows: ApiRow[] = [];
+      for (let from = 0;; from += 1000) {
+        const { data: page, error } = await db.from("tasks").select(
+          "category,completed_at,elapsed_seconds",
+        ).eq("user_id", userId).eq("done", true)
+          .gte("completed_at", localMidnightIso(monthStartKey))
+          .lt("completed_at", localMidnightIso(nextMonthKey))
+          .order("completed_at", { ascending: true })
+          .range(from, from + 999);
+        if (error) throw error;
+        monthlyRows.push(...(page || []));
+        if (!page || page.length < 1000 || from >= 49000) break;
+      }
+      const monthlyActiveDays = new Set<string>();
+      const monthlyCategories = new Set<string>();
+      let monthlyWeekendTasks = 0;
+      let monthlyDeepWorkTasks = 0;
+      for (const task of monthlyRows) {
+        const completedAt = Date.parse(String(task.completed_at || ""));
+        if (!Number.isFinite(completedAt)) continue;
+        const completedDay = localDayKey(completedAt);
+        monthlyActiveDays.add(completedDay);
+        monthlyCategories.add(String(task.category || "Personal"));
+        const weekday = new Date(`${completedDay}T00:00:00Z`).getUTCDay();
+        if (weekday === 0 || weekday === 6) monthlyWeekendTasks++;
+        if (Number(task.elapsed_seconds) >= 1500) monthlyDeepWorkTasks++;
+      }
+      let perfectMonth = false;
+      const candidateMonths = new Set(
+        [...perDay.keys(), ...virtualDays].map((key) => key.slice(0, 7)),
+      );
+      for (const month of candidateMonths) {
+        const [year, monthOfYear] = month.split("-").map(Number);
+        const monthStart = `${month}-01`;
+        if (baseDate && monthStart < baseDate) continue;
+        const days = new Date(Date.UTC(year, monthOfYear, 0)).getUTCDate();
+        const monthEnd = `${month}-${String(days).padStart(2, "0")}`;
+        if (monthEnd > today) continue;
+        if (Array.from({ length: days }, (_, index) =>
+          `${month}-${String(index + 1).padStart(2, "0")}`,
+        ).every(qualifies)) {
+          perfectMonth = true;
+          break;
+        }
+      }
+      let qualifiedMonthDays = 0;
+      for (let day = 1; day <= Math.min(daysInMonth, Number(today.slice(8))); day++) {
+        const key = `${today.slice(0, 7)}-${String(day).padStart(2, "0")}`;
+        if (qualifies(key)) qualifiedMonthDays++;
+      }
       const routineCounts = new Map<string, number>();
       let routineCompletions = 0;
       for (let from = 0;; from += 1000) {
@@ -801,7 +885,12 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const unlockedIds = [
         ...(completedTasks >= 1 ? ["first_spark"] : []),
         ...(completedTasks >= 25 ? ["task_master"] : []),
+        ...(completedTasks >= 50 ? ["half_century"] : []),
         ...(completedTasks >= 100 ? ["century_club"] : []),
+        ...(completedTasks >= 150 ? ["task_titan"] : []),
+        ...(completedTasks >= 200 ? ["task_legend"] : []),
+        ...(completedTasks >= 500 ? ["five_hundred_strong"] : []),
+        ...(completedTasks >= 1000 ? ["four_digit_force"] : []),
         ...(afternoonTasks >= 5 ? ["afternoon_task_killer"] : []),
         ...(dawnTasks >= 5 ? ["sunrise_spark"] : []),
         ...(nightTasks >= 5 ? ["midnight_momentum"] : []),
@@ -810,6 +899,26 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         ...(qualifiedWeekDays === 7 ? ["perfect_week"] : []),
         ...(routineCompletions >= 7 ? ["routine_builder"] : []),
         ...(finishedChallenge ? ["challenge_warrior"] : []),
+        ...(monthlyRows.length >= 50 ? ["monthly_50"] : []),
+        ...(monthlyRows.length >= 100 ? ["monthly_100"] : []),
+        ...(monthlyActiveDays.size >= 20 ? ["monthly_20_days"] : []),
+        ...(perfectMonth ? ["perfect_month"] : []),
+        ...(monthlyCategories.size >= 5 ? ["monthly_mix"] : []),
+        ...(monthlyWeekendTasks >= 12 ? ["weekend_month"] : []),
+        ...(monthlyDeepWorkTasks >= 20 ? ["focus_month"] : []),
+        ...(categoryTaskCounts.personalTasks >= 50 ? ["personal_50"] : []),
+        ...(categoryTaskCounts.workTasks >= 25 ? ["work_25"] : []),
+        ...(categoryTaskCounts.learningTasks >= 25 ? ["learning_25"] : []),
+        ...(categoryTaskCounts.buildingTasks >= 25 ? ["building_25"] : []),
+        ...(categoryTaskCounts.creativeTasks >= 25 ? ["creative_25"] : []),
+        ...(categoryTaskCounts.healthTasks >= 25 ? ["health_25"] : []),
+        ...(categoryTaskCounts.fitnessTasks >= 25 ? ["fitness_25"] : []),
+        ...(categoryTaskCounts.relationshipsTasks >= 25
+          ? ["relationships_25"]
+          : []),
+        ...(categoryTaskCounts.financeTasks >= 10 ? ["finance_10"] : []),
+        ...(categoryTaskCounts.homeTasks >= 25 ? ["home_25"] : []),
+        ...(categoryTaskCounts.communityTasks >= 10 ? ["community_10"] : []),
       ];
       let newlyUnlocked: ApiRow[] = [];
       if (unlockedIds.length) {
@@ -844,6 +953,15 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           qualifiedWeekDays,
           routineCompletions,
           challengeProgress,
+          ...categoryTaskCounts,
+          monthlyTasks: monthlyRows.length,
+          monthlyActiveDays: monthlyActiveDays.size,
+          monthlyCategories: monthlyCategories.size,
+          monthlyWeekendTasks,
+          monthlyDeepWorkTasks,
+          perfectMonth: Number(perfectMonth),
+          qualifiedMonthDays,
+          daysInMonth,
         },
       });
     }

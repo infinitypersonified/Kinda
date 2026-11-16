@@ -1,0 +1,696 @@
+{
+ "url": "http://127.0.0.1:5174/widget-preview.html?device=phone%26mode=dark%26moment=risk",
+ "at": "2026-11-16T15:41:32.922Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    1,
+    1,
+    1
+   ],
+   "motion": {
+    "elements": 5,
+    "css": 5,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 1746,
+     "screens": 2.1,
+     "words": 156,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 13,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "✦"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Keep the streak close.",
+     "words": 4,
+     "chars": 22,
+     "lines": 1,
+     "size": 36,
+     "vw": 9.2,
+     "font": "Fraunces",
+     "weight": 600,
+     "tracking": -0.045,
+     "leading": 1.03,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.93,
+     "top": 122,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Keep the streak close.",
+     "words": 4,
+     "lines": 1,
+     "size": 36,
+     "font": "Fraunces"
+    },
+    "headings": [
+     {
+      "text": "kinda",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 23,
+      "vw": 5.9,
+      "font": "Fraunces",
+      "weight": 700,
+      "tracking": -0.05,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.25,
+      "top": 19,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "Keep the streak close.",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 36,
+      "vw": 9.2,
+      "font": "Fraunces",
+      "weight": 600,
+      "tracking": -0.045,
+      "leading": 1.03,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.93,
+      "top": 122,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Make today count.",
+      "words": 3,
+      "chars": 17,
+      "lines": 1,
+      "size": 27,
+      "vw": 6.9,
+      "font": "Fraunces",
+      "weight": 600,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.72,
+      "top": 736,
+      "tag": "strong",
+      "kind": "heading"
+     },
+     {
+      "text": "12",
+      "words": 1,
+      "chars": 2,
+      "lines": 1,
+      "size": 27,
+      "vw": 6.9,
+      "font": "Fraunces",
+      "weight": 700,
+      "tracking": -0.035,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.07,
+      "top": 805,
+      "tag": "strong",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 4,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 1,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.9,
+       "mono": false
+      },
+      {
+       "family": "Fraunces",
+       "share": 0.1,
+       "mono": false
+      },
+      {
+       "family": "DM Mono",
+       "share": 0.01,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      16,
+      18,
+      19,
+      23,
+      27,
+      36
+     ],
+     "sizeCount": 12,
+     "notLoaded": [
+      "DM Mono"
+     ],
+     "body": {
+      "font": "DM Sans",
+      "size": 10,
+      "leading": 1.55,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": null
+     },
+     "measureChars": 72,
+     "max": {
+      "size": 36,
+      "vw": 9.2,
+      "font": "Fraunces",
+      "text": "Keep the streak close."
+     },
+     "monoShare": 0.01,
+     "monoProseShare": 0.01,
+     "monoFamilies": [
+      "DM Mono"
+     ],
+     "monoSamples": [
+      "01",
+      "02"
+     ],
+     "microLabels": 8,
+     "microLabelShare": 0.214,
+     "microSamples": [
+      "DESIGN PREVIEW",
+      "NOT LIVE",
+      "A LITTLE SPARK, RIGHT WHERE YOU NEED IT",
+      "THE STREAK WIDGET",
+      "ONLY WHEN IT MATTERS",
+      "MONDAY, NOVEMBER 16"
+     ],
+     "upperShare": 0.27,
+     "centerShare": 0.05,
+     "smallText": 13
+    },
+    "eyebrows": [
+     {
+      "text": "A LITTLE SPARK, RIGHT WHERE YOU NEED IT",
+      "above": "Keep the streak close.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 10,
+      "top": 97
+     },
+     {
+      "text": "MONDAY, NOVEMBER 16",
+      "above": "Make today count.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 9,
+      "top": 719
+     }
+    ],
+    "numbered": [
+     {
+      "text": "01",
+      "size": 10,
+      "top": 288
+     },
+     {
+      "text": "02",
+      "size": 10,
+      "top": 447
+     }
+    ],
+    "color": {
+     "bodyBg": "#17120f",
+     "bodyBgHsl": {
+      "h": 23,
+      "s": 0.21,
+      "l": 0.07
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#17120f",
+       "top": 0,
+       "hsl": {
+        "h": 23,
+        "s": 0.21,
+        "l": 0.07
+       }
+      },
+      {
+       "color": "#211913",
+       "top": 590,
+       "hsl": {
+        "h": 26,
+        "s": 0.27,
+        "l": 0.1
+       }
+      },
+      {
+       "color": "#100d0b",
+       "top": 630,
+       "hsl": {
+        "h": 24,
+        "s": 0.19,
+        "l": 0.05
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#a99583",
+       "share": 0.2
+      },
+      {
+       "color": "#b9a89a",
+       "share": 0.16
+      },
+      {
+       "color": "#b8a79a",
+       "share": 0.07
+      },
+      {
+       "color": "#c7b5a4",
+       "share": 0.06
+      },
+      {
+       "color": "#f3a05b",
+       "share": 0.05
+      }
+     ],
+     "button": null,
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 8,
+     "radius": 9,
+     "height": 47,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "7:15 AM Morning",
+      "12:30 PM Midday",
+      "5:45 PM After work",
+      "8:15 PM Streak at risk",
+      "8:40 PM Goal reached"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 1,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "div.wd-phone-frame → rgba(0, 0, 0, 0.36) 0px 26px 58px 0px, rgb(11, 9, 8) 0px 0px 0px 1px inset"
+     ],
+     "gradients": 3,
+     "scrims": 0,
+     "gradientSamples": [
+      "main.wd-page → radial-gradient(at 76% 18%, rgba(126, 64, 31, 0.16), rgba(0, 0, 0, 0) 35%), none",
+      "div.wd-phone-screen → radial-gradient(at 50% 36%, rgb(88, 50, 29) 0%, rgb(53, 34, 25) 33%, rgb(33, 25, 18) 76%)",
+      "span.wd-kindle-orbit → radial-gradient(circle, rgba(251, 132, 37, 0.13), rgba(0, 0, 0, 0) 66%)"
+     ],
+     "gradientText": 0,
+     "hairlines": 2,
+     "hairlineSamples": [
+      "section.wd-controls 362px",
+      "div.wd-control-row.wd-device-row 362px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 18,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 1,
+     "fixed": false,
+     "height": 30,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm sans",
+     "fraunces"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 1746,
+    "margins": {
+     "left": 14,
+     "right": 14
+    },
+    "sections": [
+     {
+      "sel": "section.wd-intro",
+      "tag": "section",
+      "top": 97,
+      "height": 140,
+      "words": 33,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Keep the streak close.",
+       "size": 36,
+       "tag": "h1"
+      },
+      "left": 14,
+      "right": 15,
+      "textLeft": 14,
+      "textRight": 15,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.wd-controls",
+      "tag": "section",
+      "top": 270,
+      "height": 292,
+      "words": 33,
+      "media": 0,
+      "middle": 8,
+      "heading": null,
+      "left": 14,
+      "right": 14,
+      "textLeft": 14,
+      "textRight": 50,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.wd-stage-wrap.is-phone",
+      "tag": "section",
+      "top": 590,
+      "height": 646,
+      "words": 37,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Make today count.",
+       "size": 27,
+       "tag": "strong"
+      },
+      "left": 25,
+      "right": 25,
+      "textLeft": 25,
+      "textRight": 25,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "footer.wd-footer",
+      "tag": "footer",
+      "top": 1257,
+      "height": 465,
+      "words": 36,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 14,
+      "right": 45,
+      "textLeft": 14,
+      "textRight": 45,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [
+     {
+      "top": 1000,
+      "height": 256
+     },
+     {
+      "top": 1328,
+      "height": 380
+     }
+    ],
+    "h1s": [
+     {
+      "text": "Keep the streak close.",
+      "size": 36,
+      "top": 122,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [
+     {
+      "text": "A LITTLE SPARK, RIGHT WHERE YOU NEED IT",
+      "side": "left",
+      "px": 14
+     },
+     {
+      "text": "Keep the streak close.",
+      "side": "left",
+      "px": 14
+     },
+     {
+      "text": "A small, kind reminder that changes with your day.",
+      "side": "left",
+      "px": 14
+     },
+     {
+      "text": "YOUR KINDLE, YOUR RHYTHM",
+      "side": "left",
+      "px": 14
+     },
+     {
+      "text": "Preview only. The final widget will use your live ",
+      "side": "left",
+      "px": 14
+     }
+    ],
+    "edges": [
+     {
+      "x": 14,
+      "n": 1
+     },
+     {
+      "x": 62,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 2,
+    "bodySize": 10,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "eyebrow",
+   "width": 390,
+   "message": "2 eyebrow/kicker label(s) above headings: \"A LITTLE SPARK, RIGHT WHERE YOU NEED IT\" above \"Keep the streak close.\"; \"MONDAY, NOVEMBER 16\" above \"Make today count.\"",
+   "fix": "Delete them. If the label carried real information, fold it into the headline or the supporting sentence."
+  },
+  {
+   "level": "FAIL",
+   "id": "mono",
+   "width": 390,
+   "message": "Monospace type outside code: DM Mono — e.g. \"01\", \"02\"",
+   "fix": "Set it in the text face. Monospace is for literal code inside <pre>/<code> only."
+  },
+  {
+   "level": "FAIL",
+   "id": "numbering",
+   "width": 390,
+   "message": "Decorative index numbers: \"01\", \"02\"",
+   "fix": "Remove them. If order truly matters, write it into the words (\"First, …\") or use a real <ol>."
+  },
+  {
+   "level": "FAIL",
+   "id": "micro-label",
+   "width": 390,
+   "message": "8 tiny uppercase letter-spaced labels (e.g. \"DESIGN PREVIEW\", \"NOT LIVE\", \"A LITTLE SPARK, RIGHT WHERE YOU NEED IT\", \"THE STREAK WIDGET\").",
+   "fix": "Use sentence-case text at a readable size, or delete the label."
+  },
+  {
+   "level": "FAIL",
+   "id": "emoji",
+   "width": 390,
+   "message": "Emoji in the page: ✦",
+   "fix": "Remove. Use words or real imagery."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "width": 390,
+   "message": "3 gradient fill(s): main.wd-page → radial-gradient(at 76% 18%, rgba(126, 64, 31, 0.16), rgba(0, 0, 0, 0) 35%), none | div.wd-phone-screen → radial-gradient(at 50% 36%, rgb(88, 50, 29) 0%, rgb(53, 34, 25) 33%, rgb(33, 25, 18) 76%) | span.wd-kindle-orbit → radial-gradient(circle, rgba(251, 132, 37, 0.13), rgba(0, 0, 0, 0) 66%)",
+   "fix": "Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "width": 390,
+   "message": "1 box-shadow(s) on elements at rest: div.wd-phone-frame → rgba(0, 0, 0, 0.36) 0px 26px 58px 0px, rgb(11, 9, 8) 0px 0px 0px 1px inset",
+   "fix": "Remove. Separate surfaces with a tone step or space. Shadows are for things that really float (menus, dialogs, sticky bars)."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "width": 390,
+   "message": "2 thin rule(s)/divider line(s): section.wd-controls 362px | div.wd-control-row.wd-device-row 362px",
+   "fix": "Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "outlined-box",
+   "width": 390,
+   "message": "3 boxes drawn with a 1px outline.",
+   "fix": "Define a surface by its fill (one tone step from the page) or leave the content unboxed."
+  },
+  {
+   "level": "WARN",
+   "id": "font-fallback",
+   "width": 390,
+   "message": "Typeface(s) declared but not loaded, so a fallback is rendering: DM Mono",
+   "fix": "Fix the font URL / family name, or the screenshots you are judging are not the design."
+  },
+  {
+   "level": "WARN",
+   "id": "size-count",
+   "width": 390,
+   "message": "12 different font sizes (8, 9, 10, 11, 12, 13, 16, 18, 19, 23, 27, 36).",
+   "fix": "A page needs about five: display, heading, lead, body, small."
+  },
+  {
+   "level": "FAIL",
+   "id": "body-size",
+   "width": 390,
+   "message": "Body text is 10px (the size most of the running text is set in).",
+   "fix": "Body copy 16–20px. Map small sizes from blueprints onto your body step."
+  },
+  {
+   "level": "FAIL",
+   "id": "small-text",
+   "width": 390,
+   "message": "13 text blocks under 13px.",
+   "fix": "Nothing meant to be read goes below 13px."
+  },
+  {
+   "level": "WARN",
+   "id": "dev-server",
+   "width": 390,
+   "message": "This page is served by a development server (Vite, webpack or Next in dev mode).",
+   "fix": "Run the last gate on the production build too (vite build && vite preview, next build && next start, or the built index.html): minifiers and bundlers change the CSS a visitor receives."
+  },
+  {
+   "level": "WARN",
+   "id": "blank-gap",
+   "width": 390,
+   "message": "A 380px stretch at 1328px holds nothing.",
+   "fix": "Check that it is a deliberate rest (once per page at most); otherwise close it to the normal section gap."
+  },
+  {
+   "level": "WARN",
+   "id": "edge-text",
+   "width": 390,
+   "message": "5 text block(s) sit 12–15px from the phone's edge: \"A LITTLE SPARK, RIGHT WHERE YO\" (14px); \"Keep the streak close.\" (14px); \"A small, kind reminder that ch\" (14px)",
+   "fix": "The page margin is 16–20px on a phone; the header and the corner labels sit on it too."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\widget-preview\\phone\\mobile-fold.jpg",
+   "pages": [
+    "C:\\Users\\ojako\\Downloads\\kinda-social-journal\\.taste-skill\\widget-preview\\phone\\mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

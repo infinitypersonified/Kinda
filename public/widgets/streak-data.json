@@ -1,0 +1,12 @@
+{
+  "streak": 0,
+  "best": 0,
+  "done": 0,
+  "total": 0,
+  "needed": 0,
+  "signedIn": false,
+  "message": "Your streak is waiting.",
+  "subline": "Open Kinda to see today’s progress.",
+  "week": "Your week starts here",
+  "kindle": "/widgets/kindle-happy.svg"
+}

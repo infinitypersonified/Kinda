@@ -1101,7 +1101,14 @@ function WorkspaceApp({ authClient, client }) {
   const [inviteToken, setInviteToken] = useState(inviteTokenFromUrl);
   const [invitePreview, setInvitePreview] = useState(null);
   const [inviteError, setInviteError] = useState("");
-  const [page, setPage] = useState("home");
+  const widgetLaunchRequested = useRef(
+    new URLSearchParams(window.location.search).get("page") === "tasks",
+  );
+  const [page, setPage] = useState(() =>
+    new URLSearchParams(window.location.search).get("page") === "tasks"
+      ? "tasks"
+      : "home",
+  );
   const [loading, setLoading] = useState(!cachedBoot);
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
@@ -1333,6 +1340,13 @@ function WorkspaceApp({ authClient, client }) {
     if (!("serviceWorker" in navigator)) return undefined;
     const onServiceWorkerMessage = (event) => {
       const { notification, type } = event.data || {};
+      if (type === "kinda-widget-open-tasks") {
+        widgetLaunchRequested.current = true;
+        setPage("tasks");
+        setMenuOpen(false);
+        setChatMobileOpen(false);
+        return;
+      }
       if (type !== "kinda-push" || notification?.kind !== "streak-risk") return;
       setKindleToast({
         key: Date.now(),
@@ -2049,6 +2063,44 @@ function WorkspaceApp({ authClient, client }) {
   const openTasks = tasks.filter((task) => !task.done);
   const todayKey = localDate();
   const todayTasks = tasks.filter((task) => taskDay(task) === todayKey);
+  useEffect(() => {
+    if (!user || !tasksLoaded || !streak || !("serviceWorker" in navigator))
+      return undefined;
+    const doneCount = todayTasks.filter((task) => task.done).length;
+    const totalCount = todayTasks.length;
+    const needed = Math.max(
+      0,
+      Number(streak.needed) ||
+        Math.max(
+          (Number(streak.minTasks) || 5) - totalCount,
+          Math.ceil(totalCount * ((Number(streak.percent) || 80) / 100)) - doneCount,
+        ),
+    );
+    let cancelled = false;
+    navigator.serviceWorker.ready.then((registration) => {
+      if (cancelled) return;
+      const worker = registration.active || navigator.serviceWorker.controller;
+      worker?.postMessage({
+        type: "kinda-widget-update",
+        data: {
+          streak: Number(streak.current) || 0,
+          best: Number(streak.best) || 0,
+          done: doneCount,
+          total: totalCount,
+          needed,
+          minTasks: Number(streak.minTasks) || 5,
+          doneToday: Boolean(streak.doneToday),
+          signedIn: true,
+          date: todayKey,
+          week: `${(streak.week || []).filter((day) => day.qualified).length} / 7 days this week`,
+          updatedAt: Date.now(),
+        },
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, tasksLoaded, tasks, streak, todayKey]);
   const recentPastDayKeys = Array.from({ length: 3 }, (_, index) => {
     const date = new Date();
     date.setHours(12, 0, 0, 0);
@@ -2467,7 +2519,8 @@ function WorkspaceApp({ authClient, client }) {
         return;
       }
       await authClient.token();
-      setPage("home");
+      setPage(widgetLaunchRequested.current ? "tasks" : "home");
+      widgetLaunchRequested.current = false;
     } catch (error) {
       setAuthError(error.message);
     } finally {
@@ -2484,6 +2537,9 @@ function WorkspaceApp({ authClient, client }) {
           response.error.message || "Could not log out. Please try again.",
         );
       clearSavedData(user?.id);
+      widgetLaunchRequested.current = false;
+      if ("serviceWorker" in navigator)
+        navigator.serviceWorker.controller?.postMessage({ type: "kinda-widget-clear" });
       setUser(null);
       setProfile(null);
       resetTasks();
@@ -3341,6 +3397,9 @@ function WorkspaceApp({ authClient, client }) {
         /* ignore */
       }
       clearSavedData(user.id);
+      widgetLaunchRequested.current = false;
+      if ("serviceWorker" in navigator)
+        navigator.serviceWorker.controller?.postMessage({ type: "kinda-widget-clear" });
       setUser(null);
       setProfile(null);
       resetTasks();
