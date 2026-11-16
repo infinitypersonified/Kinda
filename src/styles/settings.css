@@ -151,6 +151,31 @@
   font-size: 11px;
 }
 
+.toast-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-action {
+  flex: 0 0 auto;
+  border: 1px solid #ffffff66;
+  border-radius: 3px;
+  padding: 5px 9px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: #ffffff1a;
+}
+
+.toast.toast-with-action {
+  pointer-events: auto;
+}
+
 .toast-mark {
   display: grid;
   width: 21px;

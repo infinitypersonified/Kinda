@@ -458,6 +458,10 @@ button,
   transform: scale(1.08);
 }
 
+html body .task-check:active {
+  transform: scale(0.92);
+}
+
 .check-path {
   stroke-dasharray: 20;
   stroke-dashoffset: 20;
@@ -500,11 +504,21 @@ button,
   }
 
   40% {
-    transform: scale(1.35);
+    transform: scale(1.12);
   }
 
   100% {
     transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-check,
+  .task-check.checked .check-path,
+  .task-pop .task-check,
+  .task-pop {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

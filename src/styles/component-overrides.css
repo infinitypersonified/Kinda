@@ -121,8 +121,9 @@
 }
 
 @media (max-width: 780px) {
-  .home-new-task {
-    display: none;
+  .app-shell .home-new-task,
+  .app-shell .tasks-new-task {
+    display: none !important;
   }
 
   .day-glance .streak-share {
@@ -143,13 +144,11 @@
   inset: auto;
 }
 
-/* Home on wide screens: tasks on the left, progress card and circles on the right */
+/* Keep the home progress and circle sections together in one sidebar. */
 @media (min-width: 1000px) {
   .page-content.home-page {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 340px;
-    grid-auto-flow: row dense;
-    column-gap: 40px;
     align-items: start;
     width: min(100%, 1320px);
   }
@@ -159,21 +158,27 @@
   }
 
   .home-page>.home-grid {
-    display: contents;
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    align-items: start;
+    column-gap: 40px;
   }
 
   .home-page .home-tasks {
     grid-column: 1;
-    grid-row: span 2;
-    margin-top: 0;
   }
 
-  .home-page>.day-glance {
+  .home-page .home-sidebar {
     grid-column: 2;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 18px;
-    text-align: center;
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .home-page .day-glance {
+    margin: 0;
   }
 
   .home-page .day-glance .progress-ring {
@@ -194,10 +199,29 @@
     margin-left: 0;
   }
 
-  .home-page .home-social {
-    grid-column: 2;
+  .home-page .home-sidebar .home-social {
+    margin-top: 0;
     border-left: 0;
-    padding-left: 0;
+    border-top: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 999px) {
+  .home-page .home-sidebar {
+    display: contents;
+  }
+
+  .home-page .day-glance {
+    order: 1;
+  }
+
+  .home-page .home-tasks {
+    order: 2;
+  }
+
+  .home-page .home-social {
+    order: 3;
   }
 }
 
@@ -407,6 +431,7 @@ body:has(input:focus, textarea:focus, select:focus) .fab-add {
 }
 
 .circles-page .circle-tile {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -445,6 +470,19 @@ body:has(input:focus, textarea:focus, select:focus) .fab-add {
 .circles-page .circle-tile.selected {
   background: var(--soft-accent);
   border-color: var(--accent);
+}
+
+@media (max-width: 780px) {
+  .app-shell .circles-page .circle-tile,
+  .app-shell .circles-page .circle-tile:hover,
+  .app-shell .circles-page .circle-tile:active,
+  .app-shell .circles-page .circle-tile:focus,
+  .app-shell .circles-page .circle-tile:focus-within,
+  .app-shell .circles-page .circle-tile:focus-visible,
+  .app-shell .circles-page .circle-tile.selected {
+    border-color: transparent;
+    box-shadow: none;
+  }
 }
 
 .people-head {
@@ -893,7 +931,16 @@ button.ch-card {
 
 .ch-screen {
   display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   gap: 12px;
+}
+
+/* Challenge navigation must stay available on desktop too. */
+.ch-top .cd-back {
+  display: inline-flex;
+  margin-left: -8px;
 }
 
 .ch-top {
@@ -1004,22 +1051,75 @@ button.ch-card {
 }
 
 .ch-team-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
+  display: grid;
+  gap: 9px;
 }
 
 .ch-person {
   display: grid;
-  justify-items: center;
-  gap: 4px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 10px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.ch-person>b,
+.ch-person>small,
+.ch-person>.ch-member-progress {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.ch-person>b {
+  grid-row: 1;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.ch-person>small:first-of-type {
+  grid-row: 2;
+}
+
+.ch-person>.ch-member-progress {
+  grid-row: 3;
+}
+
+.ch-person>small:last-of-type {
+  grid-row: 4;
 }
 
 .ch-avatar {
   position: relative;
   display: inline-flex;
+  grid-column: 1;
+  grid-row: 1 / span 4;
+  justify-self: center;
+}
+
+.ch-member-progress {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--tint);
+}
+
+.ch-member-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.ch-person .ch-nudge {
+  grid-column: 3;
+  grid-row: 1 / span 4;
+  margin-left: 0;
 }
 
 .ch-avatar em {
@@ -1093,6 +1193,398 @@ button.ch-card {
   color: var(--accent-deep);
   font-size: 11px;
   font-weight: 600;
+}
+
+.challenge-share-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 1px 3px;
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.challenge-share-action:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A softer task sheet with controls that look the same across mobile browsers. */
+.modal-card.task-dialog {
+  width: min(100%, 540px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 30px;
+}
+
+.task-dialog h2 {
+  font-size: 25px;
+}
+
+.task-dialog .modal-subtitle {
+  margin-bottom: 22px;
+  font-size: 13px;
+}
+
+.task-dialog .modal-form {
+  gap: 17px;
+}
+
+.task-dialog .modal-form label {
+  gap: 8px;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.task-dialog .modal-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.task-dialog .modal-form select,
+.task-dialog .modal-form textarea {
+  min-height: 48px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 11px 13px;
+  background-color: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+
+.task-dialog .modal-form textarea {
+  min-height: 82px;
+}
+
+.task-dialog .modal-form input:focus,
+.task-dialog .modal-form select:focus,
+.task-dialog .modal-form textarea:focus,
+.task-dialog .task-date-trigger:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  background-color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.task-dialog .modal-form select {
+  appearance: none;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2 4 4 4 4-4' fill='none' stroke='%237a7165' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+.task-dialog .task-primary-fields {
+  grid-template-columns: minmax(0, 1.4fr) minmax(100px, .7fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.task-select {
+  position: relative;
+  min-width: 0;
+}
+
+.task-select-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-select-trigger>span {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-select-trigger>svg:last-child {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.task-select-trigger:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.task-select-menu {
+  position: absolute;
+  z-index: 9;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 3px;
+  overflow: auto;
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.task-select-menu>button {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-select-menu>button>span {
+  flex: 1;
+}
+
+.task-select-menu>button:hover,
+.task-select-menu>button.selected {
+  background: var(--surface-2);
+}
+
+.task-select-menu>button.selected>svg {
+  color: var(--accent-deep);
+}
+
+.task-select-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: var(--quiet);
+}
+
+.task-select-dot.high {
+  background: #d96b45;
+}
+
+.task-select-dot.low {
+  background: #6a8c75;
+}
+
+.task-select-dot.normal {
+  background: var(--accent);
+}
+
+.task-date-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.task-date-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-date-trigger>svg:first-child {
+  flex: 0 0 auto;
+  color: var(--accent-deep);
+}
+
+.task-date-trigger>span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-date-trigger>svg:last-child {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.task-calendar {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 7px);
+  left: 0;
+  width: min(320px, calc(100vw - 64px));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 13px;
+  background: var(--surface);
+  box-shadow: 0 12px 36px color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.task-calendar-head,
+.task-calendar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-calendar-head {
+  margin-bottom: 10px;
+}
+
+.task-calendar-head b {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.task-calendar-head button,
+.task-calendar-foot button {
+  display: inline-flex;
+  min-width: 34px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.task-calendar-head button:hover,
+.task-calendar-foot button:hover {
+  background: var(--surface-2);
+}
+
+.task-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.task-calendar-grid>button,
+.task-calendar-weekdays>span {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.task-calendar-grid>button {
+  cursor: pointer;
+}
+
+.task-calendar-grid>button:hover,
+.task-calendar-grid>button.today {
+  background: var(--soft-accent);
+  color: var(--accent-deep);
+}
+
+.task-calendar-grid>button.outside-month {
+  color: var(--quiet);
+  opacity: .55;
+}
+
+.task-calendar-grid>button.selected,
+.task-calendar-grid>button.selected:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.task-calendar-weekdays>span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.task-calendar-foot {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+
+.task-calendar-foot button:last-child {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.task-dialog .more-toggle {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: transparent;
+}
+
+.task-dialog .circle-share-field {
+  border-radius: 12px;
+  padding: 13px;
+}
+
+.task-dialog .modal-form>.full-button {
+  min-height: 48px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.modal-card.task-dialog {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.modal-card.task-dialog::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+@media (max-width: 560px) {
+  .modal-backdrop:has(.task-dialog) {
+    align-items: end;
+    padding: 8px 0 0;
+  }
+
+  .modal-card.task-dialog {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 20px 20px 0 0;
+    padding: 24px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .task-dialog .task-primary-fields {
+    grid-template-columns: minmax(0, 1.2fr) minmax(96px, .8fr);
+  }
+
+  .task-calendar {
+    width: min(320px, calc(100vw - 44px));
+  }
 }
 
 .profile-page {
@@ -1869,3 +2361,64 @@ button.ch-card {
       color-mix(in srgb, var(--accent-highlight) 88%, #000)
     );
   }
+/* Explicit light theme defaults and readable text for the mobile planner rows. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #f8f4ee;
+  --surface: #fffdf9;
+  --surface-2: #f4efe7;
+  --hover: #f1ebe2;
+  --tint: #ede6db;
+  --text: #221d17;
+  --text-soft: #4a4339;
+  --text-mid: #5b5348;
+  --muted: #6c6358;
+  --quiet: #7a7165;
+  --border: #e4dcd0;
+  --border-strong: #d2c8b9;
+  --on-accent: #1b110a;
+  --row-bg: transparent;
+  --row-first-bg: #f6ecd9;
+}
+
+:root[data-theme="light"] .app-shell .home-plan-group,
+:root[data-theme="light"] .app-shell .home-plan-group-head h3,
+:root[data-theme="light"] .app-shell .home-plan-group-head>span,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-main h3,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-title,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-meta,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-meta span,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-meta svg,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-cat,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-date,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-description,
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .icon-quiet,
+:root[data-theme="light"] .app-shell .task-list-page .task-row,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-main h3,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-title,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-meta,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-meta svg,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-cat,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-date,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .icon-quiet {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .app-shell .home-plan-group .task-row .task-check,
+:root[data-theme="light"] .app-shell .task-list-page .task-row .task-check {
+  border-color: var(--text-mid);
+}
+
+:root[data-theme="light"] .app-shell .home-plan-progress {
+  border-color: #e4dcd0;
+  background: #ede6db;
+}
+
+:root .app-shell .task-check.checked,
+:root .app-shell .home-plan-group .task-row .task-check.checked,
+:root .app-shell .task-list-page .task-row .task-check.checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #000;
+}

@@ -332,17 +332,102 @@ body .emoji-option.emoji-initials {
 }
 
 body .nudge-button {
+  position: relative;
   display: inline-flex;
+  justify-content: center;
   align-items: center;
   gap: 5px;
   margin-left: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent);
   border-radius: 3px;
   padding: 5px 9px;
-  background: var(--surface);
-  color: var(--accent-deep);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 600;
+  cursor: pointer;
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+body .nudge-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+body .nudge-button:disabled {
+  cursor: default;
+}
+
+.nudge-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.nudge-bell,
+.nudge-kite,
+.nudge-check {
+  position: absolute;
+  inset: 0;
+}
+
+.nudge-bell {
+  transition: opacity .15s ease, transform .15s ease;
+}
+
+.nudge-kite {
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+}
+
+.nudge-check {
+  opacity: 0;
+}
+
+.nudge-button.is-flying .nudge-bell {
+  animation: nudge-bell-fold .25s ease forwards;
+}
+
+.nudge-button.is-flying .nudge-kite {
+  animation: nudge-kite-fly .62s cubic-bezier(.2, .65, .35, 1) forwards;
+}
+
+.nudge-button.is-sent {
+  border-color: var(--accent-deep);
+  background: var(--soft-accent);
+  color: var(--accent-deep);
+}
+
+.nudge-button.is-sent .nudge-bell,
+.nudge-button.is-sent .nudge-kite {
+  opacity: 0;
+}
+
+.nudge-button.is-sent .nudge-check {
+  opacity: 1;
+}
+
+@keyframes nudge-bell-fold {
+  to { opacity: 0; transform: translateY(-5px) rotate(-18deg) scale(.65); }
+}
+
+@keyframes nudge-kite-fly {
+  0% { opacity: 0; transform: translate(-3px, 4px) scale(.6) rotate(-16deg); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translate(30px, -27px) scale(.78) rotate(12deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nudge-button,
+  .nudge-bell,
+  .nudge-kite {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 .nudge-list {

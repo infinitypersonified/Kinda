@@ -12,6 +12,7 @@ import Kindle, {
 import { BADGE_CATALOG, BadgeCollection, BadgeUnlock } from "../scripts/Badges.jsx";
 import StreakWeekProgress from "./StreakWeekProgress.jsx";
 import { ChallengeCard, ChallengeScreen } from "./Challenge.jsx";
+import NudgeButton from "./NudgeButton.jsx";
 import React, {
   createContext,
   useCallback,
@@ -65,6 +66,7 @@ import {
   Trophy,
   UserRound,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Flag,
@@ -577,6 +579,7 @@ function ConfirmDialog({
   children,
   confirmLabel,
   danger,
+  busy = false,
   onConfirm,
   onCancel,
 }) {
@@ -587,10 +590,11 @@ function ConfirmDialog({
         <button
           className={`button button-secondary ${danger ? "danger-button" : ""}`}
           onClick={onConfirm}
+          disabled={busy}
         >
           {confirmLabel}
         </button>
-        <button className="button button-primary" onClick={onCancel}>
+        <button className="button button-primary" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
       </div>
@@ -1186,12 +1190,7 @@ function WorkspaceApp({ authClient, client }) {
     handleTimer(task, action),
   );
   const removeTask = useStableCallback((task) => deleteTask(task));
-  const moveTomorrow = useStableCallback((task) => {
-    const next = new Date();
-    next.setDate(next.getDate() + 1);
-    const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
-    return moveToToday([task], key, "tomorrow");
-  });
+  const moveTomorrow = useStableCallback((task) => setMoveTomorrowTarget(task));
   const [friends, setFriends] = useState([]);
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
@@ -1235,6 +1234,8 @@ function WorkspaceApp({ authClient, client }) {
   const [focusTaskId, setFocusTaskId] = useState(null);
   const [banner, setBanner] = useState(null);
   const [leaveTarget, setLeaveTarget] = useState(null);
+  const [moveTomorrowTarget, setMoveTomorrowTarget] = useState(null);
+  const [moveTomorrowBusy, setMoveTomorrowBusy] = useState(false);
   const [onboardingHidden, setOnboardingHidden] = useState(() => {
     try {
       return localStorage.getItem("kinda:onboarding-dismissed") === "1";
@@ -1300,20 +1301,23 @@ function WorkspaceApp({ authClient, client }) {
   const [sendingMessage, setSendingMessage] = useState(false);
   const sendingMessageRef = useRef(false);
   const [filter, setFilter] = useState("Today");
-  const [toast, setToastRaw] = useState("");
+  const [toast, setToastRaw] = useState(null);
   // Every message goes through here so it always clears itself, and the
   // "live updates" connection notice (the app already refreshes every minute
   // without it) is never shown.
-  const setToast = (message) => {
+  const setToast = (message, action = null) => {
     const text = String(message || "");
     window.clearTimeout(toastTimeout);
     if (!text) {
-      setToastRaw("");
+      setToastRaw(null);
       return;
     }
     if (/live updates could not connect/i.test(text)) return;
-    setToastRaw(text);
-    toastTimeout = window.setTimeout(() => setToastRaw(""), 3500);
+    setToastRaw({ message: text, action });
+    toastTimeout = window.setTimeout(
+      () => setToastRaw(null),
+      action ? 7000 : 3500,
+    );
   };
   const [celebrationType, setCelebrationType] = useState(null);
   const [kindleToast, setKindleToast] = useState(null);
@@ -2926,6 +2930,73 @@ function WorkspaceApp({ authClient, client }) {
     refreshTasks().catch((error) => notify(error.message));
   }
 
+  async function confirmMoveTomorrow() {
+    const task = moveTomorrowTarget;
+    if (!task) return;
+    setMoveTomorrowBusy(true);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dueDate = localDate(tomorrow);
+    const moved = {
+      ...task,
+      dueDate,
+      movedFrom: movedFromFor(task, dueDate),
+    };
+    const opId = stageOp({
+      type: "patch",
+      taskId: task.id,
+      patch: { dueDate, movedFrom: moved.movedFrom },
+    });
+    syncCircleTask(moved);
+    try {
+      const updated = await patchTask(task, { dueDate });
+      settleOps([opId], updated);
+      syncCircleTask(updated);
+      refreshTasks().catch((error) => notify(error.message));
+      setMoveTomorrowTarget(null);
+      setToast(`Moved “${task.title}” to tomorrow.`, {
+        label: "Undo",
+        onClick: () => undoTomorrowMove(task, updated),
+      });
+    } catch (error) {
+      settleOps([opId]);
+      syncCircleTask(task);
+      refreshCircleGoals(task.groupIds).catch(() => {});
+      setMoveTomorrowTarget(null);
+      notify(error.message);
+    } finally {
+      setMoveTomorrowBusy(false);
+    }
+  }
+
+  async function undoTomorrowMove(original, moved) {
+    setToast("");
+    const movedFrom = original.movedFrom || [];
+    const restored = { ...moved, dueDate: original.dueDate, movedFrom };
+    const opId = stageOp({
+      type: "patch",
+      taskId: original.id,
+      patch: { dueDate: original.dueDate, movedFrom },
+    });
+    syncCircleTask(restored);
+    try {
+      const updated = await patchTask(moved, {
+        dueDate: original.dueDate,
+        movedFrom,
+        restoreMovedFrom: true,
+      });
+      settleOps([opId], updated);
+      syncCircleTask(updated);
+      refreshTasks().catch((error) => notify(error.message));
+      notify("Move undone.");
+    } catch (error) {
+      settleOps([opId]);
+      syncCircleTask(moved);
+      refreshCircleGoals(moved.groupIds).catch(() => {});
+      notify(error.message);
+    }
+  }
+
   async function deleteTask(task) {
     if (task.assignmentId) {
       notify(
@@ -3113,8 +3184,10 @@ function WorkspaceApp({ authClient, client }) {
     try {
       await api(`/tasks/${task.id}/nudge`, { method: "POST", body: "{}" });
       notify(`Nudge sent to ${task.ownerName}.`);
+      return true;
     } catch (error) {
       notify(error.message);
+      return false;
     }
   }
 
@@ -3871,6 +3944,20 @@ function WorkspaceApp({ authClient, client }) {
             </p>
           </ConfirmDialog>
         )}
+        {moveTomorrowTarget && (
+          <ConfirmDialog
+            title="Move this task to tomorrow?"
+            confirmLabel={moveTomorrowBusy ? "Moving…" : "Move to tomorrow"}
+            busy={moveTomorrowBusy}
+            onConfirm={confirmMoveTomorrow}
+            onCancel={() => setMoveTomorrowTarget(null)}
+          >
+            <p>
+              “{moveTomorrowTarget.title}” will move to tomorrow. You’ll be able
+              to undo it right afterward.
+            </p>
+          </ConfirmDialog>
+        )}
         {reminderQueue[0] && (
           <ReminderDialog
             reminder={reminderQueue[0]}
@@ -3931,11 +4018,20 @@ function WorkspaceApp({ authClient, client }) {
           />
         )}
         {toast && (
-          <div className="toast" role="status">
+          <div className={`toast ${toast.action ? "toast-with-action" : ""}`} role="status">
             <span className="toast-mark">
               <Check size={15} />
             </span>
-            {toast}
+            <span className="toast-message">{toast.message}</span>
+            {toast.action && (
+              <button
+                type="button"
+                className="toast-action"
+                onClick={toast.action.onClick}
+              >
+                {toast.action.label}
+              </button>
+            )}
           </div>
         )}
         {!taskDialog && (page === "home" || page === "tasks") && (
@@ -4792,45 +4888,6 @@ function HomePage({
       {onboarding && (
         <OnboardingCard steps={onboarding} onDismiss={onDismissOnboarding} />
       )}
-      {!loaded ? (
-        <section className="day-glance" aria-hidden="true">
-          <span className="skeleton skeleton-ring" />
-          <div className="glance-copy">
-            <span className="skeleton skeleton-line" />
-            <span className="skeleton skeleton-line short" />
-          </div>
-        </section>
-      ) : (
-        <section
-          className="day-glance"
-          aria-label={`Progress for ${dayLabel(today)}`}
-        >
-          <ProgressRing percent={completion} size={76} stroke={7}>
-            <Kindle mood={completion >= 100 ? "proud" : "happy"} size={36} animate />
-          </ProgressRing>
-          <div className="glance-copy">
-            <b>{done} / {total} done</b>
-            <span>
-              {total === 0
-                ? "Your day is open."
-                : completion === 100
-                  ? "All done."
-                  : `${remainingTasks} left.`}
-            </span>
-          </div>
-          {streak &&
-            (Number(streak.current) > 0 ||
-              Number(streak.best) > 0 ||
-              todayTasks.length > 0) && (
-              <StreakLine
-                streak={streak}
-                done={todayDone}
-                total={todayTasks.length}
-                onShare={onShareStreak}
-              />
-            )}
-        </section>
-      )}
       <div className="home-grid">
         <section className="home-tasks">
           <div className="section-title-row">
@@ -4914,7 +4971,47 @@ function HomePage({
             />
           )}
         </section>
-        <aside className="home-social">
+        <aside className="home-sidebar">
+          {!loaded ? (
+            <section className="day-glance" aria-hidden="true">
+              <span className="skeleton skeleton-ring" />
+              <div className="glance-copy">
+                <span className="skeleton skeleton-line" />
+                <span className="skeleton skeleton-line short" />
+              </div>
+            </section>
+          ) : (
+            <section
+              className="day-glance"
+              aria-label={`Progress for ${dayLabel(today)}`}
+            >
+              <ProgressRing percent={completion} size={76} stroke={7}>
+                <Kindle mood={completion >= 100 ? "proud" : "happy"} size={36} animate />
+              </ProgressRing>
+              <div className="glance-copy">
+                <b>{done} / {total} done</b>
+                <span>
+                  {total === 0
+                    ? "Your day is open."
+                    : completion === 100
+                      ? "All done."
+                      : `${remainingTasks} left.`}
+                </span>
+              </div>
+              {streak &&
+                (Number(streak.current) > 0 ||
+                  Number(streak.best) > 0 ||
+                  todayTasks.length > 0) && (
+                  <StreakLine
+                    streak={streak}
+                    done={todayDone}
+                    total={todayTasks.length}
+                    onShare={onShareStreak}
+                  />
+                )}
+            </section>
+          )}
+          <aside className="home-social">
           <section className="home-feed">
             <div className="section-title-row">
               <h2>Circle activity</h2>
@@ -4990,6 +5087,7 @@ function HomePage({
               compact
             />
           )}
+          </aside>
         </aside>
       </div>
     </div>
@@ -5016,7 +5114,7 @@ function TasksPage({
       <PageHeader
         title="Tasks"
         action={
-          <button className="button button-primary" onClick={onCreate}>
+          <button className="button button-primary tasks-new-task" onClick={onCreate}>
             <Plus size={16} /> New task
           </button>
         }
@@ -5265,9 +5363,23 @@ const TaskRow = React.memo(function TaskRow({
               </span>
             )}
             {task.challengeId && (
-              <span className="challenge-tag">
-                <Target size={11} /> Challenge
-              </span>
+              <>
+                <span className="challenge-tag">
+                  <Target size={11} /> Challenge
+                </span>
+                {onEdit && !locked && (
+                  <button
+                    type="button"
+                    className="challenge-share-action"
+                    onClick={() => onEdit(task)}
+                    aria-label={task.groupIds?.length ? "Edit circle sharing" : "Share challenge task to a circle"}
+                    title={task.groupIds?.length ? "Edit circle sharing" : "Share to circle"}
+                  >
+                    <Share size={12} />
+                    {task.groupIds?.length ? "Edit sharing" : "Share to circle"}
+                  </button>
+                )}
+              </>
             )}
             {task.reminderTime && (
               <span className="task-reminder-time" title="Reminder">
@@ -5315,6 +5427,15 @@ const TaskRow = React.memo(function TaskRow({
               </span>
             )}
           </div>
+          {onMoveTomorrow && !locked && !task.done && (
+            <button
+              type="button"
+              className="move-tomorrow-action"
+              onClick={() => onMoveTomorrow(task)}
+            >
+              <ArrowRight size={13} /> Move to tomorrow
+            </button>
+          )}
         </div>
         <div className="task-side">
           <div className="task-actions">
@@ -5325,16 +5446,6 @@ const TaskRow = React.memo(function TaskRow({
                 aria-label="Edit task"
               >
                 <Pencil size={14} />
-              </button>
-            )}
-            {onMoveTomorrow && !locked && !task.done && (
-              <button
-                className="icon-quiet task-action"
-                onClick={() => onMoveTomorrow(task)}
-                aria-label="Move to tomorrow"
-                title="Move to tomorrow"
-              >
-                <ArrowRight size={14} />
               </button>
             )}
             {canDelete && (
@@ -5638,6 +5749,7 @@ function CirclesPage({
                 challenge={challenge}
                 Avatar={Avatar}
                 busy={challengeBusy}
+                onNudge={onNudge}
                 onBack={() => setChallengeOpen(false)}
                 onJoin={() =>
                   runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
@@ -5824,15 +5936,8 @@ function CirclesPage({
                                       </p>
                                     </div>
                                     {task.ownerId !== user.id &&
-                                      !task.done &&
-                                      task.dueDate &&
-                                      task.dueDate < localDate() && (
-                                        <button
-                                          className="nudge-button"
-                                          onClick={() => onNudge(task)}
-                                        >
-                                          <Bell size={13} /> Nudge
-                                        </button>
+                                      !task.done && (
+                                        <NudgeButton onClick={() => onNudge(task)} />
                                       )}
                                   </article>
                                 ))}
@@ -6030,7 +6135,7 @@ function ChallengeDialog({ onClose, onSave }) {
     const ok = await onSave({
       title: String(form.get("title") || ""),
       intro: String(form.get("intro") || ""),
-      days,
+      days: Number(days),
       tasks: String(form.get("tasks") || "").split("\n"),
     });
     setBusy(false);
@@ -6073,6 +6178,27 @@ function ChallengeDialog({ onClose, onSave }) {
               </button>
             ))}
           </div>
+          <label className="challenge-duration-input">
+            Or choose a duration
+            <span>
+              <input
+                type="number"
+                min={3}
+                max={60}
+                required
+                value={days}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDays(value === "" ? "" : Number(value));
+                }}
+                aria-label="Challenge duration in days"
+              />
+              days
+            </span>
+          </label>
+          {(days === "" || days < 3 || days > 60) && (
+            <small className="repeat-preview">Choose between 3 and 60 days.</small>
+          )}
         </div>
         <label>
           Each day, everyone does
@@ -7864,13 +7990,17 @@ function RepeatField({ defaultValue = "none" }) {
     <div className="repeat-field">
       <label>
         Repeat <span className="optional-label">needs a due date</span>
-        <select value={mode} onChange={(event) => setMode(event.target.value)}>
-          <option value="none">Does not repeat</option>
-          <option value="daily">Every day</option>
-          <option value="weekdays">Weekdays</option>
-          <option value="weekly">Every week</option>
-          <option value="custom">Choose days</option>
-        </select>
+        <TaskSelect
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "none", label: "Does not repeat" },
+            { value: "daily", label: "Every day" },
+            { value: "weekdays", label: "Weekdays" },
+            { value: "weekly", label: "Every week" },
+            { value: "custom", label: "Choose days" },
+          ]}
+        />
       </label>
       <input type="hidden" name="repeat" value={value} />
       {mode === "custom" && (
@@ -7905,13 +8035,187 @@ function RepeatField({ defaultValue = "none" }) {
   );
 }
 
+function TaskSelect({ value, onChange, options, name }) {
+  const [open, setOpen] = useState(false);
+  const select = useRef(null);
+  const selected = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event) => {
+      if (select.current && !select.current.contains(event.target)) setOpen(false);
+    };
+    const closeEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="task-select" ref={select}>
+      {name && <input type="hidden" name={name} value={value} />}
+      <button
+        type="button"
+        className="task-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {selected?.tone && <i className={`task-select-dot ${selected.tone}`} aria-hidden="true" />}
+        <span>{selected?.label || "Choose an option"}</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="task-select-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={value === option.value}
+              className={value === option.value ? "selected" : ""}
+              key={option.value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.tone && <i className={`task-select-dot ${option.tone}`} aria-hidden="true" />}
+              <span>{option.label}</span>
+              {value === option.value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskDateField({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(() => {
+    const date = value ? new Date(`${value}T12:00:00`) : new Date();
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
+  const picker = useRef(null);
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstOffset = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const daysInPreviousMonth = new Date(year, monthIndex, 0).getDate();
+  const cellCount = Math.ceil((firstOffset + daysInMonth) / 7) * 7;
+  const today = localDate();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event) => {
+      if (picker.current && !picker.current.contains(event.target)) setOpen(false);
+    };
+    const closeEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [open]);
+
+  function chooseDate(date) {
+    onChange(localDate(date));
+    setOpen(false);
+  }
+
+  const selectedDate = value ? new Date(`${value}T12:00:00`) : null;
+  const selectedLabel = selectedDate && Number.isFinite(selectedDate.getTime())
+    ? new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(selectedDate)
+    : "No due date";
+
+  return (
+    <div className="task-date-picker" ref={picker}>
+      <input type="hidden" name="dueDate" value={value} />
+      <button
+        type="button"
+        className="task-date-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <CalendarDays size={17} aria-hidden="true" />
+        <span>{selectedLabel}</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="task-calendar" role="dialog" aria-label="Choose a due date">
+          <div className="task-calendar-head">
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(year, monthIndex - 1, 1))}>
+              <ChevronLeft size={17} />
+            </button>
+            <b>{new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(month)}</b>
+            <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(year, monthIndex + 1, 1))}>
+              <ChevronRight size={17} />
+            </button>
+          </div>
+          <div className="task-calendar-grid task-calendar-weekdays" aria-hidden="true">
+            {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
+              <span key={`${day}-${index}`}>{day}</span>
+            ))}
+          </div>
+          <div className="task-calendar-grid">
+            {Array.from({ length: cellCount }, (_, index) => {
+              const dayNumber = index - firstOffset + 1;
+              const date = dayNumber < 1
+                ? new Date(year, monthIndex - 1, daysInPreviousMonth + dayNumber)
+                : dayNumber > daysInMonth
+                  ? new Date(year, monthIndex + 1, dayNumber - daysInMonth)
+                  : new Date(year, monthIndex, dayNumber);
+              const key = localDate(date);
+              const inMonth = date.getMonth() === monthIndex;
+              const selected = key === value;
+              return (
+                <button
+                  type="button"
+                  key={key}
+                  className={`${inMonth ? "" : "outside-month"} ${key === today ? "today" : ""} ${selected ? "selected" : ""}`}
+                  aria-label={new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(date)}
+                  aria-pressed={selected}
+                  onClick={() => chooseDate(date)}
+                >
+                  {date.getDate()}
+                </button>
+              );
+            })}
+          </div>
+          <div className="task-calendar-foot">
+            <button type="button" onClick={() => { onChange(""); setOpen(false); }}>Clear date</button>
+            <button type="button" onClick={() => chooseDate(new Date())}>Today</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
   const selectedFriendIds = task?.sharedWith || initialSharedWith;
   const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0 || initialSharedWith.length > 0);
+  const [dueDate, setDueDate] = useState(
+    task ? task.dueDate || "" : initialDueDate || localDate(),
+  );
+  const [priority, setPriority] = useState(task?.priority || "normal");
+  const [category, setCategory] = useState(task?.category || "Personal");
+  const categoryOptions = [...new Set([...(task?.category ? [task.category] : []), ...categories])]
+    .map((item) => ({ value: item, label: item }));
   return (
     <Modal
       title={task ? "Edit task" : "New task"}
+      className="task-dialog"
       onClose={onClose}
     >
       <form className="modal-form" onSubmit={onSave}>
@@ -7927,22 +8231,23 @@ function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupId
             maxLength="120"
           />
         </label>
-        <div className="form-grid">
-          <label>
+        <div className="form-grid task-primary-fields">
+          <label className="task-due-label">
             Due date
-            <input
-              name="dueDate"
-              type="date"
-              defaultValue={task ? task.dueDate || "" : initialDueDate || localDate()}
-            />
+            <TaskDateField value={dueDate} onChange={setDueDate} />
           </label>
           <label>
             Priority
-            <select name="priority" defaultValue={task?.priority || "normal"}>
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="low">Low</option>
-            </select>
+            <TaskSelect
+              name="priority"
+              value={priority}
+              onChange={setPriority}
+              options={[
+                { value: "normal", label: "Normal", tone: "normal" },
+                { value: "high", label: "High", tone: "high" },
+                { value: "low", label: "Low", tone: "low" },
+              ]}
+            />
           </label>
         </div>
         <button
@@ -7971,19 +8276,12 @@ function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupId
           <div className="form-grid">
             <label>
               Category
-              <select
+              <TaskSelect
                 name="category"
-                defaultValue={task?.category || "Personal"}
-              >
-                {[
-                  ...new Set([
-                    ...(task?.category ? [task.category] : []),
-                    ...categories,
-                  ]),
-                ].map((category) => (
-                  <option key={category}>{category}</option>
-                ))}
-              </select>
+                value={category}
+                onChange={setCategory}
+                options={categoryOptions}
+              />
             </label>
           </div>
           <FocusTimeField defaultValue={task?.targetMinutes || 25} />

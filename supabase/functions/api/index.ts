@@ -1171,10 +1171,16 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         if (reminderTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderTime)) {
           fail("Choose a valid reminder time.");
         }
-        const movedFrom = [...(task.moved_from || [])];
+        const restoreMovedFrom = body.restoreMovedFrom === true &&
+          Array.isArray(body.movedFrom);
+        const movedFrom = restoreMovedFrom
+          ? [...new Set<string>(body.movedFrom.map(String).filter((date: string) =>
+            /^\d{4}-\d{2}-\d{2}$/.test(date)
+          ))]
+          : [...(task.moved_from || [])];
         if (
-          !task.done && task.due_date && fields.dueDate !== task.due_date &&
-          !movedFrom.includes(task.due_date)
+          !restoreMovedFrom && !task.done && task.due_date &&
+          fields.dueDate !== task.due_date && !movedFrom.includes(task.due_date)
         ) movedFrom.push(task.due_date);
         const reminderAt = fields.dueDate && reminderTime
           ? (() => {
@@ -1679,6 +1685,23 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             doneRows.push(...(page || []));
             if (!page || page.length < 1000 || from >= 9000) break;
           }
+          const todayTaskRows: ApiRow[] = [];
+          for (let from = 0;; from += 1000) {
+            const { data: page, error: pageError } = await db.from("tasks")
+              .select("id,user_id,title,done").eq("challenge_id", challenge.id)
+              .eq("due_date", todayKey).order("created_at", { ascending: true })
+              .range(from, from + 999);
+            if (pageError) throw pageError;
+            todayTaskRows.push(...(page || []));
+            if (!page || page.length < 1000) break;
+          }
+          const tasksByMember = new Map<string, ApiRow[]>();
+          for (const task of todayTaskRows) {
+            const id = String(task.user_id);
+            const rows = tasksByMember.get(id) || [];
+            rows.push(task);
+            tasksByMember.set(id, rows);
+          }
           const doneBy = new Map<string, number>();
           const todayBy = new Map<string, number>();
           for (const row of doneRows) {
@@ -1686,11 +1709,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             doneBy.set(id, (doneBy.get(id) || 0) + 1);
             if (row.due_date === todayKey) todayBy.set(id, (todayBy.get(id) || 0) + 1);
           }
-          const { data: mine, error: mineError } = await db.from("tasks")
-            .select("id,title,done").eq("user_id", userId)
-            .eq("challenge_id", challenge.id).eq("due_date", todayKey)
-            .order("created_at", { ascending: true });
-          if (mineError) throw mineError;
+          const mine = tasksByMember.get(userId) || [];
           const perDay = (challenge.daily_tasks as string[]).length;
           const { data: myRole } = await db.from("circle_members").select("role")
             .eq("circle_id", circleId).eq("user_id", userId).maybeSingle();
@@ -1717,8 +1736,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
                 id,
                 name: profile?.name || "Member",
                 avatar: profile?.avatar || "",
+                isYou: id === userId,
                 done: doneBy.get(id) || 0,
                 todayDone: todayBy.get(id) || 0,
+                todayTasks: tasksByMember.get(id) || [],
               };
             }),
             todayTasks: mine || [],
@@ -2846,7 +2867,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     const nudgeRoute = pathname.match(/^\/tasks\/([^/]+)\/nudge$/);
     if (method === "POST" && nudgeRoute) {
       const { data: task } = await db.from("tasks").select(
-        "id,user_id,title,done",
+        "id,user_id,title,done,challenge_id",
       ).eq("id", nudgeRoute[1]).maybeSingle();
       if (!task || task.user_id === userId || task.done) {
         fail("That task can't be nudged.");
@@ -2856,14 +2877,38 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       ).eq("task_id", task.id);
       if (error) throw error;
       let shared = false;
-      for (const link of links || []) {
-        const { data } = await db.from("circle_members").select("user_id").eq(
-          "circle_id",
-          link.circle_id,
-        ).eq("user_id", userId).maybeSingle();
-        if (data) {
-          shared = true;
-          break;
+      if (task.challenge_id) {
+        const { data: challenge } = await db.from("challenges")
+          .select("circle_id").eq("id", task.challenge_id).maybeSingle();
+        if (challenge) {
+          const [participantsResult, circleMembersResult] = await Promise.all([
+            db.from("challenge_members").select("user_id")
+              .eq("challenge_id", task.challenge_id)
+              .in("user_id", [userId, task.user_id]),
+            db.from("circle_members").select("user_id")
+              .eq("circle_id", challenge.circle_id)
+              .in("user_id", [userId, task.user_id]),
+          ]);
+          if (participantsResult.error) throw participantsResult.error;
+          if (circleMembersResult.error) throw circleMembersResult.error;
+          const participantIds = new Set((participantsResult.data || []).map(
+            (row: ApiRow) => String(row.user_id),
+          ));
+          const circleMemberIds = new Set((circleMembersResult.data || []).map(
+            (row: ApiRow) => String(row.user_id),
+          ));
+          shared = participantIds.size === 2 && circleMemberIds.size === 2;
+        }
+      } else {
+        for (const link of links || []) {
+          const { data } = await db.from("circle_members").select("user_id").eq(
+            "circle_id",
+            link.circle_id,
+          ).eq("user_id", userId).maybeSingle();
+          if (data) {
+            shared = true;
+            break;
+          }
         }
       }
       if (!shared) fail("That task can't be nudged.");
@@ -3342,12 +3387,34 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         );
       };
       const today = dayKey(now);
-      let current = 0;
-      let offset = qualifies(today) ? 0 : 1;
-      for (; offset < 400; offset++) {
-        const key = dayKey(now - offset * dayMs);
+      const addDayKey = (key: string, amount: number) => {
+        const date = new Date(`${key}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + amount);
+        return date.toISOString().slice(0, 10);
+      };
+      // Keep the last confirmed streak alive across the Monday boundary (and
+      // any other day boundary) if task history is briefly stale or changes
+      // after yesterday was already recorded as qualified.
+      const yesterday = addDayKey(today, -1);
+      const [{ data: yesterdayLog }, { data: todayLog }] = await Promise.all([
+        db.from("streak_log").select("streak_current,qualified")
+          .eq("user_id", userId).eq("day", yesterday).maybeSingle(),
+        db.from("streak_log").select("streak_current,qualified,total,done,tz_offset")
+          .eq("user_id", userId).eq("day", today).maybeSingle(),
+      ]);
+      // A confirmed day stays qualified if a later refresh has stale task data.
+      const todayQualified = qualifies(today) || Boolean(todayLog?.qualified);
+      let current = todayQualified ? 1 : 0;
+      for (let offset = 1; offset < 400; offset++) {
+        const key = addDayKey(today, -offset);
         if (!qualifies(key)) break;
         current++;
+      }
+      if (!todayQualified && yesterdayLog?.qualified) {
+        current = Math.max(current, Number(yesterdayLog.streak_current) || 0);
+      }
+      if (todayQualified && todayLog?.qualified) {
+        current = Math.max(current, Number(todayLog.streak_current) || 0);
       }
       const qualified = [...new Set([...perDay.keys(), ...virtualDays])]
         .filter(qualifies).sort();
@@ -3363,6 +3430,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         best = Math.max(best, run);
         prev = key;
       }
+      best = Math.max(best, current);
       const todayStat = perDay.get(today) || { total: 0, done: 0 };
       const todayDate = new Date(`${today}T00:00:00Z`);
       const mondayOffset = (todayDate.getUTCDay() + 6) % 7;
@@ -3372,18 +3440,17 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           .toISOString().slice(0, 10);
         return {
           date,
-          qualified: date <= today && qualifies(date),
+          qualified: date <= today &&
+            (qualifies(date) || (date === today && todayQualified)),
           today: date === today,
         };
       });
       // Monitoring only: keep a record of what the streak was and, when it
       // fell, which day broke it and why. Never affects the numbers above.
       try {
-        const { data: last } = await db.from("streak_log").select(
-          "streak_current,qualified,total,done,tz_offset",
-        ).eq("user_id", userId).eq("day", today).maybeSingle();
+        const last = todayLog;
         const changed = !last || last.streak_current !== current ||
-          last.qualified !== qualifies(today) || last.total !== todayStat.total ||
+          last.qualified !== todayQualified || last.total !== todayStat.total ||
           last.done !== todayStat.done || last.tz_offset !== tzOffset;
         if (changed) {
           const { data: prev } = await db.from("streak_log").select(
@@ -3393,7 +3460,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           }).limit(1).maybeSingle();
           let reason: string | null = null;
           if (prev && current < prev.streak_current) {
-            const failKey = dayKey(now - ((qualifies(today) ? 0 : 1) + current) * dayMs);
+            const failKey = addDayKey(today, -(todayQualified ? current : current + 1));
             const stat = perDay.get(failKey) || { total: 0, done: 0 };
             const moved = movedAway.get(failKey) || 0;
             reason = stat.total < 5
@@ -3408,7 +3475,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             day: today,
             streak_current: current,
             streak_best: best,
-            qualified: qualifies(today),
+            qualified: todayQualified,
             total: todayStat.total,
             done: todayStat.done,
             tasks_loaded: tasks.length,

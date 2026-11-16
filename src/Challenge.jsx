@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowLeft, Check, ChevronRight, Target } from "lucide-react";
 import Kindle from "./Kindle.jsx";
+import NudgeButton from "./NudgeButton.jsx";
 
 // Circle challenge screens. All numbers come from the server; nothing here
 // touches streaks.
@@ -85,7 +86,7 @@ export function ChallengeCard({ challenge, onOpen, onJoin, busy }) {
   );
 }
 
-export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, onDelete, busy }) {
+export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, onDelete, onNudge, busy }) {
   const percent = percentOf(challenge);
   const circumference = 2 * Math.PI * 44;
   const ended = challenge.status === "ended";
@@ -139,8 +140,11 @@ export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, on
           <h3 className="ch-h">Team today</h3>
           <div className="ch-team">
             <div className="ch-team-row">
-              {challenge.members.map((member) => (
-                <span className="ch-person" key={member.id}>
+              {challenge.members.map((member) => {
+                const pendingTask = (member.todayTasks || []).find((task) => !task.done);
+                const progress = Math.min(100, Math.round((member.todayDone / Math.max(1, challenge.perDay)) * 100));
+                return (
+                <div className="ch-person" key={member.id}>
                   <span className="ch-avatar">
                     <Avatar name={member.name} avatar={member.avatar} />
                     {member.todayDone >= challenge.perDay && (
@@ -149,9 +153,25 @@ export function ChallengeScreen({ challenge, Avatar, onBack, onJoin, onLeave, on
                       </em>
                     )}
                   </span>
-                  <small>{member.name.split(" ")[0]}</small>
-                </span>
-              ))}
+                  <b>{member.isYou ? "You" : member.name.split(" ")[0]}</b>
+                  <small>Today {member.todayDone} of {challenge.perDay}</small>
+                  <span className="ch-member-progress" aria-label={`${progress}% of today's challenge tasks complete`}>
+                    <i style={{ width: `${progress}%` }} />
+                  </span>
+                  <small>Challenge {member.done} of {challenge.days * challenge.perDay}</small>
+                  {!ended && !member.isYou && member.todayDone < challenge.perDay && pendingTask && (
+                    <NudgeButton
+                      className="ch-nudge"
+                      onClick={() => onNudge({
+                        id: pendingTask.id,
+                        title: pendingTask.title,
+                        ownerName: member.name,
+                      })}
+                    >
+                    </NudgeButton>
+                  )}
+                </div>
+              );})}
             </div>
             <small>
               {finishedToday} of {challenge.members.length} have finished today

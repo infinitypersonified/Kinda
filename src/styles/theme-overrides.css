@@ -246,6 +246,19 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent), 0 10px 34px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.app-shell .circles-page .circle-tile:hover,
+.app-shell .circles-page .circle-tile:focus-visible {
+  border-color: var(--border);
+  box-shadow: none;
+  transform: none;
+}
+
+.app-shell .circles-page .circle-detail:hover,
+.app-shell .circles-page .circle-detail:focus-within {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .app-shell .task-row {
   transition: background .24s ease, box-shadow .3s ease;
 }
@@ -740,6 +753,32 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+.repeat-shortcuts button.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.challenge-duration-input {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.challenge-duration-input span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.modal-form .challenge-duration-input input {
+  width: 88px;
+  padding: 8px 10px;
 }
 
 .repeat-chips {
