@@ -18,8 +18,16 @@ export function createSupabaseApi(client) {
   const cache = new Map();
   const inFlightGets = new Map();
   const cacheTtlMs = 8_000;
+  let cacheRevision = 0;
 
-  const invalidateCache = () => cache.clear();
+  const invalidateReadCache = () => {
+    cache.clear();
+    inFlightGets.clear();
+  };
+  const invalidateCache = () => {
+    invalidateReadCache();
+    cacheRevision++;
+  };
 
   const api = async function supabaseApi(path, options = {}) {
     const url = new URL(path, window.location.origin);
@@ -39,6 +47,7 @@ export function createSupabaseApi(client) {
       invalidateCache();
     }
 
+    const requestRevision = cacheRevision;
     const request = (async () => {
     try {
       const invoke = async (query) => {
@@ -77,12 +86,14 @@ export function createSupabaseApi(client) {
       } else {
         result = await invoke(query);
       }
-      if (canCache) cache.set(cacheKey, { data: structuredClone(result), expiresAt: Date.now() + cacheTtlMs });
+      if (canCache && requestRevision === cacheRevision)
+        cache.set(cacheKey, { data: structuredClone(result), expiresAt: Date.now() + cacheTtlMs });
       return result;
     } catch (cause) {
       throw friendlyError(cause);
     } finally {
-      if (method === "GET") inFlightGets.delete(cacheKey);
+      if (method === "GET" && inFlightGets.get(cacheKey) === request)
+        inFlightGets.delete(cacheKey);
     }
     })();
 
@@ -91,6 +102,8 @@ export function createSupabaseApi(client) {
   };
 
   api.invalidateCache = invalidateCache;
+  api.invalidateReadCache = invalidateReadCache;
+  api.revision = () => cacheRevision;
   client.auth.onAuthStateChange(() => invalidateCache());
   return api;
 }
@@ -202,8 +215,10 @@ export function createSupabaseLive(client, api) {
         if (stopped || inFlight) return;
         inFlight = true;
         try {
-          api.invalidateCache?.();
-          onData(await api(path, { cache: "no-store" }));
+          api.invalidateReadCache?.();
+          const revision = api.revision?.();
+          const data = await api(path, { cache: "no-store" });
+          if (revision == null || revision === api.revision?.()) onData(data);
         } catch (error) {
           onError(friendlyError(error));
         } finally {

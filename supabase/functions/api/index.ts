@@ -3514,7 +3514,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       // or a device with a different timezone refreshes the streak.
       const yesterday = addDayKey(today, -1);
       const { data: streakLogs } = await db.from("streak_log").select(
-        "day,streak_current,streak_best,qualified,total,done,tz_offset",
+        "day,streak_current,streak_best,qualified,qualified_once,total,done,tz_offset",
       ).eq("user_id", userId).gte("day", addDayKey(today, -399))
         .lte("day", today);
       const logsByDay = new Map(
@@ -3522,17 +3522,42 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       );
       const yesterdayLog = logsByDay.get(yesterday);
       const todayLog = logsByDay.get(today);
-      // Today's qualification remains reversible when a task is unchecked;
-      // only completed past days are carried forward from the audit log.
-      const todayQualified = qualifies(today);
+      const currentTodayStat = perDay.get(today) || { total: 0, done: 0 };
+      // A task moved to another day remains in perDay for historical context,
+      // but it is no longer part of today's scheduled task target. Exclude it
+      // from today's denominator so moving a task away cannot undo 80% progress.
+      const todayTotal = Math.max(
+        0,
+        currentTodayStat.total - (movedAway.get(today) || 0),
+      );
+      // Keep the denominator from the first time the goal was reached. Adding
+      // a task afterwards mustn't erase that day's streak, while unchecking a
+      // completed task still changes today's done count against the snapshot.
+      const goalSnapshot = Boolean(todayLog?.qualified_once || todayLog?.qualified);
+      const loggedSnapshotTotal = Number(todayLog?.total) || todayTotal;
+      // A saved snapshot can predate the correction above and include a task
+      // that was added after completion, then moved away. Clamp it to today's
+      // corrected total so that stale streak_log rows cannot preserve the bad
+      // 12-task denominator for a day that now has 11 actual tasks.
+      const snapshotTotal = Math.min(loggedSnapshotTotal, todayTotal);
+      const todayStat = {
+        total: goalSnapshot ? snapshotTotal : todayTotal,
+        done: goalSnapshot
+          ? Math.min(currentTodayStat.done, snapshotTotal)
+          : currentTodayStat.done,
+      };
+      const todayQualified = baseDate && today < baseDate
+        ? qualifies(today)
+        : todayStat.total >= 5 && todayStat.done * 100 >= todayStat.total * 80;
       const confirmedDays = new Set(
         (streakLogs || [])
           .filter((row: ApiRow) => row.qualified && String(row.day) < today &&
             (!baseDate || String(row.day) >= baseDate))
           .map((row: ApiRow) => String(row.day)),
       );
-      const qualifiesDay = (key: string) =>
-        qualifies(key) || confirmedDays.has(key);
+      const qualifiesDay = (key: string) => key === today
+        ? todayQualified
+        : qualifies(key) || confirmedDays.has(key);
       let current = todayQualified ? 1 : 0;
       for (let offset = 1; offset < 400; offset++) {
         const key = addDayKey(today, -offset);
@@ -3544,6 +3569,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       }
       if (todayQualified && todayLog?.qualified) {
         current = Math.max(current, Number(todayLog.streak_current) || 0);
+      } else if (todayQualified && todayLog) {
+        // If today's tasks were previously unticked below the goal, the daily
+        // log holds the streak as it stood before today's qualification. Restore
+        // that baseline when the user completes enough tasks again.
+        current = Math.max(
+          current,
+          (Number(todayLog.streak_current) || 0) + 1,
+        );
       }
       const qualified = [...new Set([
         ...perDay.keys(),
@@ -3563,7 +3596,6 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         prev = key;
       }
       best = Math.max(best, current);
-      const todayStat = perDay.get(today) || { total: 0, done: 0 };
       const todayDate = new Date(`${today}T00:00:00Z`);
       const mondayOffset = (todayDate.getUTCDay() + 6) % 7;
       const monday = new Date(todayDate.getTime() - mondayOffset * dayMs);
@@ -3583,7 +3615,11 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const last = todayLog;
         const changed = !last || last.streak_current !== current ||
           last.qualified !== todayQualified || last.total !== todayStat.total ||
-          last.done !== todayStat.done || last.tz_offset !== tzOffset;
+          last.done !== todayStat.done || last.tz_offset !== tzOffset ||
+          last.qualified_once !== Boolean(
+            todayLog?.qualified_once || todayLog?.qualified || todayQualified,
+          ) ||
+          (!todayQualified && !last.reason);
         if (changed) {
           const { data: prev } = await db.from("streak_log").select(
             "day,streak_current",
@@ -3591,7 +3627,15 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             ascending: false,
           }).limit(1).maybeSingle();
           let reason: string | null = null;
-          if (prev && current < prev.streak_current) {
+          if (!todayQualified) {
+            reason = todayStat.total < 5
+              ? `${today}: only ${todayStat.total} tasks planned (needs 5)`
+              : `${today}: ${todayStat.done} of ${todayStat.total} done (${Math.round(
+                (todayStat.done / todayStat.total) * 100,
+              )}%, needs 80%)`;
+            const moved = movedAway.get(today) || 0;
+            if (moved) reason += `; ${moved} moved to another day`;
+          } else if (prev && current < prev.streak_current) {
             const failKey = addDayKey(today, -(todayQualified ? current : current + 1));
             const stat = perDay.get(failKey) || { total: 0, done: 0 };
             const moved = movedAway.get(failKey) || 0;
@@ -3608,6 +3652,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             streak_current: current,
             streak_best: best,
             qualified: todayQualified,
+            qualified_once: Boolean(
+              todayLog?.qualified_once || todayLog?.qualified || todayQualified,
+            ),
             total: todayStat.total,
             done: todayStat.done,
             tasks_loaded: tasks.length,
@@ -3626,7 +3673,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       return response(200, {
         current,
         best,
-        doneToday: qualifies(today),
+        doneToday: todayQualified,
         todayTotal: todayStat.total,
         todayDone: todayStat.done,
         needed,

@@ -1117,6 +1117,8 @@ function WorkspaceApp({ authClient, client }) {
   const serverTasksRef = useRef([]);
   const opsRef = useRef([]);
   const opCounter = useRef(0);
+  const taskCompletionRevision = useRef(0);
+  const taskCompletionQueue = useRef(new Map());
   // Server data plus any changes that are still on their way. Pending changes are re-applied on top of every
   // live update, so a task never flickers back to its old state while a request is in flight.
   const renderTasks = useCallback(() => {
@@ -2676,6 +2678,9 @@ function WorkspaceApp({ authClient, client }) {
   }
 
   async function updateTask(task, action, body = {}) {
+    const completionRevision = action === "complete"
+      ? ++taskCompletionRevision.current
+      : null;
     const now = Date.now();
     const previousStreak = Number(streak?.current) || 0;
     const sharedGroupIds = task.groupIds || [];
@@ -2797,22 +2802,40 @@ function WorkspaceApp({ authClient, client }) {
       const requestBody = action === "complete" && body.done
         ? { ...body, tzOffset: new Date().getTimezoneOffset() }
         : body;
+      const sendTaskAction = async () => {
+        try {
+          return await api(`/tasks/${task.id}/${action}`, {
+            method: "POST",
+            body: JSON.stringify(requestBody),
+          });
+        } catch (firstError) {
+          if (
+            firstError.status !== 401 &&
+            !/unauthenticated|not authenticated/i.test(firstError.message || "")
+          )
+            throw firstError;
+          await authClient.token();
+          return api(`/tasks/${task.id}/${action}`, {
+            method: "POST",
+            body: JSON.stringify(requestBody),
+          });
+        }
+      };
+      const previousCompletion = action === "complete"
+        ? taskCompletionQueue.current.get(task.id)
+        : null;
+      const taskActionRequest = previousCompletion
+        ? previousCompletion.catch(() => {}).then(sendTaskAction)
+        : sendTaskAction();
+      if (action === "complete")
+        taskCompletionQueue.current.set(task.id, taskActionRequest);
       try {
-        updated = await api(`/tasks/${task.id}/${action}`, {
-          method: "POST",
-          body: JSON.stringify(requestBody),
-        });
-      } catch (firstError) {
+        updated = await taskActionRequest;
+      } finally {
         if (
-          firstError.status !== 401 &&
-          !/unauthenticated|not authenticated/i.test(firstError.message || "")
-        )
-          throw firstError;
-        await authClient.token();
-        updated = await api(`/tasks/${task.id}/${action}`, {
-          method: "POST",
-          body: JSON.stringify(requestBody),
-        });
+          action === "complete" &&
+          taskCompletionQueue.current.get(task.id) === taskActionRequest
+        ) taskCompletionQueue.current.delete(task.id);
       }
       settleOps(opIds, updated);
       syncCircleTask(updated);
@@ -2823,13 +2846,24 @@ function WorkspaceApp({ authClient, client }) {
           loadBadgeCollection()
             .catch((error) => notify(`Couldn’t check your badge progress: ${error.message}`));
         }
-        let nextCelebration = updated.done && willFinishAllTasks ? "tasks" : null;
+        const isLatestCompletion =
+          completionRevision === taskCompletionRevision.current;
+        let nextCelebration =
+          isLatestCompletion && updated.done && willFinishAllTasks
+            ? "tasks"
+            : null;
         try {
+          const streakRevision = api.revision?.();
           const nextStreak = await api(
             `/streak?tz=${new Date().getTimezoneOffset()}`,
+            { cache: "no-store" },
           );
-          setStreak(nextStreak);
+          const isCurrentStreak =
+            isLatestCompletion &&
+            (streakRevision == null || streakRevision === api.revision?.());
+          if (isCurrentStreak) setStreak(nextStreak);
           if (
+            isCurrentStreak &&
             updated.done &&
             !nextCelebration &&
             nextStreak.doneToday &&
@@ -2847,7 +2881,11 @@ function WorkspaceApp({ authClient, client }) {
         } catch (error) {
           notify(error.message);
         }
-        if (updated.done && sharedGroupIds.length) {
+        if (
+          updated.done &&
+          sharedGroupIds.length &&
+          completionRevision === taskCompletionRevision.current
+        ) {
           try {
             const nextGroups = await api("/groups");
             setGroups(nextGroups);
@@ -2860,8 +2898,11 @@ function WorkspaceApp({ authClient, client }) {
             notify(error.message);
           }
         }
-        if (nextCelebration === "leaderboard") setCelebrationType(nextCelebration);
-        if (nextCelebration) {
+        const isLatestCompletionAfterRefresh =
+          completionRevision === taskCompletionRevision.current;
+        if (isLatestCompletionAfterRefresh && nextCelebration === "leaderboard")
+          setCelebrationType(nextCelebration);
+        if (isLatestCompletionAfterRefresh && nextCelebration) {
           setKindleToast(null);
           setKindleCheer(null);
         }
@@ -2877,8 +2918,15 @@ function WorkspaceApp({ authClient, client }) {
             settleOps(opIds, confirmed);
             syncCircleTask(confirmed);
             if (confirmed.done) loadActivity().catch(() => {});
-            api(`/streak?tz=${new Date().getTimezoneOffset()}`)
-              .then(setStreak)
+            const streakRevision = api.revision?.();
+            api(`/streak?tz=${new Date().getTimezoneOffset()}`, { cache: "no-store" })
+              .then((latestStreak) => {
+                if (
+                  completionRevision === taskCompletionRevision.current &&
+                  (streakRevision == null || streakRevision === api.revision?.())
+                )
+                  setStreak(latestStreak);
+              })
               .catch(() => {});
             return;
           }
@@ -5064,8 +5112,8 @@ function HomePage({
                   todayTasks.length > 0) && (
                   <StreakLine
                     streak={streak}
-                    done={todayDone}
-                    total={todayTasks.length}
+                    done={streak.todayDone ?? todayDone}
+                    total={streak.todayTotal ?? todayTasks.length}
                     onShare={onShareStreak}
                   />
                 )}
