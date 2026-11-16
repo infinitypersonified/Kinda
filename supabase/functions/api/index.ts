@@ -3392,22 +3392,33 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         date.setUTCDate(date.getUTCDate() + amount);
         return date.toISOString().slice(0, 10);
       };
-      // Keep the last confirmed streak alive across the Monday boundary (and
-      // any other day boundary) if task history is briefly stale or changes
-      // after yesterday was already recorded as qualified.
+      // Preserve confirmed qualified days when task history is briefly stale
+      // or a device with a different timezone refreshes the streak.
       const yesterday = addDayKey(today, -1);
-      const [{ data: yesterdayLog }, { data: todayLog }] = await Promise.all([
-        db.from("streak_log").select("streak_current,qualified")
-          .eq("user_id", userId).eq("day", yesterday).maybeSingle(),
-        db.from("streak_log").select("streak_current,qualified,total,done,tz_offset")
-          .eq("user_id", userId).eq("day", today).maybeSingle(),
-      ]);
-      // A confirmed day stays qualified if a later refresh has stale task data.
-      const todayQualified = qualifies(today) || Boolean(todayLog?.qualified);
+      const { data: streakLogs } = await db.from("streak_log").select(
+        "day,streak_current,streak_best,qualified,total,done,tz_offset",
+      ).eq("user_id", userId).gte("day", addDayKey(today, -399))
+        .lte("day", today);
+      const logsByDay = new Map(
+        (streakLogs || []).map((row: ApiRow) => [String(row.day), row]),
+      );
+      const yesterdayLog = logsByDay.get(yesterday);
+      const todayLog = logsByDay.get(today);
+      // Today's qualification remains reversible when a task is unchecked;
+      // only completed past days are carried forward from the audit log.
+      const todayQualified = qualifies(today);
+      const confirmedDays = new Set(
+        (streakLogs || [])
+          .filter((row: ApiRow) => row.qualified && String(row.day) < today &&
+            (!baseDate || String(row.day) >= baseDate))
+          .map((row: ApiRow) => String(row.day)),
+      );
+      const qualifiesDay = (key: string) =>
+        qualifies(key) || confirmedDays.has(key);
       let current = todayQualified ? 1 : 0;
       for (let offset = 1; offset < 400; offset++) {
         const key = addDayKey(today, -offset);
-        if (!qualifies(key)) break;
+        if (!qualifiesDay(key)) break;
         current++;
       }
       if (!todayQualified && yesterdayLog?.qualified) {
@@ -3416,8 +3427,11 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       if (todayQualified && todayLog?.qualified) {
         current = Math.max(current, Number(todayLog.streak_current) || 0);
       }
-      const qualified = [...new Set([...perDay.keys(), ...virtualDays])]
-        .filter(qualifies).sort();
+      const qualified = [...new Set([
+        ...perDay.keys(),
+        ...virtualDays,
+        ...confirmedDays,
+      ])].filter(qualifiesDay).sort();
       let best = 0;
       let run = 0;
       let prev = "";
@@ -3441,7 +3455,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         return {
           date,
           qualified: date <= today &&
-            (qualifies(date) || (date === today && todayQualified)),
+            qualifiesDay(date),
           today: date === today,
         };
       });

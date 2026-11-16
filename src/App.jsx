@@ -2761,17 +2761,20 @@ function WorkspaceApp({ authClient, client }) {
       settleOps(opIds, updated);
       syncCircleTask(updated);
       refreshTasks().catch((error) => notify(error.message));
-      if (action === "complete" && updated.done) {
-        loadActivity().catch((error) => notify(error.message));
-        loadBadgeCollection()
-          .catch((error) => notify(`Couldn’t check your badge progress: ${error.message}`));
-        let nextCelebration = willFinishAllTasks ? "tasks" : null;
+      if (action === "complete") {
+        if (updated.done) {
+          loadActivity().catch((error) => notify(error.message));
+          loadBadgeCollection()
+            .catch((error) => notify(`Couldn’t check your badge progress: ${error.message}`));
+        }
+        let nextCelebration = updated.done && willFinishAllTasks ? "tasks" : null;
         try {
           const nextStreak = await api(
             `/streak?tz=${new Date().getTimezoneOffset()}`,
           );
           setStreak(nextStreak);
           if (
+            updated.done &&
             !nextCelebration &&
             nextStreak.doneToday &&
             nextStreak.current > previousStreak
@@ -2788,7 +2791,7 @@ function WorkspaceApp({ authClient, client }) {
         } catch (error) {
           notify(error.message);
         }
-        if (sharedGroupIds.length) {
+        if (updated.done && sharedGroupIds.length) {
           try {
             const nextGroups = await api("/groups");
             setGroups(nextGroups);
@@ -2817,12 +2820,10 @@ function WorkspaceApp({ authClient, client }) {
           if (confirmed && confirmed.done === Boolean(body.done)) {
             settleOps(opIds, confirmed);
             syncCircleTask(confirmed);
-            if (confirmed.done) {
-              loadActivity().catch(() => {});
-              api(`/streak?tz=${new Date().getTimezoneOffset()}`)
-                .then(setStreak)
-                .catch(() => {});
-            }
+            if (confirmed.done) loadActivity().catch(() => {});
+            api(`/streak?tz=${new Date().getTimezoneOffset()}`)
+              .then(setStreak)
+              .catch(() => {});
             return;
           }
         } catch {
