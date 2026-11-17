@@ -1349,15 +1349,28 @@ function WorkspaceApp({ authClient, client }) {
         setChatMobileOpen(false);
         return;
       }
-      if (type !== "kinda-push" || notification?.kind !== "streak-risk") return;
-      setKindleToast({
-        key: Date.now(),
-        mood: "sleepy",
-        title: notification.title,
-        text: notification.body,
-        duration: 7000,
-        variant: "streak-risk",
-      });
+      if (type !== "kinda-push" || !notification) return;
+      if (notification.kind === "nudge") {
+        if (!badgeUserIdRef.current) return;
+        setBanner({
+          id: notification.nudgeId || `nudge-${Date.now()}`,
+          kind: "nudge",
+          avatarName: notification.senderName,
+          title: notification.title || "Someone just nudged you to do your tasks",
+          body: notification.body || "Take a look at your circle task.",
+        });
+        return;
+      }
+      if (notification.kind === "streak-risk") {
+        setKindleToast({
+          key: Date.now(),
+          mood: "sleepy",
+          title: notification.title,
+          text: notification.body,
+          duration: 7000,
+          variant: "streak-risk",
+        });
+      }
     };
     navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);
     return () => navigator.serviceWorker.removeEventListener(
@@ -2189,23 +2202,31 @@ function WorkspaceApp({ authClient, client }) {
   const previousAlerts = useRef({ chat: 0, nudges: 0 });
   useEffect(() => {
     const unseenNudges = nudges.filter((item) => !item.seen).length;
-    const growing =
-      badges.chat > previousAlerts.current.chat ||
-      unseenNudges > previousAlerts.current.nudges;
+    const latestUnseenNudge = nudges.find((item) => !item.seen);
+    const growingChat = badges.chat > previousAlerts.current.chat;
+    const growingNudges = unseenNudges > previousAlerts.current.nudges;
     previousAlerts.current = { chat: badges.chat, nudges: unseenNudges };
-    if (growing && user && document.hidden && notifPermission === "granted") {
+    if (
+      user && document.hidden && notifPermission === "granted" &&
+      (growingChat || (growingNudges && !pushOn))
+    ) {
       try {
-        new Notification("Kinda", {
-          body: unseenNudges
-            ? "Someone sent you a nudge."
+        new Notification(
+          growingNudges && !pushOn
+            ? `${latestUnseenNudge?.fromName || "A circle member"} just nudged you to do your tasks`
+            : "Kinda",
+          {
+          body: growingNudges && !pushOn
+            ? latestUnseenNudge?.taskTitle || "Your circle is cheering you on."
             : "You have new messages in your circles.",
           icon: "/icon-192.png",
-        });
+          },
+        );
       } catch {
         /* ignore */
       }
     }
-  }, [badges.chat, nudges, notifPermission, user?.id]);
+  }, [badges.chat, nudges, notifPermission, pushOn, user?.id]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -2316,7 +2337,7 @@ function WorkspaceApp({ authClient, client }) {
         kind: "nudge",
         avatarName: latest.fromName,
         avatar: latest.fromAvatar,
-        title: `${latest.fromName} nudged you`,
+        title: `${latest.fromName} just nudged you to do your tasks`,
         body: latest.taskTitle,
       });
   }, [nudges]);

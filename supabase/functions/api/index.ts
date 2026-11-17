@@ -179,7 +179,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       new URL(request.url).pathname.replace(/^\/functions\/v1\/api/, "") || "/";
     const notifyPush = async (
       userIds: string[],
-      payload: { title: string; body: string; tag: string },
+      payload: {
+        title: string;
+        body: string;
+        tag: string;
+        kind?: string;
+        nudgeId?: string;
+        senderName?: string;
+      },
     ) => {
       const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
       const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
@@ -3048,20 +3055,23 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         userId,
       ).eq("task_id", task.id).gte("created_at", since).limit(1);
       if (previous?.length) fail("You already nudged them about this today.");
-      const { error: insertError } = await db.from("nudges").insert({
+      const { data: createdNudge, error: insertError } = await db.from("nudges").insert({
         from_user_id: userId,
         to_user_id: task.user_id,
         task_id: task.id,
-      });
+      }).select("id").single();
       if (insertError) throw insertError;
       const { data: sender } = await db.from("profiles").select("name").eq(
         "id",
         userId,
       ).maybeSingle();
       await notifyPush([task.user_id], {
-        title: `${sender?.name || "A circle member"} nudged you`,
+        title: `${sender?.name || "A circle member"} just nudged you to do your tasks`,
         body: task.title,
         tag: `nudge-${task.id}`,
+        kind: "nudge",
+        nudgeId: String(createdNudge.id),
+        senderName: sender?.name || "A circle member",
       });
       return response(200, { ok: true });
     }
