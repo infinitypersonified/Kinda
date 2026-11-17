@@ -398,13 +398,16 @@ button,
   position: absolute;
   top: 0;
   bottom: 0;
-  display: none;
+  display: flex;
   align-items: center;
   gap: 6px;
   border: 0;
   padding: 0 18px;
   color: #fff;
   font-weight: 600;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1), visibility 0s linear 220ms;
 }
 
 .swipe-bg-done {
@@ -445,7 +448,9 @@ button,
 }
 
 .task-swipe:has(.task-row.dragging) .swipe-bg {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 .task-row {

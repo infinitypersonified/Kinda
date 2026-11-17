@@ -260,7 +260,7 @@
 }
 
 .app-shell .task-row {
-  transition: background .24s ease, box-shadow .3s ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+  transition: background .2s ease, box-shadow .22s ease, transform 320ms cubic-bezier(.22, 1, .36, 1);
 }
 
 .app-shell .task-row:hover,
