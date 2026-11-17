@@ -391,6 +391,7 @@ button,
 .task-swipe {
   position: relative;
   overflow: hidden;
+  background: color-mix(in srgb, #b95035 13%, var(--background));
 }
 
 .task-swipe .swipe-bg {
@@ -413,10 +414,34 @@ button,
 }
 
 .swipe-bg-delete {
-  right: 0;
-  left: 40%;
-  justify-content: flex-end;
-  background: #c4493a;
+  top: 5px;
+  right: 6px;
+  bottom: 5px;
+  left: auto;
+  width: 76px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 6px;
+  padding: 5px 4px;
+  background: #b95035;
+  color: #fff8f2;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.swipe-bg-delete:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--text);
+  outline-offset: -3px;
+}
+
+@media (hover: hover) {
+  .swipe-bg-delete:hover {
+    background: #9f3d2c;
+  }
 }
 
 .task-swipe:has(.task-row.dragging) .swipe-bg {

@@ -18,8 +18,8 @@ function allowedOrigin(origin: string | null) {
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("SITE_URL") || "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 
 // "custom:1,3,5" repeats on those weekdays (1 = Monday ... 7 = Sunday).
@@ -1790,29 +1790,43 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           const userIds = (membersResult.data || []).map((row: ApiRow) =>
             String(row.user_id)
           );
-          const { data: profiles, error: profileError } = await db.from("profiles")
-            .select("id,name,avatar").in("id", userIds);
-          if (profileError) throw profileError;
-          const doneRows: ApiRow[] = [];
-          for (let from = 0;; from += 1000) {
-            const { data: page, error: pageError } = await db.from("tasks")
-              .select("user_id,due_date").eq("challenge_id", challenge.id)
-              .eq("done", true).order("id", { ascending: true })
-              .range(from, from + 999);
-            if (pageError) throw pageError;
-            doneRows.push(...(page || []));
-            if (!page || page.length < 1000 || from >= 9000) break;
-          }
-          const todayTaskRows: ApiRow[] = [];
-          for (let from = 0;; from += 1000) {
-            const { data: page, error: pageError } = await db.from("tasks")
-              .select("id,user_id,title,done").eq("challenge_id", challenge.id)
-              .eq("due_date", todayKey).order("created_at", { ascending: true })
-              .range(from, from + 999);
-            if (pageError) throw pageError;
-            todayTaskRows.push(...(page || []));
-            if (!page || page.length < 1000) break;
-          }
+          const loadDoneRows = async () => {
+            const rows: ApiRow[] = [];
+            for (let from = 0;; from += 1000) {
+              const { data: page, error: pageError } = await db.from("tasks")
+                .select("user_id,due_date").eq("challenge_id", challenge.id)
+                .eq("done", true).order("id", { ascending: true })
+                .range(from, from + 999);
+              if (pageError) throw pageError;
+              rows.push(...(page || []));
+              if (!page || page.length < 1000 || from >= 9000) break;
+            }
+            return rows;
+          };
+          const loadTodayRows = async () => {
+            const rows: ApiRow[] = [];
+            for (let from = 0;; from += 1000) {
+              const { data: page, error: pageError } = await db.from("tasks")
+                .select("id,user_id,title,done").eq("challenge_id", challenge.id)
+                .eq("due_date", todayKey).order("created_at", { ascending: true })
+                .range(from, from + 999);
+              if (pageError) throw pageError;
+              rows.push(...(page || []));
+              if (!page || page.length < 1000) break;
+            }
+            return rows;
+          };
+          const [profilesResult, doneRows, todayTaskRows, myRoleResult] =
+            await Promise.all([
+              db.from("profiles").select("id,name,avatar").in("id", userIds),
+              loadDoneRows(),
+              loadTodayRows(),
+              db.from("circle_members").select("role").eq("circle_id", circleId)
+                .eq("user_id", userId).maybeSingle(),
+            ]);
+          if (profilesResult.error) throw profilesResult.error;
+          const profiles = profilesResult.data;
+          const myRole = myRoleResult.data;
           const tasksByMember = new Map<string, ApiRow[]>();
           for (const task of todayTaskRows) {
             const id = String(task.user_id);
@@ -1829,8 +1843,6 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           }
           const mine = tasksByMember.get(userId) || [];
           const perDay = (challenge.daily_tasks as string[]).length;
-          const { data: myRole } = await db.from("circle_members").select("role")
-            .eq("circle_id", circleId).eq("user_id", userId).maybeSingle();
           const names = new Map(
             (profiles || []).map((row: ApiRow) => [String(row.id), row]),
           );

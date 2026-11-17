@@ -1426,6 +1426,15 @@ function WorkspaceApp({ authClient, client }) {
     setActivityLoaded(true);
   }, [api]);
 
+  const loadStreak = useCallback(async () => {
+    const value = await api(
+      `/streak?tz=${new Date().getTimezoneOffset()}`,
+      { cache: "no-store" },
+    );
+    setStreak(value);
+    return value;
+  }, [api]);
+
   const loadBadgeCollection = useCallback(async () => {
     const requestedUserId = user?.id;
     setBadgeLoading(true);
@@ -1518,13 +1527,13 @@ function WorkspaceApp({ authClient, client }) {
       authSession.user.id !== user.id
     ) return undefined;
     let cancelled = false;
-    Promise.all([loadWorkspace(), loadActivity()]).catch((error) => {
+    Promise.all([loadWorkspace(), loadActivity(), loadStreak()]).catch((error) => {
       if (!cancelled && !isAuthError(error)) setToast(error.message);
     });
     return () => {
       cancelled = true;
     };
-  }, [user?.id, authPending, authSession?.user?.id, loadWorkspace, loadActivity]);
+  }, [user?.id, authPending, authSession?.user?.id, loadWorkspace, loadActivity, loadStreak]);
 
   useEffect(() => {
     if (inviteToken) {
@@ -1635,9 +1644,9 @@ function WorkspaceApp({ authClient, client }) {
     setFriendsLoaded(true);
     setActivity(saved.activity || []);
     setActivityLoaded(true);
-    // Streak values are server-derived. Do not briefly restore a stale cached count
-    // after a shared reset while the live query is connecting.
-    setStreak(null);
+    // Show the last known streak immediately, then replace it with the fresh
+    // server calculation requested alongside the rest of the workspace.
+    setStreak(saved.streak || null);
     setNudges(saved.nudges || []);
   }, [user?.id]);
 
@@ -1703,7 +1712,12 @@ function WorkspaceApp({ authClient, client }) {
         },
       ),
       live("/nudges", setNudges, onError),
-      live(`/streak?tz=${new Date().getTimezoneOffset()}`, setStreak, onError),
+      live(
+        `/streak?tz=${new Date().getTimezoneOffset()}`,
+        setStreak,
+        onError,
+        { initialRefresh: false },
+      ),
     ];
     const unsubs = subscribe();
     return () => unsubs.forEach((stop) => stop());
@@ -5419,7 +5433,10 @@ const TaskRow = React.memo(function TaskRow({
         className={`task-row priority-${task.priority} ${task.done ? "task-complete" : ""} ${justDone ? "task-pop" : ""} ${dx ? "dragging" : ""}`}
         style={
           dx
-            ? { transform: `translateX(${dx}px)`, transition: "none" }
+            ? {
+                transform: `translateX(${dx}px)`,
+                transition: drag.current?.locked ? "none" : undefined,
+              }
             : undefined
         }
         onPointerDown={down}
@@ -5662,26 +5679,42 @@ function CirclesPage({
   const [challengeForm, setChallengeForm] = useState(false);
   const [challengeBusy, setChallengeBusy] = useState(false);
   const activeGroupId = activeGroup?.id;
+  const challengeCacheKey = user?.id && activeGroupId
+    ? `kinda:challenge:${user.id}:${activeGroupId}`
+    : null;
   useEffect(() => {
-    setChallenge(null);
     setChallengeOpen(false);
-    if (!activeGroupId || !challengeApi) return undefined;
+    if (!activeGroupId || !challengeApi || !challengeCacheKey) {
+      setChallenge(null);
+      return undefined;
+    }
+    // Reuse the last circle challenge while its fresh progress loads.
+    setChallenge(readJson(challengeCacheKey));
     let cancelled = false;
     challengeApi
       .get(activeGroupId)
       .then((result) => {
-        if (!cancelled) setChallenge(result.challenge || null);
+        if (cancelled) return;
+        const nextChallenge = result.challenge || null;
+        setChallenge(nextChallenge);
+        writeJson(challengeCacheKey, nextChallenge);
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (!cancelled) {
+          onNotify?.(`Couldn't load this circle's challenge: ${error.message}`);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [activeGroupId]);
+  }, [activeGroupId, user?.id]);
   async function runChallenge(request, warriorLine) {
     setChallengeBusy(true);
     try {
       const result = await request();
-      setChallenge(result.challenge || null);
+      const nextChallenge = result.challenge || null;
+      setChallenge(nextChallenge);
+      if (challengeCacheKey) writeJson(challengeCacheKey, nextChallenge);
       onChallengeChanged?.();
       if (warriorLine) {
         onWarrior?.({ scene: "go", title: "Let’s go!", line: warriorLine });
