@@ -1057,6 +1057,60 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       });
     }
     if (method === "GET" && pathname === "/tasks") {
+      const requestedTzOffset = Number(query.tz ?? 0);
+      const tzOffset = Number.isFinite(requestedTzOffset) &&
+          Math.abs(requestedTzOffset) <= 840
+        ? requestedTzOffset
+        : 0;
+      const todayKey = new Date(Date.now() - tzOffset * 60_000)
+        .toISOString().slice(0, 10);
+      // Challenge tasks must exist before Home fetches the task list. Previously
+      // they were only created when someone opened the Circles page, so they
+      // appeared late (or not at all) on Home in the morning.
+      if (query.includeChallengeTasks === "1") {
+        const { data: challengeMemberships, error: membershipError } =
+          await db.from("challenge_members").select("challenge_id")
+            .eq("user_id", userId);
+        if (membershipError) throw membershipError;
+        const challengeIds = [...new Set((challengeMemberships || []).map(
+          (row: ApiRow) => String(row.challenge_id),
+        ))];
+        if (challengeIds.length) {
+          const { data: joinedChallenges, error: challengesError } = await db
+            .from("challenges").select("id,starts_on,days,daily_tasks")
+            .in("id", challengeIds);
+          if (challengesError) throw challengesError;
+          for (const challenge of (joinedChallenges || []) as ApiRow[]) {
+            const dayNumber = Math.floor(
+              (Date.parse(`${todayKey}T00:00:00Z`) -
+                Date.parse(`${challenge.starts_on}T00:00:00Z`)) / 86400000,
+            ) + 1;
+            if (dayNumber < 1 || dayNumber > Number(challenge.days)) continue;
+            const { data: existingTasks, error: existingError } = await db
+              .from("tasks").select("title").eq("user_id", userId)
+              .eq("challenge_id", challenge.id).eq("due_date", todayKey);
+            if (existingError) throw existingError;
+            const existingTitles = new Set((existingTasks || []).map(
+              (task: ApiRow) => String(task.title),
+            ));
+            const missingTitles = (Array.isArray(challenge.daily_tasks)
+              ? challenge.daily_tasks as unknown[]
+              : []).map(String).filter((title) => !existingTitles.has(title));
+            if (missingTitles.length) {
+              const { error: insertError } = await db.from("tasks").insert(
+                missingTitles.map((title) => ({
+                  user_id: userId,
+                  title,
+                  category: "Personal",
+                  due_date: todayKey,
+                  challenge_id: challenge.id,
+                })),
+              );
+              if (insertError) throw insertError;
+            }
+          }
+        }
+      }
       const requestedPageSize = Number.parseInt(String(query.limit ?? 500), 10);
       const requestedOffset = Number.parseInt(String(query.offset ?? 0), 10);
       const pageSize = Number.isFinite(requestedPageSize)
@@ -1731,7 +1785,13 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const [, circleId, feature, suffix] = circleRoute;
       await ensureCircleMember(circleId);
       if (feature === "challenge") {
-        const todayKey = new Date().toISOString().slice(0, 10);
+        const requestedTzOffset = Number(query.tz ?? 0);
+        const tzOffset = Number.isFinite(requestedTzOffset) &&
+            Math.abs(requestedTzOffset) <= 840
+          ? requestedTzOffset
+          : 0;
+        const todayKey = new Date(Date.now() - tzOffset * 60_000)
+          .toISOString().slice(0, 10);
         const dayDiff = (from: string, to: string) =>
           Math.round(
             (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /

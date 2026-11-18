@@ -1183,7 +1183,7 @@ function WorkspaceApp({ authClient, client }) {
     setTasks([]);
   }, []);
   const refreshTasks = useCallback(async () => {
-    const latest = await api("/tasks");
+    const latest = await api(`/tasks?tz=${new Date().getTimezoneOffset()}`);
     applyServerTasks(latest);
     setTasksLoaded(true);
     return latest;
@@ -1269,7 +1269,7 @@ function WorkspaceApp({ authClient, client }) {
   const [taskDialog, setTaskDialog] = useState(null);
   const [warrior, setWarrior] = useState(null);
   const challengeApi = {
-    get: (groupId) => api(`/groups/${groupId}/challenge`),
+    get: (groupId) => api(`/groups/${groupId}/challenge?tz=${new Date().getTimezoneOffset()}`),
     create: (groupId, values) =>
       api(`/groups/${groupId}/challenge`, { method: "POST", body: JSON.stringify(values) }),
     join: (groupId) =>
@@ -1414,7 +1414,7 @@ function WorkspaceApp({ authClient, client }) {
   const activityIds = activity.map((item) => item.id).join(",");
 
   const loadWorkspace = useCallback(async () => {
-    const taskRequest = api("/tasks").then((taskData) => {
+    const taskRequest = api(`/tasks?tz=${new Date().getTimezoneOffset()}&includeChallengeTasks=1`).then((taskData) => {
       applyServerTasks(taskData);
       setTasksLoaded(true);
     });
@@ -3757,6 +3757,7 @@ function WorkspaceApp({ authClient, client }) {
               user={user}
               todayTasks={todayTasks}
               planTasks={tasks}
+              onMoveToToday={moveToToday}
               leaderboardGroupId={leaderboardGroupId ?? groups[0]?.id}
               onSelectLeaderboardGroup={setLeaderboardGroupId}
               activity={activity.slice(0, 4)}
@@ -4983,8 +4984,16 @@ function HomePage({
   onDismissOnboarding,
   onShareStreak,
 }) {
+  const [dismissedYesterdayPrompt, setDismissedYesterdayPrompt] = useState(false);
   const today = localDate();
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = localDate(yesterdayDate);
   const tasksForToday = planTasks.filter((task) => taskDay(task) === today);
+  const yesterdayTasks = planTasks.filter(
+    (task) => !task.done && taskDay(task) === yesterday &&
+      !hasCurrentCopy(task, todayTasks),
+  );
   const done = tasksForToday.filter((task) => task.done).length;
   const total = tasksForToday.length;
   const completion = total ? Math.round((done / total) * 100) : 0;
@@ -5053,6 +5062,35 @@ function HomePage({
               />
               <input type="hidden" name="dueDate" value={today} />
             </form>
+          )}
+          {loaded && yesterdayTasks.length > 0 && !dismissedYesterdayPrompt && (
+            <section className="yesterday-carryover" aria-label="Unfinished tasks from yesterday">
+              <div className="yesterday-carryover-heading">
+                <b>From yesterday</b>
+                <button type="button" className="yesterday-carryover-dismiss" onClick={() => setDismissedYesterdayPrompt(true)}>
+                  Not now
+                </button>
+                <span>
+                  You didn’t finish {yesterdayTasks.length === 1 ? "this task" : "these tasks"} yesterday.
+                  Would you like to move {yesterdayTasks.length === 1 ? "it" : "them"} to today?
+                </span>
+              </div>
+              <div className="yesterday-carryover-list">
+                {yesterdayTasks.map((task) => (
+                  <div className="yesterday-carryover-row" key={task.id}>
+                    <span title={task.title}>{task.title}</span>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => onMoveToToday?.([task], today, "today")}
+                      aria-label={`Move ${task.title} to today`}
+                    >
+                      Move to today <ArrowRight size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
           {earlier.length > 0 && (
             <EarlierDays

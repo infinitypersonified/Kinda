@@ -2432,8 +2432,8 @@ button.ch-card {
 }
 
 .app-shell .task-swipe > .task-row {
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   padding: 13px 14px;
   background: color-mix(in srgb, var(--surface) 76%, var(--background));
   box-shadow: none;
@@ -2444,12 +2444,12 @@ button.ch-card {
 }
 
 .app-shell .home-plan-group .task-swipe > .task-row:last-child {
-  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 @media (hover: hover) {
   .app-shell .task-swipe > .task-row:hover {
-    border-color: color-mix(in srgb, var(--border-strong) 94%, transparent);
+    border-color: var(--border-strong);
     background: color-mix(in srgb, var(--surface) 62%, var(--hover));
     box-shadow: none;
   }
@@ -2465,4 +2465,123 @@ button.ch-card {
   .app-shell .task-swipe .swipe-bg {
     transition: none !important;
   }
+}
+
+/* Circle and challenge sections use spacing and surface tone, not outlines. */
+.app-shell .circles-page .circle-detail {
+  border: 0;
+  box-shadow: none;
+}
+
+.app-shell .circles-page .circle-detail > * + * {
+  border-top: 0;
+}
+
+.app-shell .circles-page :is(
+  .circle-tile,
+  .member-task-group,
+  .ch-card,
+  .ch-ring-card,
+  .ch-team,
+  .ch-person,
+  .ch-today > span,
+  .ch-start,
+  .cd-icon
+) {
+  border: 0;
+}
+
+.app-shell .circles-page :is(
+  .circle-detail,
+  .circle-tile,
+  .member-task-group,
+  .ch-card,
+  .ch-ring-card,
+  .ch-team,
+  .ch-person,
+  .ch-today > span
+):is(:hover, :focus, :focus-within, :focus-visible, :active) {
+  border: 0;
+  box-shadow: none;
+}
+
+.app-shell .circles-page :is(.circle-tile, .ch-card):focus-visible {
+  outline: 0;
+}
+
+:root[data-theme="dark"] .app-shell .circles-page .circle-detail:hover,
+:root[data-theme="dark"] .app-shell .circles-page .circle-detail:focus-within {
+  border: 0;
+  box-shadow: none;
+}
+
+.app-shell .yesterday-carryover {
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+
+.app-shell .yesterday-carryover-heading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.app-shell .yesterday-carryover-heading b {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.app-shell .yesterday-carryover-heading > span {
+  grid-column: 1 / -1;
+  color: var(--text-mid);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-shell .yesterday-carryover-dismiss {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-mid);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.app-shell .yesterday-carryover-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.app-shell .yesterday-carryover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.app-shell .yesterday-carryover-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell .yesterday-carryover-row .text-link {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+@media (max-width: 480px) {
+  .app-shell .yesterday-carryover { padding: 12px; }
+  .app-shell .yesterday-carryover-row { align-items: flex-start; flex-direction: column; }
 }
