@@ -1321,6 +1321,10 @@ button.ch-card {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
+.task-select-trigger:active {
+  transform: scale(.98);
+}
+
 .task-select-menu {
   position: absolute;
   z-index: 9;
@@ -1336,6 +1340,18 @@ button.ch-card {
   padding: 6px;
   background: var(--surface);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 16%, transparent);
+  animation: task-select-in .16s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-select-menu {
+    animation: none;
+  }
+}
+
+@keyframes task-select-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; }
 }
 
 .task-select-menu>button {
@@ -1352,6 +1368,7 @@ button.ch-card {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: background-color .14s ease, color .14s ease;
 }
 
 .task-select-menu>button>span {
@@ -1408,6 +1425,11 @@ button.ch-card {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, transform .12s ease;
+}
+
+.task-date-trigger:active {
+  transform: scale(.98);
 }
 
 .task-date-trigger>svg:first-child {
@@ -1439,6 +1461,18 @@ button.ch-card {
   padding: 13px;
   background: var(--surface);
   box-shadow: 0 12px 36px color-mix(in srgb, var(--text) 16%, transparent);
+  animation: task-calendar-in .16s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-calendar {
+    animation: none;
+  }
+}
+
+@keyframes task-calendar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; }
 }
 
 .task-calendar-head,
@@ -1500,6 +1534,12 @@ button.ch-card {
 
 .task-calendar-grid>button {
   cursor: pointer;
+  transition: background-color .14s ease, color .14s ease;
+}
+
+.task-calendar-grid>button:active {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .task-calendar-grid>button:hover,
@@ -1584,6 +1624,44 @@ button.ch-card {
 
   .task-calendar {
     width: min(320px, calc(100vw - 44px));
+  }
+
+  /* Phones: the new-task sheet carries the form — keep fields at 16px so iOS
+     doesn't zoom when one gets focus, and make taps snappy/un-zoomable. */
+  .modal-backdrop:has(.task-dialog) {
+    touch-action: manipulation;
+  }
+
+  .task-dialog .modal-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  .task-dialog .modal-form select,
+  .task-dialog .modal-form textarea,
+  .task-dialog .task-select-trigger,
+  .task-dialog .task-date-trigger {
+    font-size: 16px;
+    touch-action: manipulation;
+  }
+
+  .task-select-menu>button,
+  .task-calendar-head button,
+  .task-calendar-foot button,
+  .task-calendar-grid>button,
+  .task-calendar-grid>span {
+    touch-action: manipulation;
+  }
+
+  /* Priority, category and date menus on phones: full width, open upward so
+     they stay inside the sheet, and never show scrollbars or overflow. */
+  .task-dialog .task-select-menu,
+  .task-dialog .task-calendar {
+    width: 100%;
+    max-height: min(240px, 52vh);
+    overflow: hidden;
+    top: auto;
+    bottom: calc(100% + 6px);
+  }
+
+  .task-dialog .task-calendar {
+    bottom: calc(100% + 7px);
   }
 }
 
@@ -2543,14 +2621,26 @@ button.ch-card {
 }
 
 .app-shell .yesterday-carryover-dismiss {
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-mid);
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 78%, #000);
+  border-radius: 10px;
+  background: var(--accent);
+  color: #21140b;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.app-shell .yesterday-carryover-dismiss:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+
+.app-shell .yesterday-carryover-dismiss:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 
 .app-shell .yesterday-carryover-list {

@@ -4984,8 +4984,22 @@ function HomePage({
   onDismissOnboarding,
   onShareStreak,
 }) {
-  const [dismissedYesterdayPrompt, setDismissedYesterdayPrompt] = useState(false);
   const today = localDate();
+  const [dismissedYesterdayPromptFor, setDismissedYesterdayPromptFor] = useState(() => {
+    try {
+      return localStorage.getItem("kinda:yesterday-prompt-dismissed") || "";
+    } catch {
+      return "";
+    }
+  });
+  const dismissYesterdayPrompt = () => {
+    setDismissedYesterdayPromptFor(today);
+    try {
+      localStorage.setItem("kinda:yesterday-prompt-dismissed", today);
+    } catch {
+      /* Keep the dismissal for this Home visit if storage is unavailable. */
+    }
+  };
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterday = localDate(yesterdayDate);
@@ -5063,11 +5077,11 @@ function HomePage({
               <input type="hidden" name="dueDate" value={today} />
             </form>
           )}
-          {loaded && yesterdayTasks.length > 0 && !dismissedYesterdayPrompt && (
+          {loaded && yesterdayTasks.length > 0 && dismissedYesterdayPromptFor !== today && (
             <section className="yesterday-carryover" aria-label="Unfinished tasks from yesterday">
               <div className="yesterday-carryover-heading">
                 <b>From yesterday</b>
-                <button type="button" className="yesterday-carryover-dismiss" onClick={() => setDismissedYesterdayPrompt(true)}>
+                <button type="button" className="yesterday-carryover-dismiss" onClick={dismissYesterdayPrompt}>
                   Not now
                 </button>
                 <span>

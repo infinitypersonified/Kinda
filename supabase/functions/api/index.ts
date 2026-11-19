@@ -1069,15 +1069,18 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       // appeared late (or not at all) on Home in the morning.
       if (query.includeChallengeTasks === "1") {
         const { data: challengeMemberships, error: membershipError } =
-          await db.from("challenge_members").select("challenge_id")
+          await db.from("challenge_members").select(
+            "challenge_id,share_tasks_to_circle",
+          )
             .eq("user_id", userId);
         if (membershipError) throw membershipError;
-        const challengeIds = [...new Set((challengeMemberships || []).map(
-          (row: ApiRow) => String(row.challenge_id),
-        ))];
+        const shareByChallenge = new Map((challengeMemberships || []).map(
+          (row: ApiRow) => [String(row.challenge_id), Boolean(row.share_tasks_to_circle)],
+        ));
+        const challengeIds = [...shareByChallenge.keys()];
         if (challengeIds.length) {
           const { data: joinedChallenges, error: challengesError } = await db
-            .from("challenges").select("id,starts_on,days,daily_tasks")
+            .from("challenges").select("id,circle_id,starts_on,days,daily_tasks")
             .in("id", challengeIds);
           if (challengesError) throw challengesError;
           for (const challenge of (joinedChallenges || []) as ApiRow[]) {
@@ -1087,7 +1090,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             ) + 1;
             if (dayNumber < 1 || dayNumber > Number(challenge.days)) continue;
             const { data: existingTasks, error: existingError } = await db
-              .from("tasks").select("title").eq("user_id", userId)
+              .from("tasks").select("id,title").eq("user_id", userId)
               .eq("challenge_id", challenge.id).eq("due_date", todayKey);
             if (existingError) throw existingError;
             const existingTitles = new Set((existingTasks || []).map(
@@ -1096,8 +1099,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             const missingTitles = (Array.isArray(challenge.daily_tasks)
               ? challenge.daily_tasks as unknown[]
               : []).map(String).filter((title) => !existingTitles.has(title));
+            let newTaskIds: string[] = [];
             if (missingTitles.length) {
-              const { error: insertError } = await db.from("tasks").insert(
+              const { data: insertedTasks, error: insertError } = await db.from("tasks").insert(
                 missingTitles.map((title) => ({
                   user_id: userId,
                   title,
@@ -1105,8 +1109,26 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
                   due_date: todayKey,
                   challenge_id: challenge.id,
                 })),
-              );
+              ).select("id");
               if (insertError) throw insertError;
+              newTaskIds = (insertedTasks || []).map((task: ApiRow) => String(task.id));
+            }
+            if (shareByChallenge.get(String(challenge.id))) {
+              const taskIds = [
+                ...(existingTasks || []).map((task: ApiRow) => String(task.id)),
+                ...newTaskIds,
+              ];
+              if (taskIds.length) {
+                const { error: shareError } = await db.from("circle_tasks").upsert(
+                  taskIds.map((task_id) => ({
+                    circle_id: challenge.circle_id,
+                    task_id,
+                    shared_by: userId,
+                  })),
+                  { onConflict: "circle_id,task_id", ignoreDuplicates: true },
+                );
+                if (shareError) throw shareError;
+              }
             }
           }
         }
@@ -1438,6 +1460,38 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             })),
           );
           if (linkError) throw linkError;
+        }
+        if (task.challenge_id) {
+          const { data: challenge, error: challengeError } = await db.from(
+            "challenges",
+          ).select("circle_id").eq("id", task.challenge_id).maybeSingle();
+          if (challengeError) throw challengeError;
+          if (challenge) {
+            const shareEnabled = groupIds.includes(String(challenge.circle_id));
+            const { error: preferenceError } = await db.from(
+              "challenge_members",
+            ).update({ share_tasks_to_circle: shareEnabled })
+              .eq("challenge_id", task.challenge_id).eq("user_id", userId);
+            if (preferenceError) throw preferenceError;
+            if (shareEnabled) {
+              const { data: challengeTasks, error: taskListError } = await db
+                .from("tasks").select("id").eq("challenge_id", task.challenge_id)
+                .eq("user_id", userId);
+              if (taskListError) throw taskListError;
+              if (challengeTasks?.length) {
+                const { error: shareError } = await db.from("circle_tasks")
+                  .upsert(
+                    challengeTasks.map((row: ApiRow) => ({
+                      circle_id: challenge.circle_id,
+                      task_id: row.id,
+                      shared_by: userId,
+                    })),
+                    { onConflict: "circle_id,task_id", ignoreDuplicates: true },
+                  );
+                if (shareError) throw shareError;
+              }
+            }
+          }
         }
         return response(200, await taskWithGroups(updated));
       }
@@ -1834,6 +1888,28 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
               })),
             );
             if (insertError) throw insertError;
+          }
+          const { data: sharing, error: sharingError } = await db.from(
+            "challenge_members",
+          ).select("share_tasks_to_circle").eq("challenge_id", challenge.id)
+            .eq("user_id", forUser).maybeSingle();
+          if (sharingError) throw sharingError;
+          if (sharing?.share_tasks_to_circle) {
+            const { data: dailyRows, error: dailyError } = await db.from("tasks")
+              .select("id").eq("user_id", forUser)
+              .eq("challenge_id", challenge.id).eq("due_date", todayKey);
+            if (dailyError) throw dailyError;
+            if (dailyRows?.length) {
+              const { error: linkError } = await db.from("circle_tasks").upsert(
+                dailyRows.map((row: ApiRow) => ({
+                  circle_id: challenge.circle_id,
+                  task_id: row.id,
+                  shared_by: forUser,
+                })),
+                { onConflict: "circle_id,task_id", ignoreDuplicates: true },
+              );
+              if (linkError) throw linkError;
+            }
           }
         };
         const describe = async (challenge: ApiRow | null) => {
