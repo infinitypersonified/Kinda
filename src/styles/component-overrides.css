@@ -1649,19 +1649,13 @@ button.ch-card {
     touch-action: manipulation;
   }
 
-  /* Priority, category and date menus on phones: full width, open upward so
-     they stay inside the sheet, and never show scrollbars or overflow. */
+  /* Priority, category and date menus on phones: full width and scroll-free;
+     fitDropdown() in App.jsx flips them upward when needed so all options
+     stay inside the sheet. */
   .task-dialog .task-select-menu,
   .task-dialog .task-calendar {
     width: 100%;
-    max-height: min(240px, 52vh);
     overflow: hidden;
-    top: auto;
-    bottom: calc(100% + 6px);
-  }
-
-  .task-dialog .task-calendar {
-    bottom: calc(100% + 7px);
   }
 }
 

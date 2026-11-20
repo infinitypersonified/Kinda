@@ -8249,6 +8249,33 @@ function RepeatField({ defaultValue = "none" }) {
   );
 }
 
+// Phones: when a select/date dropdown would overflow the bottom of the sheet,
+// flip it upward when there is room above, or cap it when not — the menu
+// always fits inside the sheet and never overflows or scrolls.
+function fitDropdown(menu, trigger) {
+  if (!menu || !trigger) return;
+  const host = menu.closest(".modal-card") || document.documentElement;
+  const hostRect = host.getBoundingClientRect();
+  const parentRect = menu.parentElement?.getBoundingClientRect() || menu.getBoundingClientRect();
+  const triggerRect = trigger.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const margin = 6;
+  const spaceBelow = hostRect.bottom - triggerRect.bottom - margin;
+  const spaceAbove = triggerRect.top - hostRect.top - margin;
+  menu.style.top = "";
+  menu.style.bottom = "";
+  menu.style.maxHeight = "";
+  if (menuRect.height <= spaceBelow) return; // CSS default: opens downward.
+  if (spaceAbove <= 0) {
+    // No room above either — cap downward so the sheet stays clean.
+    menu.style.maxHeight = `${Math.max(spaceBelow, 0)}px`;
+    return;
+  }
+  menu.style.top = "auto";
+  menu.style.bottom = `${parentRect.bottom - triggerRect.top + margin}px`;
+  if (menuRect.height > spaceAbove) menu.style.maxHeight = `${spaceAbove}px`;
+}
+
 function TaskSelect({ value, onChange, options, name }) {
   const [open, setOpen] = useState(false);
   const select = useRef(null);
@@ -8264,6 +8291,10 @@ function TaskSelect({ value, onChange, options, name }) {
     };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("keydown", closeEscape);
+    fitDropdown(
+      select.current?.querySelector(".task-select-menu"),
+      select.current?.querySelector("button.task-select-trigger"),
+    );
     return () => {
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeEscape);
@@ -8334,6 +8365,10 @@ function TaskDateField({ value, onChange }) {
     };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("keydown", closeEscape);
+    fitDropdown(
+      picker.current?.querySelector(".task-calendar"),
+      picker.current?.querySelector("button.task-date-trigger"),
+    );
     return () => {
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeEscape);
