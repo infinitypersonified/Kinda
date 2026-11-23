@@ -3698,6 +3698,13 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const dayMs = 86400000;
       // Read every task, page by page. A single query stops at 1,000 rows, so a
       // person with a long history could silently lose days and see a streak of zero.
+      // Include tasks by due date too: an old task can be rescheduled to today,
+      // and must count toward today's goal even when it was created long ago.
+      const historyCutoff = new Date(now - 400 * dayMs);
+      const historyCutoffAt = historyCutoff.toISOString();
+      const historyCutoffDay = new Date(
+        historyCutoff.getTime() - tzOffset * 60000,
+      ).toISOString().slice(0, 10);
       const tasks: Array<{
         due_date: string | null;
         created_at: string;
@@ -3707,9 +3714,8 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       for (let from = 0;; from += 1000) {
         const { data: page, error } = await db.from("tasks").select(
           "due_date,created_at,done,moved_from",
-        ).eq("user_id", userId).gte(
-          "created_at",
-          new Date(now - 400 * dayMs).toISOString(),
+        ).eq("user_id", userId).or(
+          `created_at.gte.${historyCutoffAt},due_date.gte.${historyCutoffDay}`,
         ).order("id", { ascending: true }).range(from, from + 999);
         if (error) throw error;
         tasks.push(...(page || []));
@@ -3792,7 +3798,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       // that was added after completion, then moved away. Clamp it to today's
       // corrected total so that stale streak_log rows cannot preserve the bad
       // 12-task denominator for a day that now has 11 actual tasks.
-      const snapshotTotal = Math.min(loggedSnapshotTotal, todayTotal);
+      const snapshotTotal = Math.max(
+        Math.min(loggedSnapshotTotal, todayTotal),
+        Math.min(5, todayTotal),
+      );
       const todayStat = {
         total: goalSnapshot ? snapshotTotal : todayTotal,
         done: goalSnapshot
