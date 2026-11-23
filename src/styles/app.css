@@ -873,6 +873,30 @@ html body .up-next b {
   gap: 0;
 }
 
+.task-day-group + .task-day-group {
+  margin-top: 22px;
+}
+
+.task-day-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0 0 8px;
+}
+
+.task-day-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font: 600 18px/1.25 var(--serif);
+}
+
+.task-day-heading span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .task-row {
   display: flex;
   align-items: flex-start;

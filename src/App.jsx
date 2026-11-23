@@ -261,6 +261,13 @@ function dayLabel(value) {
   }).format(date);
 }
 
+function taskDueHeading(value) {
+  const date = new Date(`${value}T12:00:00`);
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "long" }).format(date);
+  const label = dayLabel(value);
+  return label === "Tomorrow" ? `Tomorrow · ${weekday}` : `${weekday}, ${label}`;
+}
+
 function initials(name) {
   return (name || "You")
     .trim()
@@ -1272,11 +1279,12 @@ function WorkspaceApp({ authClient, client }) {
     get: (groupId) => api(`/groups/${groupId}/challenge?tz=${new Date().getTimezoneOffset()}`),
     create: (groupId, values) =>
       api(`/groups/${groupId}/challenge`, { method: "POST", body: JSON.stringify(values) }),
-    join: (groupId) =>
-      api(`/groups/${groupId}/challenge/join`, { method: "POST", body: "{}" }),
-    leave: (groupId) =>
-      api(`/groups/${groupId}/challenge/leave`, { method: "POST", body: "{}" }),
-    remove: (groupId) => api(`/groups/${groupId}/challenge`, { method: "DELETE" }),
+    join: (groupId, challengeId) =>
+      api(`/groups/${groupId}/challenge/join?challengeId=${encodeURIComponent(challengeId)}`, { method: "POST", body: "{}" }),
+    leave: (groupId, challengeId) =>
+      api(`/groups/${groupId}/challenge/leave?challengeId=${encodeURIComponent(challengeId)}`, { method: "POST", body: "{}" }),
+    remove: (groupId, challengeId) =>
+      api(`/groups/${groupId}/challenge?challengeId=${encodeURIComponent(challengeId)}`, { method: "DELETE" }),
   };
   useEffect(() => {
     const onKey = (event) => {
@@ -2091,6 +2099,9 @@ function WorkspaceApp({ authClient, client }) {
   const doneTasks = tasks.filter((task) => task.done);
   const openTasks = tasks.filter((task) => !task.done);
   const todayKey = localDate();
+  const upcomingEnd = new Date();
+  upcomingEnd.setDate(upcomingEnd.getDate() + 3);
+  const upcomingEndKey = localDate(upcomingEnd);
   const todayTasks = tasks.filter((task) => taskDay(task) === todayKey);
   useEffect(() => {
     if (!user || !tasksLoaded || !streak || !("serviceWorker" in navigator))
@@ -2186,11 +2197,12 @@ function WorkspaceApp({ authClient, client }) {
     if (filter === "Earlier") return olderOpenTasks;
     if (filter === "Upcoming")
       return openTasks.filter(
-        (task) => task.dueDate && task.dueDate > localDate(),
+        (task) => task.dueDate && task.dueDate > todayKey &&
+          task.dueDate <= upcomingEndKey,
       );
     if (filter === "No date") return openTasks.filter((task) => !task.dueDate);
     return todayTasks;
-  }, [filter, doneTasks, openTasks, todayTasks, olderOpenTasks]);
+  }, [filter, doneTasks, openTasks, todayTasks, olderOpenTasks, todayKey, upcomingEndKey]);
 
   useEffect(() => {
     document.title =
@@ -5304,6 +5316,14 @@ function TasksPage({
   loaded = true,
   justDoneId,
 }) {
+  const tasksByDueDate = filter === "Upcoming"
+    ? tasks.reduce((groups, task) => {
+      const date = task.dueDate || "";
+      groups.set(date, [...(groups.get(date) || []), task]);
+      return groups;
+    }, new Map())
+    : null;
+
   return (
     <div className="page-content">
       <PageHeader
@@ -5336,17 +5356,41 @@ function TasksPage({
         <SkeletonList rows={4} />
       ) : tasks.length ? (
         <section className="task-list task-list-page">
-          {tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              justDone={justDoneId === task.id}
-              onComplete={onComplete}
-              onTimer={onTimer}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
+          {filter === "Upcoming"
+            ? [...tasksByDueDate.entries()]
+              .sort(([first], [second]) => first.localeCompare(second))
+              .map(([date, dayTasks]) => (
+                <section className="task-day-group" key={date}>
+                  <header className="task-day-heading">
+                    <h2>{taskDueHeading(date)}</h2>
+                    <span>{dayTasks.length} {dayTasks.length === 1 ? "task" : "tasks"}</span>
+                  </header>
+                  <div className="task-list">
+                    {dayTasks.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        justDone={justDoneId === task.id}
+                        onComplete={onComplete}
+                        onTimer={onTimer}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))
+            : tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                justDone={justDoneId === task.id}
+                onComplete={onComplete}
+                onTimer={onTimer}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
         </section>
       ) : (
         <EmptyTasks
@@ -5747,30 +5791,34 @@ function CirclesPage({
   const [circleScreen, setCircleScreen] = useState(false);
   const [circleMenu, setCircleMenu] = useState(false);
   const [openMembers, setOpenMembers] = useState({});
-  const [challenge, setChallenge] = useState(null);
-  const [challengeOpen, setChallengeOpen] = useState(false);
+  const [challenges, setChallenges] = useState([]);
+  const [challengeOpenId, setChallengeOpenId] = useState(null);
   const [challengeForm, setChallengeForm] = useState(false);
   const [challengeBusy, setChallengeBusy] = useState(false);
   const activeGroupId = activeGroup?.id;
   const challengeCacheKey = user?.id && activeGroupId
     ? `kinda:challenge:${user.id}:${activeGroupId}`
     : null;
+  const challenge = challenges.find((item) => item.id === challengeOpenId) || null;
   useEffect(() => {
-    setChallengeOpen(false);
+    setChallengeOpenId(null);
     if (!activeGroupId || !challengeApi || !challengeCacheKey) {
-      setChallenge(null);
+      setChallenges([]);
       return undefined;
     }
-    // Reuse the last circle challenge while its fresh progress loads.
-    setChallenge(readJson(challengeCacheKey));
+    // Reuse the circle's challenges while their fresh progress loads.
+    const cached = readJson(challengeCacheKey);
+    setChallenges(Array.isArray(cached) ? cached : cached ? [cached] : []);
     let cancelled = false;
     challengeApi
       .get(activeGroupId)
       .then((result) => {
         if (cancelled) return;
-        const nextChallenge = result.challenge || null;
-        setChallenge(nextChallenge);
-        writeJson(challengeCacheKey, nextChallenge);
+        const nextChallenges = Array.isArray(result.challenges)
+          ? result.challenges
+          : result.challenge ? [result.challenge] : [];
+        setChallenges(nextChallenges);
+        writeJson(challengeCacheKey, nextChallenges);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -5785,9 +5833,20 @@ function CirclesPage({
     setChallengeBusy(true);
     try {
       const result = await request();
-      const nextChallenge = result.challenge || null;
-      setChallenge(nextChallenge);
-      if (challengeCacheKey) writeJson(challengeCacheKey, nextChallenge);
+      setChallenges((current) => {
+        let next;
+        if (Array.isArray(result.challenges)) next = result.challenges;
+        else if (result.removedId) {
+          next = current.filter((item) => item.id !== result.removedId);
+        } else if (result.challenge) {
+          next = [
+            result.challenge,
+            ...current.filter((item) => item.id !== result.challenge.id),
+          ].sort((first, second) => second.startsOn.localeCompare(first.startsOn));
+        } else next = current;
+        if (challengeCacheKey) writeJson(challengeCacheKey, next);
+        return next;
+      });
       onChallengeChanged?.();
       if (warriorLine) {
         onWarrior?.({ scene: "go", title: "Let’s go!", line: warriorLine });
@@ -5800,14 +5859,14 @@ function CirclesPage({
       setChallengeBusy(false);
     }
   }
-  const openChallenge = () => {
-    setChallengeOpen(true);
+  const openChallenge = (item) => {
+    setChallengeOpenId(item.id);
     window.scrollTo({ top: 0 });
     try {
-      const key = `kinda-ready-${challenge.id}`;
+      const key = `kinda-ready-${item.id}`;
       if (!localStorage.getItem(key)) {
         localStorage.setItem(key, "1");
-        onWarrior?.({ scene: "ready", title: "Ready for battle", line: challenge.title });
+        onWarrior?.({ scene: "ready", title: "Ready for battle", line: item.title });
       }
     } catch (_error) {
       // Private browsing can block storage; the screen still opens.
@@ -5958,17 +6017,17 @@ function CirclesPage({
         </div>
         {activeGroup && (
           <section className="circle-detail">
-            {challengeOpen && challenge ? (
+            {challengeOpenId && challenge ? (
               <ChallengeScreen
                 challenge={challenge}
                 Avatar={Avatar}
                 busy={challengeBusy}
                 onNudge={onNudge}
-                onBack={() => setChallengeOpen(false)}
+                onBack={() => setChallengeOpenId(null)}
                 onJoin={() =>
-                  runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
+                  runChallenge(() => challengeApi.join(activeGroup.id, challenge.id), challenge.title)
                 }
-                onLeave={() => runChallenge(() => challengeApi.leave(activeGroup.id))}
+                onLeave={() => runChallenge(() => challengeApi.leave(activeGroup.id, challenge.id))}
                 onDelete={async () => {
                   if (
                     !window.confirm(
@@ -5977,8 +6036,8 @@ function CirclesPage({
                   ) {
                     return;
                   }
-                  const ok = await runChallenge(() => challengeApi.remove(activeGroup.id));
-                  if (ok) setChallengeOpen(false);
+                  const ok = await runChallenge(() => challengeApi.remove(activeGroup.id, challenge.id));
+                  if (ok) setChallengeOpenId(null);
                 }}
               />
             ) : (
@@ -6080,25 +6139,31 @@ function CirclesPage({
             </div>
             {circleTab === "today" && (
               <>
-                {challenge && (
+                {challenges.map((circleChallenge) => (
                   <ChallengeCard
-                    challenge={challenge}
+                    key={circleChallenge.id}
+                    challenge={circleChallenge}
                     busy={challengeBusy}
-                    onOpen={openChallenge}
+                    onOpen={() => openChallenge(circleChallenge)}
                     onJoin={() =>
-                      runChallenge(() => challengeApi.join(activeGroup.id), challenge.title)
+                      runChallenge(
+                        () => challengeApi.join(activeGroup.id, circleChallenge.id),
+                        circleChallenge.title,
+                      )
                     }
                   />
-                )}
+                ))}
                 {canManage &&
-                  challengeApi &&
-                  (!challenge || challenge.status === "ended") && (
+                  challengeApi && (
                     <button
                       type="button"
                       className="ch-start"
                       onClick={() => setChallengeForm(true)}
                     >
-                      <Target size={16} /> Start a challenge
+                      <Target size={16} />
+                      {challenges.some((item) => item.status === "active")
+                        ? "Start another challenge"
+                        : "Start a challenge"}
                     </button>
                   )}
                 <div className="cd-section-head">

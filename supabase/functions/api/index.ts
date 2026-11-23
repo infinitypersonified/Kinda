@@ -29,6 +29,31 @@ function validRepeat(repeat: string) {
       new Set(repeat.slice(7).split(",")).size === repeat.slice(7).split(",").length);
 }
 
+function nextRecurringDate(dateKey: string, repeat: string) {
+  const addDays = (value: string, count: number) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + count);
+    return date.toISOString().slice(0, 10);
+  };
+  if (repeat.startsWith("custom:")) {
+    const weekdays = repeat.slice(7).split(",").map(Number);
+    let candidate = addDays(dateKey, 1);
+    for (let index = 0; index < 7; index += 1) {
+      const weekday = new Date(`${candidate}T00:00:00Z`).getUTCDay();
+      if (weekdays.includes((weekday + 6) % 7 + 1)) return candidate;
+      candidate = addDays(candidate, 1);
+    }
+    return addDays(dateKey, 7);
+  }
+  let candidate = addDays(dateKey, repeat === "weekly" ? 7 : 1);
+  if (repeat === "weekdays") {
+    while ([0, 6].includes(new Date(`${candidate}T00:00:00Z`).getUTCDay())) {
+      candidate = addDays(candidate, 1);
+    }
+  }
+  return candidate;
+}
+
 const TASK_COLUMNS = "id,title,description,category,due_date,priority,visibility,target_minutes,elapsed_seconds,timer_started_at,done,completed_at,repeat,reminder_time,created_at,assignment_id,assigned_by_name,shared_with,series_id,moved_from,challenge_id";
 const TASK_RECORD_COLUMNS = `${TASK_COLUMNS},reminder_at,reminder_sent_for,tz_offset`;
 
@@ -1275,7 +1300,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         const seriesId = task.series_id ||
           (task.repeat !== "none" ? task.id : null);
         if (seriesId) {
-          await db.from("tasks").update({ repeat: "none" }).eq("id", seriesId);
+          const { error: stopSeriesError } = await db.from("tasks")
+            .update({ repeat: "none" }).eq("id", seriesId).eq("user_id", userId);
+          if (stopSeriesError) throw stopSeriesError;
           let remove = db.from("tasks").delete().eq("user_id", userId).eq(
             "series_id",
             seriesId,
@@ -1489,6 +1516,62 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
                     { onConflict: "circle_id,task_id", ignoreDuplicates: true },
                   );
                 if (shareError) throw shareError;
+              }
+            }
+          }
+        }
+        if (repeat !== "none" && fields.dueDate && seriesId) {
+          const dueDate = nextRecurringDate(fields.dueDate, repeat);
+          const localToday = new Date(
+            Date.now() - Number(body.tzOffset || 0) * 60000,
+          ).toISOString().slice(0, 10);
+          const horizonDate = new Date(`${localToday}T00:00:00Z`);
+          horizonDate.setUTCDate(horizonDate.getUTCDate() + 3);
+          const horizon = horizonDate.toISOString().slice(0, 10);
+          if (dueDate <= horizon) {
+            const { data: exists, error: existsError } = await db.from("tasks")
+              .select("id").eq("series_id", seriesId).eq("due_date", dueDate)
+              .limit(1);
+            if (existsError) throw existsError;
+            if (!exists?.length) {
+              const reminderAt = updated.reminder_time
+                ? (() => {
+                  const [hours, minutes] = String(updated.reminder_time)
+                    .split(":").map(Number);
+                  const [year, month, day] = dueDate.split("-").map(Number);
+                  return new Date(Date.UTC(year, month - 1, day, hours, minutes) +
+                    Number(body.tzOffset || 0) * 60000).toISOString();
+                })()
+                : null;
+              const { data: occurrence, error: occurrenceError } = await db
+                .from("tasks").insert({
+                user_id: userId,
+                title: updated.title,
+                description: updated.description,
+                category: updated.category,
+                due_date: dueDate,
+                priority: updated.priority,
+                visibility: updated.visibility,
+                target_minutes: updated.target_minutes,
+                shared_with: updated.shared_with,
+                repeat,
+                reminder_time: updated.reminder_time,
+                reminder_at: reminderAt,
+                tz_offset: body.tzOffset ?? null,
+                series_id: seriesId,
+              }).select("id").single();
+              if (occurrenceError && occurrenceError.code !== "23505") {
+                throw occurrenceError;
+              }
+              if (occurrence && groupIds.length) {
+                const { error: occurrenceLinksError } = await db.from(
+                  "circle_tasks",
+                ).insert(groupIds.map((circle_id) => ({
+                  circle_id,
+                  task_id: occurrence.id,
+                  shared_by: userId,
+                })));
+                if (occurrenceLinksError) throw occurrenceLinksError;
               }
             }
           }
@@ -1851,12 +1934,31 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
               86400000,
           );
-        const loadChallenge = async () => {
-          const { data, error } = await db.from("challenges").select("*")
-            .eq("circle_id", circleId).order("starts_on", { ascending: false })
-            .limit(1).maybeSingle();
+        const loadChallenge = async (challengeId = "") => {
+          let request = db.from("challenges").select("*")
+            .eq("circle_id", circleId);
+          if (challengeId) request = request.eq("id", challengeId);
+          else request = request.order("starts_on", { ascending: false }).limit(1);
+          const { data, error } = await request.maybeSingle();
           if (error) throw error;
           return data as ApiRow | null;
+        };
+        const loadChallenges = async () => {
+          const { data, error } = await db.from("challenges").select("*")
+            .eq("circle_id", circleId).order("starts_on", { ascending: false })
+            .limit(30);
+          if (error) throw error;
+          const visible = (data || []).filter((challenge: ApiRow) => {
+            const day = dayDiff(String(challenge.starts_on), todayKey) + 1;
+            const days = Number(challenge.days);
+            return day <= days || day <= days + 7;
+          });
+          return Promise.all(visible.map(async (challenge: ApiRow) => {
+            if (await isJoined(String(challenge.id))) {
+              await ensureTasks(challenge, userId);
+            }
+            return await describe(challenge);
+          }));
         };
         const isJoined = async (challengeId: string) => {
           const { data, error } = await db.from("challenge_members")
@@ -2028,11 +2130,8 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           }
         };
         if (method === "GET" && !suffix) {
-          const challenge = await loadChallenge();
-          if (challenge && await isJoined(String(challenge.id))) {
-            await ensureTasks(challenge, userId);
-          }
-          return response(200, { challenge: await describe(challenge) });
+          const challenges = await loadChallenges();
+          return response(200, { challenges, challenge: challenges[0] || null });
         }
         if (method === "POST" && !suffix) {
           await requireManager();
@@ -2048,10 +2147,6 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             .map((item: unknown) => String(item).trim().slice(0, 80))
             .filter(Boolean).slice(0, 8);
           if (!tasks.length) fail("Add at least one daily task.");
-          const existing = await loadChallenge();
-          if (existing && dayDiff(String(existing.starts_on), todayKey) < Number(existing.days)) {
-            fail("This circle already has a challenge running.");
-          }
           const { data: created, error: createError } = await db.from("challenges")
             .insert({
               circle_id: circleId,
@@ -2072,7 +2167,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             return response(201, { challenge: await describe(createdChallenge) });
         }
         if (method === "POST" && suffix === "join") {
-          const challenge = await loadChallenge();
+          const challenge = await loadChallenge(String(query.challengeId || ""));
           if (!challenge) fail("There is no challenge to join.", 404);
           const { error: joinError } = await db.from("challenge_members").upsert({
             challenge_id: challenge!.id,
@@ -2083,7 +2178,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           return response(200, { challenge: await describe(challenge) });
         }
         if (method === "DELETE" && !suffix) {
-          const challenge = await loadChallenge();
+          const challenge = await loadChallenge(String(query.challengeId || ""));
           if (!challenge) fail("There is no challenge to delete.", 404);
           const { data: roleRow } = await db.from("circle_members").select("role")
             .eq("circle_id", circleId).eq("user_id", userId).maybeSingle();
@@ -2099,10 +2194,10 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
             challenge!.id,
           );
           if (deleteError) throw deleteError;
-          return response(200, { challenge: null });
+          return response(200, { challenge: null, removedId: challenge!.id });
         }
         if (method === "POST" && suffix === "leave") {
-          const challenge = await loadChallenge();
+          const challenge = await loadChallenge(String(query.challengeId || ""));
           if (!challenge) fail("There is no challenge to leave.", 404);
           await db.from("challenge_members").delete().eq(
             "challenge_id",

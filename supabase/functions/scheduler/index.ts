@@ -305,22 +305,19 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     return date;
   };
   const todayKey = new Date().toISOString().slice(0, 10);
-  const horizon = addDays(todayKey, 8);
-  // Only recent occurrences can still need a next one. Without a lower bound
-  // this scanned every past occurrence of every repeating task, with several
-  // queries each, once a minute.
-  const earliest = addDays(todayKey, -3);
+  const horizon = addDays(todayKey, 3);
+  // A scheduler outage can leave the latest occurrence overdue by more than a
+  // few days. Include the full series history, then process only its latest
+  // occurrence so it can recover and create the next upcoming task.
   const recurring = [];
   for (let offset = 0; ; offset += 1000) {
     const { data: page, error } = await db.from("tasks").select(
       "id,user_id,title,description,category,due_date,priority,visibility,target_minutes,shared_with,repeat,reminder_time,tz_offset,series_id",
-    ).neq("repeat", "none").not("due_date", "is", null).gte(
-      "due_date",
-      earliest,
-    ).lte(
+    ).neq("repeat", "none").not("due_date", "is", null).lte(
       "due_date",
       horizon,
-    ).order("id", { ascending: true }).range(offset, offset + 999);
+    ).order("due_date", { ascending: true }).order("id", { ascending: true })
+      .range(offset, offset + 999);
     if (error) {
       await releaseLock();
       return Response.json({ error: error.message }, { status: 500 });
@@ -328,7 +325,12 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     recurring.push(...(page || []));
     if (!page || page.length < 1000) break;
   }
+  const latestBySeries = new Map();
   for (const task of recurring) {
+    const key = task.series_id || task.id;
+    latestBySeries.set(key, task);
+  }
+  for (const task of latestBySeries.values()) {
     const seriesId = task.series_id || task.id;
     const { data: root } = await db.from("tasks").select("repeat").eq(
       "id",
@@ -336,6 +338,7 @@ Deno.serve({ automaticCompression: true }, async (request) => {
     ).maybeSingle();
     if (!root || root.repeat === "none") continue;
     const dueDate = nextDate(task.due_date, task.repeat);
+    if (dueDate > horizon) continue;
     const { data: existing } = await db.from("tasks").select("id").eq(
       "series_id",
       seriesId,
@@ -371,6 +374,14 @@ Deno.serve({ automaticCompression: true }, async (request) => {
       series_id: seriesId,
     }).select("id").single();
     if (error) continue;
+    // Deletion can stop a series while this scheduler run is in flight. Check
+    // the root again before leaving a newly inserted task behind.
+    const { data: currentRoot } = await db.from("tasks").select("repeat")
+      .eq("id", seriesId).maybeSingle();
+    if (!currentRoot || currentRoot.repeat === "none") {
+      await db.from("tasks").delete().eq("id", occurrence.id);
+      continue;
+    }
     const { data: links } = await db.from("circle_tasks").select(
       "circle_id,shared_by",
     ).eq("task_id", task.id);
