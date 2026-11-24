@@ -2522,24 +2522,18 @@ function WorkspaceApp({ authClient, client }) {
           throw new Error("Your password must be at least 8 characters.");
         if (password !== confirmPassword)
           throw new Error("The passwords do not match.");
-        const url = new URL(window.location.href);
-        const token =
-          url.searchParams.get("token") ||
-          url.pathname.match(/\/reset-password\/([^/]+)/)?.[1] ||
-          "";
-        const supabaseRecovery = new URLSearchParams(url.hash.slice(1)).get("type") === "recovery";
-        if (!token && !supabaseRecovery)
-          throw new Error(
-            "This reset link is missing its token. Request a new password reset link.",
-          );
-        const response = await authClient.resetPassword({
-          newPassword: password,
-          token,
-        });
+        // Supabase consumes either its hash token or PKCE code into a session
+        // before this form is submitted. Checking only `#type=recovery` breaks
+        // PKCE links, which return with a `?code=...` query instead.
+        const response = await authClient.resetPassword({ newPassword: password });
         if (response.error)
           throw new Error(
             response.error.message || "Could not reset your password.",
           );
+        await authClient.signOut();
+        clearSavedData(user?.id);
+        setUser(null);
+        setProfile(null);
         window.history.replaceState(null, "", "/");
         setAuthNotice(
           "Your password has been reset. Log in with your new password.",
@@ -2690,8 +2684,6 @@ function WorkspaceApp({ authClient, client }) {
       return;
     }
     const { tzOffset, ...fields } = body;
-    setKindleCreated({ key: Date.now(), pose: pickPose() });
-    playKindleMoment("taskAdded");
     const draft = {
       id: `tmp-${Date.now()}`,
       ...fields,
@@ -2710,6 +2702,8 @@ function WorkspaceApp({ authClient, client }) {
         body: JSON.stringify(body),
       });
       settleOps([opId], created);
+      setKindleCreated({ key: Date.now(), pose: pickPose() });
+      playKindleMoment("taskAdded");
       syncCircleTask(draft, true);
       syncCircleTask(created);
       refreshTasks().catch((error) => notify(error.message));
@@ -3607,7 +3601,10 @@ function WorkspaceApp({ authClient, client }) {
         onLogin={() => setScreen("login")}
       />
     );
-  if (["signup", "login", "forgot", "reset"].includes(screen) && !user) {
+  if (
+    ["signup", "login", "forgot", "reset"].includes(screen) &&
+    (!user || screen === "reset")
+  ) {
     return (
       <AuthScreen
         mode={screen}

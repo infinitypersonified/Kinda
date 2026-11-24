@@ -82,6 +82,13 @@ export function createSupabaseAuthClient(supabase) {
       return { error };
     },
     resetPassword: async ({ newPassword }) => {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) return { error: sessionError };
+      if (!data.session) {
+        return {
+          error: new Error("This reset link has expired or was already used. Request a new password reset link."),
+        };
+      }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       return { error };
     },
