@@ -1064,3 +1064,306 @@
   line-height: 1.4;
 }
 
+.growth-experiment .button {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.growth-goal {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.growth-goal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.growth-goal-head small,
+.growth-goal-next small {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.growth-goal-head h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.growth-goal-head .text-link {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.growth-goal-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.growth-goal-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.growth-goal-next p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.growth-goal-next .button {
+  flex: 0 0 auto;
+  min-height: 42px;
+}
+
+.growth-goal-form {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.growth-goal-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.growth-goal-form input,
+.growth-goal-form textarea,
+.growth-goal-form select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.growth-goal-form textarea {
+  resize: vertical;
+}
+
+.growth-goal-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.growth-goal-form .optional-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.growth-goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.growth-coach {
+  display: grid;
+  gap: 13px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.growth-coach-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.growth-coach-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.growth-coach-head p,
+.growth-coach-memory {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.growth-reset-learning {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.growth-coach-prompts {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 1px 5px;
+  scrollbar-width: thin;
+}
+
+.growth-coach-prompts button,
+.growth-coach-feedback button {
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.growth-coach-prompts button:hover,
+.growth-coach-feedback button:hover {
+  border-color: var(--accent);
+}
+
+.growth-coach-thread {
+  display: grid;
+  max-height: 330px;
+  gap: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 1px;
+}
+
+.growth-coach-welcome {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.growth-coach-message {
+  display: grid;
+  width: fit-content;
+  max-width: min(92%, 620px);
+  gap: 7px;
+  border-radius: 14px;
+  padding: 11px 13px;
+  background: var(--surface-2);
+}
+
+.growth-coach-message.user {
+  justify-self: end;
+  background: var(--soft-accent);
+  color: var(--accent-deep);
+}
+
+.growth-coach-message p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.growth-coach-message small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.growth-coach-feedback {
+  display: flex;
+  gap: 7px;
+}
+
+.growth-coach-feedback button {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.growth-coach-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 5px;
+  background: var(--background);
+}
+
+.growth-coach-form:focus-within {
+  border-color: var(--accent);
+}
+
+.growth-coach-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 0;
+  outline: 0;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.growth-coach-form .button {
+  min-width: 64px;
+  min-height: 42px;
+}
+
+.growth-coach-memory {
+  margin: -4px 0 0;
+}
+
+@media (max-width: 560px) {
+  .growth-goal {
+    padding: 13px;
+  }
+
+  .growth-goal-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-goal-next {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .growth-goal-next .button {
+    align-self: flex-start;
+  }
+
+  .growth-coach {
+    gap: 11px;
+    padding: 13px;
+  }
+
+  .growth-coach-head {
+    align-items: center;
+  }
+
+  .growth-coach-message {
+    max-width: 96%;
+  }
+}
+

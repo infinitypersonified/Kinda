@@ -1152,6 +1152,51 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       if (error && error.code !== "23505") throw error;
       return response(200, { ok: true });
     }
+    if (pathname === "/goal-checkin" && method === "GET") {
+      const { data, error } = await db.from("user_goal_checkins")
+        .select("goal,cadence,barrier,next_step,progress,checkin_period,updated_at")
+        .eq("user_id", userId).maybeSingle();
+      if (error) throw error;
+      return response(200, {
+        goal: data ? {
+          goal: data.goal,
+          cadence: data.cadence,
+          barrier: data.barrier,
+          nextStep: data.next_step,
+          progress: data.progress,
+          period: data.checkin_period,
+          updatedAt: data.updated_at,
+        } : null,
+      });
+    }
+    if (pathname === "/goal-checkin" && method === "POST") {
+      const goal = String(body.goal || "").trim();
+      const cadence = String(body.cadence || "weekly");
+      const barrier = String(body.barrier || "").trim();
+      const nextStep = String(body.nextStep || "").trim();
+      const progress = String(body.progress || "").trim();
+      const period = String(body.period || "");
+      if (!goal || goal.length > 120) fail("Your goal must be 1–120 characters.");
+      if (!new Set(["daily", "weekly", "monthly", "yearly"]).has(cadence)) {
+        fail("Choose a valid check-in schedule.");
+      }
+      if (barrier.length > 160 || nextStep.length > 120 || progress.length > 300) {
+        fail("Check-in answers are too long. Please shorten them and try again.");
+      }
+      if (!/^\d{4}(-\d{2}(-\d{2})?)?$/.test(period)) fail("Choose a valid check-in date.");
+      const { error } = await db.from("user_goal_checkins").upsert({
+        user_id: userId,
+        goal,
+        cadence,
+        barrier,
+        next_step: nextStep,
+        progress,
+        checkin_period: period,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      if (error) throw error;
+      return response(200, { ok: true });
+    }
     if (method === "PATCH" && pathname === "/profile") {
       const name = String(body.name || "").trim();
       const bio = String(body.bio || "").trim();

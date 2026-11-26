@@ -3924,7 +3924,16 @@ function WorkspaceApp({ authClient, client }) {
           )}
           {page === "growth" && (
             <React.Suspense fallback={<p className="quiet-empty">Loading your patterns…</p>}>
-              <GrowthPage tasks={tasks} />
+              <GrowthPage
+                tasks={tasks}
+                userId={user?.id}
+                streak={streak}
+                onMoveTomorrow={moveTomorrow}
+                onCompleteTask={(task) => completeTask(task, true)}
+                onStartTask={(task) => timerTask(task, "start")}
+                onCreateTask={(title) => setTaskDialog({ task: null, dueDate: localDate(), initialTitle: title })}
+                api={api}
+              />
             </React.Suspense>
           )}
           {page === "badges" && (
@@ -3982,6 +3991,7 @@ function WorkspaceApp({ authClient, client }) {
           <TaskDialog
             task={taskDialog.task}
             initialDueDate={taskDialog.dueDate}
+            initialTitle={taskDialog.initialTitle}
             groups={groups}
             friends={friends}
             initialGroupIds={taskDialog.groupIds}
@@ -8655,7 +8665,7 @@ function TaskDateField({ value, onChange }) {
   );
 }
 
-function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
+function TaskDialog({ task, initialDueDate, initialTitle = "", groups, friends = [], initialGroupIds = [], initialSharedWith = [], onClose, onSave }) {
   const selectedGroupIds = task?.groupIds || initialGroupIds;
   const selectedFriendIds = task?.sharedWith || initialSharedWith;
   const [more, setMore] = useState(Boolean(task) || initialGroupIds.length > 0 || initialSharedWith.length > 0);
@@ -8679,7 +8689,7 @@ function TaskDialog({ task, initialDueDate, groups, friends = [], initialGroupId
           <input
             name="title"
             autoFocus={!window.matchMedia("(pointer: coarse)").matches}
-            defaultValue={task?.title || ""}
+            defaultValue={task?.title || initialTitle}
             placeholder="What would you like to do?"
             required
             maxLength="120"
