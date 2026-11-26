@@ -26,6 +26,90 @@
   border: 0;
 }
 
+.people-search {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 10px 0 8px;
+  padding: 0 13px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.people-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.people-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.people-suggestions,
+.friend-requests {
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  margin: 8px 0 18px;
+  padding: 6px 12px;
+  background: var(--surface);
+}
+
+.people-suggestion {
+  display: flex;
+  min-height: 60px;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.people-suggestion:last-child {
+  border-bottom: 0;
+}
+
+.people-suggestion-name {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.people-suggestion-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.people-suggestion-name small,
+.people-request-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.friend-requests h3 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.friend-request-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-edit-form label>small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .search-results,
 .friends-directory,
 .profile-shared {

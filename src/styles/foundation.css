@@ -913,3 +913,24 @@ a {
   color: var(--accent);
 }
 
+.auth-help-link {
+  display: block;
+  min-height: 44px;
+  margin-top: 4px;
+  color: var(--accent-deep);
+  font-size: 12px;
+  line-height: 44px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.auth-help-link:hover {
+  text-decoration: underline;
+}
+
+.auth-help-link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+

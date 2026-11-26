@@ -574,6 +574,111 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         taskToClient(task, groupIdsByTask.get(task.id) || [])
       );
     };
+    const ensureRecurringWindow = async (tzOffsetInput: unknown) => {
+      const requestedOffset = Number(tzOffsetInput ?? 0);
+      const tzOffset = Number.isInteger(requestedOffset) &&
+          Math.abs(requestedOffset) <= 840
+        ? requestedOffset
+        : 0;
+      const today = new Date(Date.now() - tzOffset * 60000)
+        .toISOString().slice(0, 10);
+      const horizonDate = new Date(`${today}T00:00:00Z`);
+      horizonDate.setUTCDate(horizonDate.getUTCDate() + 3);
+      const horizon = horizonDate.toISOString().slice(0, 10);
+      const occurrences: ApiRow[] = [];
+      for (let from = 0; from < 5000; from += 1000) {
+        const { data, error } = await db.from("tasks").select("*")
+          .eq("user_id", userId).neq("repeat", "none")
+          .not("series_id", "is", null).not("due_date", "is", null)
+          .lte("due_date", horizon).order("due_date", { ascending: false })
+          .range(from, from + 999);
+        if (error) throw error;
+        occurrences.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      const latestBySeries = new Map<string, ApiRow>();
+      const existingDates = new Map<string, Set<string>>();
+      for (const occurrence of occurrences) {
+        const seriesId = String(occurrence.series_id);
+        const dates = existingDates.get(seriesId) || new Set<string>();
+        dates.add(String(occurrence.due_date));
+        existingDates.set(seriesId, dates);
+        if (!latestBySeries.has(seriesId)) latestBySeries.set(seriesId, occurrence);
+      }
+      const seriesIds = [...latestBySeries.keys()];
+      const { data: roots, error: rootsError } = seriesIds.length
+        ? await db.from("tasks").select("id,repeat")
+          .eq("user_id", userId).in("id", seriesIds)
+        : { data: [], error: null };
+      if (rootsError) throw rootsError;
+      const activeSeries = new Set((roots || [])
+        .filter((root) => root.repeat && root.repeat !== "none")
+        .map((root) => String(root.id)));
+      for (const [seriesId, latest] of latestBySeries) {
+        // Old completed copies retain their repeat value for history. They must
+        // not restart a series whose root has been stopped or deleted.
+        if (!activeSeries.has(seriesId)) continue;
+        const repeat = String(latest.repeat || "none");
+        if (!validRepeat(repeat) || repeat === "none") continue;
+        let nextDate = String(latest.due_date);
+        if (nextDate < today) {
+          let skipped = 0;
+          while (nextDate < today && skipped++ < 4000) {
+            nextDate = nextRecurringDate(nextDate, repeat);
+          }
+        } else {
+          nextDate = nextRecurringDate(nextDate, repeat);
+        }
+        const dates = existingDates.get(seriesId) || new Set<string>();
+        const { data: circleLinks, error: linkQueryError } = await db.from(
+          "circle_tasks",
+        ).select("circle_id,shared_by").eq("task_id", latest.id);
+        if (linkQueryError) throw linkQueryError;
+        while (nextDate <= horizon) {
+          if (!dates.has(nextDate)) {
+            const reminderAt = latest.reminder_time
+              ? (() => {
+                const [year, month, day] = nextDate.split("-").map(Number);
+                const [hours, minutes] = String(latest.reminder_time)
+                  .split(":").map(Number);
+                return new Date(Date.UTC(year, month - 1, day, hours, minutes) +
+                  Number(latest.tz_offset ?? tzOffset) * 60000).toISOString();
+              })()
+              : null;
+            const { data: created, error: createError } = await db.from("tasks")
+              .insert({
+                user_id: userId,
+                title: latest.title,
+                description: latest.description,
+                category: latest.category,
+                due_date: nextDate,
+                priority: latest.priority,
+                visibility: latest.visibility,
+                target_minutes: latest.target_minutes,
+                shared_with: latest.shared_with || [],
+                repeat,
+                reminder_time: latest.reminder_time,
+                reminder_at: reminderAt,
+                tz_offset: latest.tz_offset ?? tzOffset,
+                series_id: seriesId,
+              }).select("id").maybeSingle();
+            if (createError && createError.code !== "23505") throw createError;
+            if (created && circleLinks?.length) {
+              const { error: linkError } = await db.from("circle_tasks").insert(
+                circleLinks.map((link: ApiRow) => ({
+                  circle_id: link.circle_id,
+                  task_id: created.id,
+                  shared_by: link.shared_by,
+                })),
+              );
+              if (linkError) throw linkError;
+            }
+            dates.add(nextDate);
+          }
+          nextDate = nextRecurringDate(nextDate, repeat);
+        }
+      }
+    };
     const validTaskFields = () => {
       const title = String(body.title || "").trim();
       if (!title || title.length > 120) {
@@ -1051,8 +1156,12 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const name = String(body.name || "").trim();
       const bio = String(body.bio || "").trim();
       const avatar = String(body.avatar || "");
+      const username = String(body.username || "").trim().replace(/^@/, "").toLowerCase();
       if (name.length < 2 || name.length > 60 || bio.length > 240) {
         fail("Check your profile details and try again.");
+      }
+      if (username && !/^[a-z0-9_]{3,20}$/.test(username)) {
+        fail("Usernames must be 3–20 characters and use letters, numbers, or underscores.");
       }
       if (avatar.length > 120) fail("Choose a valid profile avatar.");
       if (avatar.startsWith("photo:")) {
@@ -1064,6 +1173,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const { error } = await db.from("profiles").upsert({
         id: userId,
         name,
+        username: username || null,
         email: user?.email || "",
         bio,
         avatar,
@@ -1076,6 +1186,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       return response(200, {
         id: userId,
         name,
+        username: username || null,
         email: user?.email,
         bio,
         avatar,
@@ -1166,6 +1277,12 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const offset = Number.isSafeInteger(requestedOffset)
         ? Math.max(0, requestedOffset)
         : 0;
+      // Keep a short, visible window of recurring tasks materialized. This
+      // makes uncompleted daily tasks visible in Upcoming too, and also fills
+      // the next few days for older series that were only advanced on edits.
+      if (!query.since && !query.until) {
+        await ensureRecurringWindow(query.tz);
+      }
       // Only send a recent window by default. Sending a person's whole history on
       // every refresh used up the free egress quota. Older weeks are requested
       // on demand with ?since=YYYY-MM-DD&until=YYYY-MM-DD.
@@ -1269,6 +1386,9 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           throw linkError;
         }
       }
+      if (repeat !== "none" && fields.dueDate) {
+        await ensureRecurringWindow(body.tzOffset);
+      }
       if (sharedWith.length || fields.visibility === "friends") {
         // Activity is secondary; a feed-write failure must not make the client retry
         // an already-created task and accidentally create a duplicate.
@@ -1301,7 +1421,8 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
           (task.repeat !== "none" ? task.id : null);
         if (seriesId) {
           const { error: stopSeriesError } = await db.from("tasks")
-            .update({ repeat: "none" }).eq("id", seriesId).eq("user_id", userId);
+            .update({ repeat: "none" }).eq("user_id", userId)
+            .or(`id.eq.${seriesId},series_id.eq.${seriesId}`);
           if (stopSeriesError) throw stopSeriesError;
           let remove = db.from("tasks").delete().eq("user_id", userId).eq(
             "series_id",
@@ -2909,13 +3030,14 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       const ids = (rows || []).map((row) => row.friend_id);
       if (!ids.length) return response(200, []);
       const { data: profiles, error: profileError } = await db.from("profiles")
-        .select("id,name,email,bio,avatar").in("id", ids).order("name");
+        .select("id,name,username,email,bio,avatar").in("id", ids).order("name");
       if (profileError) throw profileError;
       return response(
         200,
         (profiles || []).map((row) => ({
           id: row.id,
           name: row.name,
+          username: row.username,
           email: row.email,
           bio: row.bio,
           avatar: row.avatar,
@@ -2923,56 +3045,129 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
       );
     }
     if (method === "GET" && pathname === "/friends/search") {
-      const search = String(query.q || "").trim().slice(0, 80);
+      const search = String(query.q || "").trim().replace(/^@/, "").slice(0, 80);
       if (search.length < 2) return response(200, []);
-      const { data: profiles, error } = await db.from("profiles").select(
-        "id,name,email,bio,avatar",
-      ).neq("id", userId).or(`name.ilike.%${search}%,email.ilike.%${search}%`)
-        .limit(20);
-      if (error) throw error;
+      const [nameMatches, usernameMatches] = await Promise.all([
+        db.from("profiles").select("id,name,username,bio,avatar")
+          .neq("id", userId).ilike("name", `%${search}%`).limit(20),
+        db.from("profiles").select("id,name,username,bio,avatar")
+          .neq("id", userId).ilike("username", `%${search}%`).limit(20),
+      ]);
+      if (nameMatches.error) throw nameMatches.error;
+      if (usernameMatches.error) throw usernameMatches.error;
+      const byId = new Map();
+      [...(nameMatches.data || []), ...(usernameMatches.data || [])]
+        .forEach((row) => byId.set(row.id, row));
+      const profiles = [...byId.values()].slice(0, 20);
       const { data: relations, error: friendsError } = await db.from(
         "friendships",
       ).select("friend_id").eq("user_id", userId);
       if (friendsError) throw friendsError;
       const friendIds = new Set((relations || []).map((row) => row.friend_id));
+      const { data: requests, error: requestError } = await db.from("friend_requests")
+        .select("from_user_id,to_user_id,status")
+        .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+        .eq("status", "pending");
+      if (requestError) throw requestError;
+      const requestByPerson = new Map((requests || []).map((row) => [
+        row.from_user_id === userId ? row.to_user_id : row.from_user_id,
+        row.from_user_id === userId ? "sent" : "received",
+      ]));
       return response(
         200,
         (profiles || []).map((row) => ({
           id: row.id,
           name: row.name,
-          email: row.email,
           bio: row.bio,
           avatar: row.avatar,
           isFriend: friendIds.has(row.id),
+          requestStatus: requestByPerson.get(row.id) || null,
         })),
       );
     }
-    if (method === "POST" && pathname === "/friends") {
-      let person: ApiRow | null = null;
-      if (body.friendId) {
-        const { data, error } = await db.from("profiles").select(
-          "id,name,email,bio,avatar",
-        ).eq("id", String(body.friendId)).maybeSingle();
-        if (error) throw error;
-        person = data;
-      } else {
-        const email = String(body.email || "").trim().toLowerCase();
-        if (!email || email.length > 254) fail("Enter a valid email address.");
-        const { data, error } = await db.from("profiles").select(
-          "id,name,email,bio,avatar",
-        ).ilike("email", email).maybeSingle();
-        if (error) throw error;
-        person = data;
-      }
-      if (!person || person.id === userId) {
-        fail("That person could not be found.", 404);
-      }
-      const { error } = await db.from("friendships").upsert([
-        { user_id: userId, friend_id: person.id },
-        { user_id: person.id, friend_id: userId },
-      ], { onConflict: "user_id,friend_id", ignoreDuplicates: true });
+    if (method === "GET" && pathname === "/friend-requests") {
+      const { data, error } = await db.from("friend_requests").select(
+        "id,from_user_id,to_user_id,status,created_at",
+      ).or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+        .eq("status", "pending").order("created_at", { ascending: false });
       if (error) throw error;
-      return response(201, { id: person.id, name: person.name });
+      const otherIds = [...new Set((data || []).map((row) =>
+        row.from_user_id === userId ? row.to_user_id : row.from_user_id
+      ))];
+      const { data: profiles, error: profileError } = otherIds.length
+        ? await db.from("profiles").select("id,name,username,avatar")
+          .in("id", otherIds)
+        : { data: [], error: null };
+      if (profileError) throw profileError;
+      const profileById = new Map((profiles || []).map((row) => [row.id, row]));
+      return response(200, (data || []).map((row) => ({
+        id: row.id,
+        direction: row.from_user_id === userId ? "sent" : "received",
+        person: profileById.get(row.from_user_id === userId ? row.to_user_id : row.from_user_id),
+      })));
+    }
+    if (method === "POST" && pathname === "/friend-requests") {
+      const targetId = String(body.friendId || "");
+      if (!targetId || targetId === userId) fail("Choose someone else to connect with.");
+      const { data: target, error: targetError } = await db.from("profiles")
+        .select("id,name").eq("id", targetId).maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) fail("That person could not be found.", 404);
+      const { data: existingFriendship, error: friendshipError } = await db.from("friendships")
+        .select("user_id").eq("user_id", userId).eq("friend_id", targetId).maybeSingle();
+      if (friendshipError) throw friendshipError;
+      if (existingFriendship) fail("You are already connected with this person.");
+      const { data: prior, error: priorError } = await db.from("friend_requests")
+        .select("id,status,from_user_id,to_user_id")
+        .or(`and(from_user_id.eq.${userId},to_user_id.eq.${targetId}),and(from_user_id.eq.${targetId},to_user_id.eq.${userId})`)
+        .eq("status", "pending").maybeSingle();
+      if (priorError) throw priorError;
+      if (prior?.from_user_id === targetId) {
+        fail("They already sent you a request. Accept it from your incoming requests.");
+      }
+      if (prior) return response(200, { id: target.id, name: target.name, requestStatus: "sent" });
+      const { error } = await db.from("friend_requests").upsert({
+        from_user_id: userId,
+        to_user_id: targetId,
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "from_user_id,to_user_id" });
+      if (error) throw error;
+      return response(201, { id: target.id, name: target.name, requestStatus: "sent" });
+    }
+    const friendRequestAction = pathname.match(/^\/friend-requests\/([^/]+)$/);
+    if (method === "PATCH" && friendRequestAction) {
+      const requestId = friendRequestAction[1];
+      const action = String(body.action || "");
+      const { data: requestRow, error: requestError } = await db.from("friend_requests")
+        .select("id,from_user_id,to_user_id,status")
+        .eq("id", requestId).eq("status", "pending").maybeSingle();
+      if (requestError) throw requestError;
+      if (!requestRow) fail("This request is no longer available.", 404);
+      if (action === "cancel" && requestRow.from_user_id === userId) {
+        const { error } = await db.from("friend_requests").delete()
+          .eq("id", requestId).eq("from_user_id", userId).eq("status", "pending");
+        if (error) throw error;
+        return response(200, { ok: true });
+      }
+      if (!["accept", "decline"].includes(action) || requestRow.to_user_id !== userId) {
+        fail("You cannot update this request.", 403);
+      }
+      const status = action === "accept" ? "accepted" : "declined";
+      const { data: updatedRows, error: updateError } = await db.from("friend_requests")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", requestId).eq("to_user_id", userId).eq("status", "pending")
+        .select("id");
+      if (updateError) throw updateError;
+      if (!updatedRows?.length) fail("This request is no longer available.", 404);
+      if (action === "accept") {
+        const { error } = await db.from("friendships").upsert([
+          { user_id: userId, friend_id: requestRow.from_user_id },
+          { user_id: requestRow.from_user_id, friend_id: userId },
+        ], { onConflict: "user_id,friend_id", ignoreDuplicates: true });
+        if (error) throw error;
+      }
+      return response(200, { ok: true, status });
     }
     const friendProfile = pathname.match(/^\/friends\/([^/]+)\/profile$/);
     if (method === "GET" && friendProfile) {

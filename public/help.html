@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#faf8f5" />
+    <meta name="description" content="Help with Kinda sign-in, tasks, sharing, and account controls." />
+    <title>Help &amp; privacy controls · Kinda</title>
+    <style>
+      :root { color-scheme: light dark; --paper: #faf8f5; --ink: #29231f; --muted: #746b63; --line: #e7ddd3; --accent: #b95528; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 "DM Sans", system-ui, sans-serif; }
+      main { width: min(100% - 32px, 720px); margin: 0 auto; padding: 26px 0 64px; }
+      a { color: var(--accent); }
+      .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; }
+      .brand { color: var(--ink); font-size: 23px; font-weight: 800; letter-spacing: -.06em; text-decoration: none; }
+      .back { font-size: 14px; font-weight: 600; }
+      h1, h2 { font-family: Georgia, "Times New Roman", serif; line-height: 1.15; }
+      h1 { max-width: 15ch; margin: 0 0 12px; font-size: clamp(38px, 9vw, 58px); letter-spacing: -.04em; }
+      .intro { max-width: 52ch; margin: 0; color: var(--muted); }
+      .topics { display: grid; gap: 12px; margin-top: 32px; }
+      section { border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; background: color-mix(in srgb, var(--paper) 92%, white); }
+      h2 { margin: 0 0 9px; font-size: 22px; }
+      p { margin: 7px 0; }
+      ul { margin: 8px 0 0; padding-left: 22px; }
+      li + li { margin-top: 5px; }
+      .note { margin-top: 22px; color: var(--muted); font-size: 13px; }
+      @media (prefers-color-scheme: dark) {
+        :root { --paper: #171513; --ink: #f3eee8; --muted: #b5aaa0; --line: #3a322d; --accent: #ffad78; }
+        section { background: #201c19; }
+      }
+      @media (max-width: 480px) { main { width: min(100% - 24px, 720px); padding-top: 18px; } .top { margin-bottom: 38px; } section { padding: 17px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="top" aria-label="Page navigation">
+        <a class="brand" href="/" aria-label="Kinda home">kinda.</a>
+        <a class="back" href="/">Back to Kinda</a>
+      </nav>
+      <header>
+        <h1>Help, with a little more clarity.</h1>
+        <p class="intro">Quick answers about signing in, finding tasks, choosing what to share, and managing your account.</p>
+      </header>
+
+      <div class="topics">
+        <section aria-labelledby="sign-in">
+          <h2 id="sign-in">Signing in</h2>
+          <ul>
+            <li>Use the same sign-in method you used when you created your account.</li>
+            <li>If you use email and password, choose <b>Forgot password?</b> on the login screen to request a reset link.</li>
+            <li>If Google sign-in returns an error, try the same Google account linked to your Kinda profile.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="tasks">
+          <h2 id="tasks">A task isn’t showing</h2>
+          <ul>
+            <li>In <b>My Tasks</b>, check the Today, Earlier, Upcoming, Completed, and No date filters.</li>
+            <li>Refresh Kinda when you have a connection. If the app shows its connection-lost screen, wait until it reconnects before trying again.</li>
+            <li>Kinda confirms a new task after the save request succeeds. If it still doesn’t appear after a refresh, try once more and note any error message.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="sharing">
+          <h2 id="sharing">What can other people see?</h2>
+          <ul>
+            <li>Your personal tasks stay private unless you choose to share them with a friend or circle.</li>
+            <li>Circle members can see tasks shared with that circle and messages sent in its chat.</li>
+            <li>A private calendar feed works like a secret link: anyone who has the link can see dated tasks. Revoke or regenerate it in Settings.</li>
+            <li>Google Calendar sync is limited to tasks created in Kinda; other Google Calendar events are not imported.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="account">
+          <h2 id="account">Your account and notifications</h2>
+          <p>Open <b>Settings → Your Data</b> to export your account data or delete your Kinda account. Notification controls are also in Settings; browser permissions can be changed in your device or browser settings.</p>
+        </section>
+      </div>
+
+      <p class="note">This page explains controls available in Kinda. It is a quick guide, not a full privacy policy.</p>
+    </main>
+  </body>
+</html>

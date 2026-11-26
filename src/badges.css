@@ -855,24 +855,86 @@
 }
 
 @media (max-width: 600px) {
-  .badge-page-header { align-items: center; }
-  .badge-page-header p:last-child { max-width: 34ch; font-size: 13px; }
-  .badge-count { min-width: 80px; }
-  .badge-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); gap: 11px; }
-  .badge-card { grid-template-rows: 116px auto 1fr; border-radius: 17px; }
-  .badge-card-medallion { width: 64px; height: 64px; }
+  .badge-page { gap: 15px; }
+  .badge-page-header { align-items: flex-start; gap: 12px; }
+  .badge-page-header .eyebrow { max-width: 25ch; font-size: 9px; letter-spacing: 0.09em; }
+  .badge-page-header h1 { font-size: 26px; }
+  .badge-page-header p:last-child { max-width: 28ch; font-size: 12px; }
+  .badge-count { grid-template-columns: auto auto; min-width: 75px; gap: 3px 6px; border-radius: 13px; padding: 8px 9px; }
+  .badge-count svg { width: 15px; height: 15px; }
+  .badge-count b { font-size: 16px; }
+  .badge-count small { font-size: 10px; }
+
+  /* On phones, badges read as a collection ledger instead of miniature posters. */
+  .badge-grid { grid-template-columns: 1fr; gap: 8px; }
+  .badge-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    min-height: 104px;
+    border-radius: 15px;
+    box-shadow: none;
+    transform: none;
+  }
+  .badge-card:hover { box-shadow: none; transform: none; }
+  .badge-card-art {
+    grid-row: span 2;
+    align-self: stretch;
+    min-height: 102px;
+    background: color-mix(in srgb, var(--badge-accent) 7%, var(--surface));
+    perspective: none;
+  }
+  .badge-card-art::before,
+  .badge-card-art::after,
+  .badge-card-orbit { display: none; }
+  .badge-card-medallion {
+    width: 72px;
+    height: 72px;
+    border-width: 1px;
+    box-shadow: 0 2px 0 rgba(90, 45, 18, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.75);
+    transform: none;
+  }
+  .badge-card-medallion-inner { width: 64px; height: 64px; }
+  .badge-card-medallion-inner > svg { width: 50px; height: 62px; }
+  .badge-card-medallion-symbol { top: -4px; right: -6px; width: 25px; height: 25px; border-width: 1px; }
+  .badge-card-medallion-symbol svg { width: 14px; height: 14px; }
+  .badge-card-medallion-mark { bottom: -9px; min-width: 38px; height: 23px; font-size: 10px; }
+  .badge-card-lock { top: 5px; right: 5px; width: 20px; height: 20px; }
+  .badge-card-lock svg { width: 11px; height: 11px; }
+  .badge-card-copy { align-self: end; min-width: 0; padding: 10px 11px 0; }
+  .badge-card-category { font-size: 9px; letter-spacing: 0.07em; }
+  .badge-card-copy h2 { overflow: hidden; margin: 2px 0 0; font-size: 15px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .badge-card-copy p { display: none; }
+  .badge-card.is-earned .badge-card-copy p {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .badge-card-progress,
+  .badge-earned-date { grid-column: 2; align-self: start; min-width: 0; margin: 5px 11px 10px; }
+  .badge-progress-label { align-items: baseline; gap: 6px; margin-bottom: 5px; font-size: 10px; }
+  .badge-progress-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge-progress-label b { font-size: 10px; }
+  .badge-progress-track { height: 4px; }
+  .badge-earned-date { color: var(--muted); font-size: 10px; }
+  .badge-page-note { font-size: 11px; }
 }
 
 @media (max-width: 420px) {
-  .badge-page-header { align-items: flex-start; }
-  .badge-grid { grid-template-columns: 1fr; }
-  .badge-card { grid-template-columns: 104px minmax(0, 1fr); grid-template-rows: auto auto; }
-  .badge-card-art { grid-row: span 2; min-height: 130px; }
-  .badge-card-copy { padding: 14px 12px 0; }
-  .badge-card-copy h2 { font-size: 16px; }
+  .badge-count { min-width: 68px; }
+  .badge-card { grid-template-columns: 82px minmax(0, 1fr); min-height: 98px; }
+  .badge-card-art { min-height: 96px; }
+  .badge-card-medallion { width: 66px; height: 66px; }
+  .badge-card-medallion-inner { width: 58px; height: 58px; }
+  .badge-card-medallion-inner > svg { width: 45px; height: 56px; }
+  .badge-card-copy { padding: 9px 9px 0; }
   .badge-card-progress,
-  .badge-earned-date { margin: 10px 12px 13px; }
-  .badge-progress-label { display: grid; gap: 3px; }
+  .badge-earned-date { margin: 5px 9px 9px; }
+  .badge-progress-label { gap: 5px; }
   .badge-unlock-card { padding: 20px 18px 17px; border-radius: 25px; }
   .badge-detail-card { padding: 22px 18px 19px; border-radius: 26px; }
   .badge-detail-stage { min-height: 254px; }

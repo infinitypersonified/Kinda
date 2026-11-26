@@ -1272,6 +1272,7 @@ function WorkspaceApp({ authClient, client }) {
   const [activity, setActivity] = useState([]);
   const [friendSearch, setFriendSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [friendSearchLoading, setFriendSearchLoading] = useState(false);
   const [profile, setProfile] = useState(cachedBoot?.user || null);
   const [taskDialog, setTaskDialog] = useState(null);
   const [warrior, setWarrior] = useState(null);
@@ -2056,6 +2057,7 @@ function WorkspaceApp({ authClient, client }) {
       return undefined;
     }
     let cancelled = false;
+    setFriendSearchLoading(true);
     const timeout = window.setTimeout(() => {
       api(`/friends/search?q=${encodeURIComponent(friendSearch.trim())}`)
         .then((results) => {
@@ -2063,6 +2065,9 @@ function WorkspaceApp({ authClient, client }) {
         })
         .catch((error) => {
           if (!cancelled && !isAuthError(error)) setToast(error.message);
+        })
+        .finally(() => {
+          if (!cancelled) setFriendSearchLoading(false);
         });
     }, 250);
     return () => {
@@ -3245,21 +3250,17 @@ function WorkspaceApp({ authClient, client }) {
   async function addFriend(target) {
     try {
       const payload = typeof target === "string" ? { email: target } : target;
-      const added = await api("/friends", {
+      const added = await api("/friend-requests", {
         method: "POST",
         body: JSON.stringify(payload),
       });
       await Promise.all([loadWorkspace(), loadActivity()]);
       setSearchResults((current) =>
         current.map((person) =>
-          person.id === added.id ? { ...person, isFriend: true } : person,
+          person.id === added.id ? { ...person, requestStatus: "sent" } : person,
         ),
       );
-      setFriendDialog(false);
-      setProfile(null);
-      notify(
-        `${added.name} added as a friend. Add them to a circle when you're ready.`,
-      );
+      notify(`Friend request sent to ${added.name}.`);
       return { ok: true };
     } catch (error) {
       return { ok: false, message: error.message };
@@ -3400,6 +3401,7 @@ function WorkspaceApp({ authClient, client }) {
         method: "PATCH",
         body: JSON.stringify({
           name: String(form.get("name") || "").trim(),
+          username: String(form.get("username") || "").trim(),
           bio: String(form.get("bio") || "").trim(),
           avatar,
         }),
@@ -3832,14 +3834,20 @@ function WorkspaceApp({ authClient, client }) {
               query={friendSearch}
               setQuery={setFriendSearch}
               results={searchResults}
+              searchLoading={friendSearchLoading}
               inviteLink={activeGroup ? inviteLinks[activeGroup.id] : null}
               profile={profile?.id !== user.id ? profile : null}
               user={user}
-              onAdd={async (email) => {
-                const result = await addFriend(email);
-                if (!result.ok) notify(result.message);
+              onAdd={async (person) => {
+                const result = await addFriend(person);
+                if (result.ok) await loadActivity();
+                return result;
               }}
-              onInvite={() => setFriendDialog(true)}
+              requestApi={api}
+              onRequestsChanged={async () => {
+                await Promise.all([loadWorkspace(), loadActivity()]);
+              }}
+              onInvite={() => document.getElementById("people-search-input")?.focus()}
               onOpen={openFriend}
               onCloseProfile={() => setProfile(null)}
               onCreateCircle={() => setCircleDialog(true)}
@@ -4037,12 +4045,6 @@ function WorkspaceApp({ authClient, client }) {
               />
             </React.Suspense>
           </Modal>
-        )}
-        {friendDialog && (
-          <FriendDialog
-            onClose={() => setFriendDialog(false)}
-            onSubmit={addFriend}
-          />
         )}
         {circleDialog && (
           <CircleDialog
@@ -5755,10 +5757,13 @@ function CirclesPage({
   query,
   setQuery,
   results,
+  searchLoading,
   inviteLink,
   profile,
   user,
   onAdd,
+  onRequestsChanged,
+  requestApi,
   onInvite,
   onOpen,
   onCloseProfile,
@@ -5785,6 +5790,8 @@ function CirclesPage({
   onNotify,
 }) {
   const [circleTab, setCircleTab] = useState("today");
+  const [friendRequests, setFriendRequests] = useState([]);
+  const [requestBusyId, setRequestBusyId] = useState(null);
   const [circleScreen, setCircleScreen] = useState(false);
   const [circleMenu, setCircleMenu] = useState(false);
   const [openMembers, setOpenMembers] = useState({});
@@ -5797,6 +5804,48 @@ function CirclesPage({
     ? `kinda:challenge:${user.id}:${activeGroupId}`
     : null;
   const challenge = challenges.find((item) => item.id === challengeOpenId) || null;
+  useEffect(() => {
+    if (!user?.id || !requestApi) return undefined;
+    let cancelled = false;
+    const loadFriendRequests = () => requestApi("/friend-requests")
+      .then((rows) => {
+        if (!cancelled) setFriendRequests(rows);
+      }).catch((error) => {
+        if (!cancelled) onNotify?.(error.message || "Could not load friend requests.");
+      });
+    loadFriendRequests();
+    const interval = window.setInterval(loadFriendRequests, 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [user?.id, requestApi]);
+  async function updateFriendRequest(request, action) {
+    setRequestBusyId(request.id);
+    try {
+      await requestApi(`/friend-requests/${request.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action }),
+      });
+      setFriendRequests((current) => current.filter((item) => item.id !== request.id));
+      if (action === "accept") await onRequestsChanged?.();
+    } catch (error) {
+      onNotify?.(error.message || "Could not update this request.");
+    } finally {
+      setRequestBusyId(null);
+    }
+  }
+  async function sendFriendRequest(person) {
+    const result = await onAdd({ friendId: person.id });
+    if (result?.ok) {
+      setFriendRequests((current) => [{
+        id: `local-${person.id}`,
+        direction: "sent",
+        person,
+      }, ...current.filter((request) => request.person?.id !== person.id)]);
+    } else onNotify?.(result?.message || "Could not send the friend request.");
+    return result;
+  }
   useEffect(() => {
     setChallengeOpenId(null);
     if (!activeGroupId || !challengeApi || !challengeCacheKey) {
@@ -5990,9 +6039,79 @@ function CirclesPage({
             <div className="people-head">
               <h2>Your people</h2>
               <button className="button button-secondary small-button" onClick={onInvite}>
-                <Plus size={14} /> Add a friend
+                <Plus size={14} /> Find people
               </button>
             </div>
+            <label className="people-search">
+              <Search size={17} aria-hidden="true" />
+              <input
+                id="people-search-input"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name or @username"
+                autoComplete="off"
+                aria-label="Search people by name or username"
+              />
+            </label>
+            {query.trim().length >= 2 && (
+              <div className="people-suggestions" aria-live="polite">
+                {searchLoading ? (
+                  <p className="quiet-empty">Looking for people…</p>
+                ) : results.length ? results.map((person, index) => {
+                  const status = person.isFriend
+                    ? "Connected"
+                    : person.requestStatus === "sent" ? "Request sent"
+                    : person.requestStatus === "received" ? "Request received"
+                    : null;
+                  return (
+                    <div className="people-suggestion" key={person.id}>
+                      <Avatar name={person.name} index={index} avatar={person.avatar} />
+                      <span className="people-suggestion-name">
+                        <b>{person.name}</b>
+                        <small>{person.username ? `@${person.username}` : "Kinda member"}</small>
+                      </span>
+                      {status === "Request received" ? (
+                        <button className="button button-primary small-button" onClick={() => {
+                          const request = friendRequests.find((item) => item.direction === "received" && item.person?.id === person.id);
+                          if (request) updateFriendRequest(request, "accept");
+                        }}>Accept</button>
+                      ) : status ? (
+                        <span className="people-request-status">{status}</span>
+                      ) : (
+                        <button className="button button-secondary small-button" onClick={() => sendFriendRequest(person)}>
+                          <Plus size={13} /> Add
+                        </button>
+                      )}
+                    </div>
+                  );
+                }) : (
+                  <p className="quiet-empty">No people found for “{query.trim()}”. Try a name or username.</p>
+                )}
+              </div>
+            )}
+            {friendRequests.length > 0 && (
+              <div className="friend-requests">
+                <h3>Friend requests</h3>
+                {friendRequests.map((request) => (
+                  <div className="people-suggestion" key={request.id}>
+                    <Avatar name={request.person?.name || "Kinda member"} index={0} avatar={request.person?.avatar} />
+                    <span className="people-suggestion-name">
+                      <b>{request.person?.name || "Kinda member"}</b>
+                      <small>{request.direction === "received" ? "Wants to connect" : "Waiting for their approval"}</small>
+                    </span>
+                    {request.direction === "received" ? (
+                      <div className="friend-request-actions">
+                        <button className="button button-primary small-button" disabled={requestBusyId === request.id} onClick={() => updateFriendRequest(request, "accept")}>Accept</button>
+                        <button className="text-link" disabled={requestBusyId === request.id} onClick={() => updateFriendRequest(request, "decline")}>Decline</button>
+                      </div>
+                    ) : (
+                      <button className="text-link" disabled={requestBusyId === request.id} onClick={() => updateFriendRequest(request, "cancel")}>Cancel</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {friends.length ? (
               <div className="people-card">
                 {friends.map((friend, index) => (
@@ -7511,6 +7630,21 @@ function ProfilePage({
             />
           </label>
           <label>
+            Username
+            <input
+              name="username"
+              defaultValue={user.username || ""}
+              minLength="3"
+              maxLength="20"
+              pattern="@?[A-Za-z0-9_]{3,20}"
+              placeholder="your_name"
+              autoCapitalize="none"
+              autoCorrect="off"
+              aria-describedby="profile-username-help"
+            />
+            <small id="profile-username-help">People can find you with this. Use 3–20 letters, numbers, or underscores.</small>
+          </label>
+          <label>
             Short bio
             <textarea
               name="bio"
@@ -8142,6 +8276,15 @@ function SettingsPage({
           Your Kinda data is stored securely in the cloud. Your tasks stay
           private unless you choose to share them with friends or a circle.
         </p>
+        <div className="settings-row">
+          <span>
+            <b>Help &amp; privacy controls</b>
+            <small>Sign-in help, sharing details, and account controls.</small>
+          </span>
+          <a className="button button-secondary small-button" href="/help.html">
+            Read guide
+          </a>
+        </div>
         <div className="settings-row">
           <span>
             <b>Export my data</b>
@@ -10873,6 +11016,9 @@ function AuthScreen({
             <Heart size={14} /> Your tasks are private unless you choose to
             share.
           </p>
+          <a className="auth-help-link" href="/help.html">
+            Help &amp; privacy controls
+          </a>
         </form>
       </div>
     </main>
