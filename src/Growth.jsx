@@ -660,7 +660,7 @@ function GrowthCoach({ tasks, today, week, streak, userId, goalProfile, onMoveTo
   }
 
   return (
-    <section className="growth-coach" aria-label="Kinda task coach">
+    <section className="growth-coach" aria-label="Kinda task coach" data-tour="growth-coach">
       <div className="growth-coach-head">
         <div>
           <h2>Ask Kinda</h2>

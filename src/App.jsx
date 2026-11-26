@@ -295,8 +295,15 @@ function dateTime(value) {
   }).format(date);
 }
 
-const WHATS_NEW_VERSION = "2026-10-17";
+// Bump this key and update the first whatsNew entry for each user-facing release.
+const WHATS_NEW_VERSION = "2026-11-26-kinda-intelligence";
+const PRODUCT_TOUR_VERSION = "basics-v1";
 const whatsNew = [
+  [
+    "✦",
+    "Meet Kinda Intelligence",
+    "Set a goal, get a personal next step, and add it to your tasks. Choose daily, weekly, monthly, or yearly check-ins.",
+  ],
   [
     "📣",
     "Assign a task to the whole circle",
@@ -327,6 +334,26 @@ const whatsNew = [
     "A calmer, cleaner look",
     "Simpler lists, a dedicated focus mode and clearer navigation.",
   ],
+];
+const productTourSteps = [
+  {
+    selector: '[data-tour="home-new-task"]',
+    title: "Start with one small task",
+    text: "Add what you want to do. You can set a date, priority, or reminder later.",
+    nextLabel: "Next",
+  },
+  {
+    selector: '[data-tour="home-tasks"] .section-title-row',
+    title: "Your plan lives here",
+    text: "See what’s on your plate, mark progress, and adjust your day as it changes.",
+    nextLabel: "Show me Kinda Intelligence",
+  },
+  {
+    selector: '[data-tour="growth-coach"] .growth-coach-form',
+    title: "Ask Kinda Intelligence",
+    text: "Tell Kinda your goal, ask what to focus on, and add a suggested next step to your tasks.",
+    nextLabel: "Start exploring",
+  },
 ];
 
 const pushSupported =
@@ -1022,28 +1049,134 @@ function InstallCard({ variant = "banner" }) {
   );
 }
 
-function WhatsNewDialog({ onClose }) {
+function WhatsNewBanner({ onClose, onTry }) {
+  const [icon, title, text] = whatsNew[0];
   return (
-    <Modal
-      title="What’s new in Kinda"
-      subtitle="A few things we’ve added for you."
-      onClose={onClose}
-    >
-      <ul className="whats-new-list">
-        {whatsNew.map(([icon, title, text]) => (
-          <li key={title}>
-            <span aria-hidden="true">{icon}</span>
-            <div>
-              <b>{title}</b>
-              <p>{text}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <button className="button button-primary full-button" onClick={onClose}>
-        Got it <ArrowRight size={15} />
+    <aside className="release-banner" aria-label="New in Kinda" aria-live="polite">
+      <span className="release-banner-mark" aria-hidden="true">{icon}</span>
+      <div className="release-banner-copy">
+        <small>NEW IN KINDA</small>
+        <b>{title}</b>
+        <p>{text}</p>
+      </div>
+      <button className="button button-primary small-button" type="button" onClick={onTry}>
+        Try it in Growth <ArrowRight size={15} />
       </button>
-    </Modal>
+      <button className="icon-quiet release-banner-close" type="button" onClick={onClose} aria-label="Dismiss update">
+        <X size={16} />
+      </button>
+    </aside>
+  );
+}
+
+function ProductTour({ stepIndex, onNext, onSkip }) {
+  const [targetRect, setTargetRect] = useState(null);
+  const [cardPosition, setCardPosition] = useState(null);
+  const cardRef = useRef(null);
+  const step = productTourSteps[stepIndex];
+
+  useLayoutEffect(() => {
+    let retryTimer;
+    let frame;
+    let cancelled = false;
+    setTargetRect(null);
+    setCardPosition(null);
+    const update = () => {
+      if (cancelled) return;
+      const target = document.querySelector(step.selector);
+      if (!target) {
+        retryTimer = window.setTimeout(update, 120);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        retryTimer = window.setTimeout(update, 220);
+      }
+      setTargetRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+    };
+    frame = window.requestAnimationFrame(update);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(retryTimer);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [step.selector]);
+
+  useLayoutEffect(() => {
+    if (!targetRect || !cardRef.current) {
+      setCardPosition(null);
+      return;
+    }
+    const card = cardRef.current.getBoundingClientRect();
+    const width = card.width;
+    const left = Math.max(16, Math.min(window.innerWidth - width - 16, targetRect.left + targetRect.width / 2 - width / 2));
+    const below = targetRect.top + targetRect.height + 18;
+    const top = below + card.height <= window.innerHeight - 16
+      ? below
+      : Math.max(16, targetRect.top - card.height - 18);
+    const arrowLeft = Math.max(18, Math.min(width - 18, targetRect.left + targetRect.width / 2 - left));
+    setCardPosition({ left, top, arrowLeft, arrow: top > targetRect.top ? "above" : "below" });
+  }, [targetRect, stepIndex]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onSkip();
+      if (event.key !== "Tab" || !cardRef.current) return;
+      const controls = [...cardRef.current.querySelectorAll("button:not(:disabled)")];
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onSkip]);
+
+  return createPortal(
+    <div className="product-tour-layer">
+      <div className="product-tour-shield" />
+      {targetRect && <div className="product-tour-spotlight" style={{
+        top: targetRect.top - 7,
+        left: targetRect.left - 7,
+        width: targetRect.width + 14,
+        height: targetRect.height + 14,
+      }} />}
+      <section
+        ref={cardRef}
+        className={`product-tour-card ${cardPosition?.arrow || "centered"}`}
+        style={cardPosition ? {
+          left: cardPosition.left,
+          top: cardPosition.top,
+          "--tour-arrow-left": `${cardPosition.arrowLeft}px`,
+        } : undefined}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-tour-title"
+        aria-describedby="product-tour-copy"
+      >
+        <div className="product-tour-progress">STEP {stepIndex + 1} OF {productTourSteps.length}</div>
+        <h2 id="product-tour-title">{step.title}</h2>
+        <p id="product-tour-copy">{step.text}</p>
+        <div className="product-tour-actions">
+          <button className="text-link" type="button" onClick={onSkip}>Skip tour</button>
+          <button className="button button-primary small-button" type="button" onClick={onNext}>
+            {step.nextLabel} <ArrowRight size={15} />
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -1239,6 +1372,7 @@ function WorkspaceApp({ authClient, client }) {
   );
   const typingSentRef = useRef(0);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [productTourStep, setProductTourStep] = useState(-1);
   const [showOnboardingSurvey, setShowOnboardingSurvey] = useState(false);
   const [reminderQueue, setReminderQueue] = useState([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
@@ -2378,22 +2512,54 @@ function WorkspaceApp({ authClient, client }) {
   }, [theme]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id || !tasksLoaded) return;
     try {
-      if (localStorage.getItem("kinda:whatsnew") !== WHATS_NEW_VERSION)
-        setShowWhatsNew(true);
+      const tourKey = `kinda:product-tour:${user.id}:${PRODUCT_TOUR_VERSION}`;
+      const releaseKey = `kinda:whatsnew:${user.id}`;
+      const createdAt = Date.parse(user.createdAt || "");
+      const accountAge = Date.now() - createdAt;
+      const isNewAccount = Number.isFinite(createdAt) && accountAge >= -60 * 60 * 1000 && accountAge <= 30 * 86400000;
+      if (isNewAccount && localStorage.getItem(tourKey) !== "done") {
+        setPage("home");
+        setShowWhatsNew(false);
+        setProductTourStep(0);
+      } else {
+        setProductTourStep(-1);
+        setShowWhatsNew(localStorage.getItem(releaseKey) !== WHATS_NEW_VERSION);
+      }
     } catch {
-      /* ignore */
+      setProductTourStep(-1);
+      setShowWhatsNew(true);
     }
-  }, [user?.id]);
+  }, [user?.id, user?.createdAt, tasksLoaded]);
 
   function closeWhatsNew() {
     setShowWhatsNew(false);
     try {
-      localStorage.setItem("kinda:whatsnew", WHATS_NEW_VERSION);
+      if (user?.id) localStorage.setItem(`kinda:whatsnew:${user.id}`, WHATS_NEW_VERSION);
     } catch {
       /* ignore */
     }
+  }
+
+  function finishProductTour() {
+    setProductTourStep(-1);
+    try {
+      if (user?.id) {
+        localStorage.setItem(`kinda:product-tour:${user.id}:${PRODUCT_TOUR_VERSION}`, "done");
+        localStorage.setItem(`kinda:whatsnew:${user.id}`, WHATS_NEW_VERSION);
+      }
+    } catch {
+      /* The tour remains dismissible for this session if storage is unavailable. */
+    }
+  }
+
+  function advanceProductTour() {
+    if (productTourStep === 0) setProductTourStep(1);
+    else if (productTourStep === 1) {
+      navigate("growth");
+      setProductTourStep(2);
+    } else finishProductTour();
   }
 
   useEffect(() => {
@@ -3755,6 +3921,15 @@ function WorkspaceApp({ authClient, client }) {
               </span>
             )}
           </header>
+          {showWhatsNew && !reminderQueue[0] && (
+            <WhatsNewBanner
+              onClose={closeWhatsNew}
+              onTry={() => {
+                closeWhatsNew();
+                navigate("growth");
+              }}
+            />
+          )}
           {page === "home" && (
             <HomePage
               onDelete={removeTask}
@@ -4134,8 +4309,12 @@ function WorkspaceApp({ authClient, client }) {
             }}
           />
         )}
-        {showWhatsNew && !reminderQueue[0] && (
-          <WhatsNewDialog onClose={closeWhatsNew} />
+        {productTourStep >= 0 && !reminderQueue[0] && !taskDialog && (
+          <ProductTour
+            stepIndex={productTourStep}
+            onNext={advanceProductTour}
+            onSkip={finishProductTour}
+          />
         )}
         {kindleToast && !celebrationType && !kindleCheer && !kindleCreated && (
           <KindleToast toast={kindleToast} onDone={() => setKindleToast(null)} />
@@ -5065,6 +5244,7 @@ function HomePage({
         action={
           <button
             className="button button-primary home-new-task"
+            data-tour="home-new-task"
             onClick={() => onCreate(today)}
           >
             <Plus size={16} /> New task
@@ -5076,7 +5256,7 @@ function HomePage({
         <OnboardingCard steps={onboarding} onDismiss={onDismissOnboarding} />
       )}
       <div className="home-grid">
-        <section className="home-tasks">
+        <section className="home-tasks" data-tour="home-tasks">
           <div className="section-title-row">
             <h2>Tasks</h2>
             <button className="text-link" onClick={() => onPage("tasks")}>

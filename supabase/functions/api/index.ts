@@ -452,6 +452,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
     let user: {
       id: string;
       email?: string;
+      created_at?: string;
       user_metadata?: Record<string, unknown>;
     } | null = null;
     if (bearer) {
@@ -721,6 +722,7 @@ Deno.serve({ automaticCompression: true }, async (request: Request) => {
         id: userId,
         name: profile?.name || user?.user_metadata?.name || "Member",
         email: user?.email,
+        createdAt: user?.created_at || null,
         bio: profile?.bio || "",
         avatar: profile?.avatar || "",
       });
